@@ -215,7 +215,7 @@ def build() -> None:
     from dstools import __version__
 
     exe_name = f"DSTCamp-{__version__}"
-    dist_root = project_root / "dist"
+    dist_root = project_root / "release"
     cache_root = project_root / "build"
     shutil.rmtree(dist_root, ignore_errors=True)
     dist_root.mkdir(parents=True)

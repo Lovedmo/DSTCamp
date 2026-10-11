@@ -98,7 +98,7 @@ tests/                 Script-style regression tests (no pytest)
 ```powershell
 python tests/run_all.py             # discover tests/test_*.py and run each in an isolated subprocess
 pip install -e ".[build]"
-python scripts/build_exe.py         # stage allowlisted resources in build/, write the EXE and sha256.json to dist/, smoke-test it
+python scripts/build_exe.py         # stage allowlisted resources in build/, write the EXE and sha256.json to release/, smoke-test it
 ```
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.

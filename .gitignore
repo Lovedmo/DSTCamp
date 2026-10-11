@@ -4,7 +4,7 @@ __pycache__/
 
 # PyInstaller / packaging artifacts
 build/
-dist/
+release/
 *.egg-info/
 *.spec
 .ruff_cache/

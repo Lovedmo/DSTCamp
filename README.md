@@ -100,7 +100,7 @@ tests/                 脚本式回归测试（不依赖 pytest）
 ```powershell
 python tests/run_all.py             # 运行全部测试：自动发现 tests/test_*.py，各自在隔离子进程中执行
 pip install -e ".[build]"
-python scripts/build_exe.py         # 打包：在 build/ 暂存白名单资源，向 dist/ 输出 EXE 与 sha256.json 并冒烟测试
+python scripts/build_exe.py         # 打包：在 build/ 暂存白名单资源，向 release/ 输出 EXE 与 sha256.json 并冒烟测试
 ```
 
 每个测试文件内的 `test_*` 函数由 `tests/_harness.py` 按定义顺序自动执行，新增测试无需登记。发布前仍需在 Windows 真机打开 GUI，验证托盘、字体、图标转换、Steam Worker 与 frpc。

@@ -25,7 +25,7 @@ dstools/shared/       两个以上功能共用的基础设施；palettes.py 调�
 dstools/i18n/strings.py  中英文文案唯一来源
 icons/、tools/        随发布打包的固定资源
 reference/            开发核对资料（含 tk_legacy/ 旧 Tk 代码、dev_scripts/），不进 Git、不参与运行
-build/、dist/         可重建的构建中间产物与发布产物，不进 Git
+build/、release/      可重建的构建中间产物与发布产物，不进 Git
 ```
 
 运行时目录 `%APPDATA%/DSTCamp/`：`settings.json`；`cache/` 可重建（可改位置，须纯 ASCII）；`data/` 需保留的数据；`security/` SSH 密钥、WireGuard/Mihomo 配置与 OAuth 令牌。新增目录时按此分类并更新 `resource_paths.py` 顶部清单。
