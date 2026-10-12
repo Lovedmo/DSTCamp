@@ -227,6 +227,17 @@ def cleanup_stale_update_artifacts() -> None:
         pass
 
 
+def clear_download_mark() -> None:
+    """删除当前 EXE 的"来自其他计算机"下载标记（NTFS 备用数据流 ``Zone.Identifier``）。
+
+    带此标记时资源管理器双击可能被系统静默拦截；能运行到这里说明用户已决定信任该文件，
+    清掉后以后双击就不再被拦。没有标记或删除失败都静默忽略。
+    """
+    if not getattr(sys, "frozen", False) or sys.platform != "win32":
+        return
+    _safe_unlink(Path(f"{sys.executable}:Zone.Identifier"))
+
+
 def cleanup_vestigial_external_tools() -> None:
     """清理存量 ZIP 版更新到内嵌版后不再被读取的外置 tools/ 目录。
 

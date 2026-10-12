@@ -56,6 +56,8 @@ Download from [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp-
 
 Users on 1.4.0 or later can update in place from the About dialog or the update prompt at startup.
 
+> **Nothing happens on double-click?** Windows may block files marked as downloaded from another computer: right-click the EXE → Properties → check "Unblock" at the bottom → OK, then double-click again. After one successful launch, the app clears this mark automatically.
+
 To run from source (for development; a plain wheel does not include `icons/` and `tools/`):
 
 ```powershell
