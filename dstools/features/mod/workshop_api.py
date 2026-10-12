@@ -763,6 +763,33 @@ class SteamWorkshopSession:
             return []
         if len(ids) > 50:
             raise ValueError("单次 Workshop 详情查询不能超过50项")
+        query_handle, api_call = self._send_details_query(ids)
+        return self._collect_details_query(query_handle, api_call, timeout)
+
+    def query_item_details_batches(
+        self, workshop_ids: list[int] | tuple[int, ...], *, timeout: float = 20.0
+    ) -> list[WorkshopItemDetails]:
+        """按每批50个查询任意数量的项目：所有批次先一起发出再逐个收取，几百个 Mod 只等约一次网络往返。
+
+        某一批发送或收取失败只丢这一批，其余批次的结果照常返回。"""
+        self._ensure_started()
+        ids = [int(item) for item in workshop_ids if int(item) > 0]
+        sent = []
+        for start in range(0, len(ids), 50):
+            try:
+                sent.append(self._send_details_query(ids[start : start + 50]))
+            except Exception:
+                continue
+        details: list[WorkshopItemDetails] = []
+        for query_handle, api_call in sent:
+            try:
+                details.extend(self._collect_details_query(query_handle, api_call, timeout))
+            except Exception:
+                continue
+        return details
+
+    def _send_details_query(self, ids: list[int]) -> tuple[int, int]:
+        """创建并发出一批详情查询，返回（查询句柄, API 调用）；调用方必须经 _collect_details_query 释放句柄。"""
         self._configure_query_calls()
         id_array = (ctypes.c_uint64 * len(ids))(*ids)
         query_handle = int(
@@ -785,6 +812,16 @@ class SteamWorkshopSession:
             )
             if not api_call:
                 raise RuntimeError("SendQueryUGCRequest 返回无效 API 调用")
+        except BaseException:
+            self.dll.SteamAPI_ISteamUGC_ReleaseQueryUGCRequest(self.ugc, query_handle)
+            raise
+        return query_handle, api_call
+
+    def _collect_details_query(
+        self, query_handle: int, api_call: int, timeout: float
+    ) -> list[WorkshopItemDetails]:
+        """等待一批详情查询完成并解析结果，无论成败都释放查询句柄。"""
+        try:
             completed = self._wait_query_call(api_call, timeout)
             if completed.result != _STEAM_RESULT_OK:
                 raise RuntimeError(
@@ -1928,15 +1965,13 @@ def _get_workshop_item_snapshot_in_process(
             info = session.item_install_details(workshop_id)
             if info is not None:
                 installs[workshop_id] = info
+        # 150+ Mod 会分成多批查询；某一批失败时保留其余批次已经取得的
+        # 远程版本和标题，其余项目再由 Klei 本地缓存降级，不能整批清空。
+        # 整个查询失败（如接口初始化出错）也不能连带丢掉上面已取得的本地状态。
         try:
-            for start in range(0, len(details_to_query), 50):
-                for item in session.query_item_details(
-                    details_to_query[start : start + 50], timeout=detail_timeout
-                ):
-                    details[item.workshop_id] = item
+            for item in session.query_item_details_batches(details_to_query, timeout=detail_timeout):
+                details[item.workshop_id] = item
         except Exception:
-            # 150+ Mod 会分成多批查询；后续某一批失败时保留此前已经取得的
-            # 远程版本和标题，其余项目再由 Klei 本地缓存降级，不能整批清空。
             pass
     return states, installs, details
 

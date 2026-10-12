@@ -1734,7 +1734,7 @@ def test_workshop_snapshot_uses_one_steam_session():
                 Path(f"C:/workshop/{workshop_id}"), 123, 456
             )
 
-        def query_item_details(self, workshop_ids, timeout=20.0):
+        def query_item_details_batches(self, workshop_ids, timeout=20.0):
             return [
                 workshop_api.WorkshopItemDetails(
                     workshop_id=item, result=1, title=f"Mod {item}"
@@ -1777,7 +1777,7 @@ def test_workshop_snapshot_uses_one_steam_session():
     assert set(details) == {33} and details[33].title == "Mod 33"
 
     class FailingTitleSession(FakeSession):
-        def query_item_details(self, workshop_ids, timeout=20.0):
+        def query_item_details_batches(self, workshop_ids, timeout=20.0):
             raise TimeoutError("模拟标题查询超时")
 
     opened.clear()
