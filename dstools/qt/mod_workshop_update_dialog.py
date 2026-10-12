@@ -214,9 +214,9 @@ class WorkshopUpdateDialog(QDialog):
         self._update_selected_btn.clicked.connect(self._update_selected)
         footer.addWidget(self._update_selected_btn)
         footer.addStretch()
-        self._update_all_btn = QPushButton(t("mod.update_all_btn"))
-        self._update_all_btn.clicked.connect(self._update_all)
-        footer.addWidget(self._update_all_btn)
+        self._quick_update_btn = QPushButton(t("mod.update_quick_btn"))
+        self._quick_update_btn.clicked.connect(self._quick_update)
+        footer.addWidget(self._quick_update_btn)
         self._cleanup_all_btn = QPushButton(t("mod.update_cleanup_all_btn"))
         self._cleanup_all_btn.clicked.connect(self._cleanup_all_residuals)
         footer.addWidget(self._cleanup_all_btn)
@@ -402,8 +402,10 @@ class WorkshopUpdateDialog(QDialog):
             for index, wid in enumerate(visible_ids):
                 self._rows_layout.addWidget(self._make_row(wid, index))
         self._rows_layout.addStretch()
-        actionable = [wid for wid in self._ids if self._can_select(wid)]
-        self._update_all_btn.setEnabled(bool(actionable) and not self._loading)
+        quick = self._quick_update_ids()
+        self._quick_update_btn.setText(
+            t("mod.update_quick_btn_count", count=len(quick)) if quick else t("mod.update_quick_btn"))
+        self._quick_update_btn.setEnabled(bool(quick) and not self._loading)
         self._update_cleanup_all_btn()
 
     def _selected_force_ids(self) -> list[str]:
@@ -610,8 +612,12 @@ class WorkshopUpdateDialog(QDialog):
     def _update_selected(self) -> None:
         self._confirm_and_update([wid for wid in self._ids if wid in self._selected and self._can_select(wid)])
 
-    def _update_all(self) -> None:
-        self._confirm_and_update([wid for wid in self._ids if self._can_select(wid)])
+    def _quick_update_ids(self) -> list[str]:
+        """一键更新的范围：处于"待更新"且可以直接更新的 Mod，已是最新的不再重复交给 Steam。"""
+        return [wid for wid in self._ids if self._can_select(wid) and self._states[wid].needs_action]
+
+    def _quick_update(self) -> None:
+        self._confirm_and_update(self._quick_update_ids())
 
     def _update_one(self, wid: str) -> None:
         self._confirm_and_update([wid])
