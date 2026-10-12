@@ -143,6 +143,7 @@ def resolve_legacy_package_version(workshop_id: int, archive_path: Path):
         normalize_version_result,
     )
     from dstools.features.mod.sandbox import resolve_mod_versions
+    from dstools.features.mod.version_cache import load_package_version_result, save_package_version_result
 
     archive = Path(archive_path)
     try:
@@ -164,11 +165,16 @@ def resolve_legacy_package_version(workshop_id: int, archive_path: Path):
                 cached = _PACKAGE_VERSION_CACHE.get(key)
                 if cached is not None and cached[:3] == fingerprint:
                     return cached[3]
-            source = package.read(info).decode("utf-8", errors="replace")
-        resolved = normalize_version_result(
-            resolve_mod_versions(source, folder_name=f"workshop-{int(workshop_id)}"),
-            "legacy_package",
-        )
+            source_bytes = package.read(info)
+        folder_name = f"workshop-{int(workshop_id)}"
+        # 内存缓存只在本次运行有效；磁盘缓存免得每次启动都给所有 V1 包各跑一遍 Lua 沙箱
+        result = load_package_version_result(str(workshop_id), archive, source_bytes, folder_name)
+        if result is None:
+            result = resolve_mod_versions(
+                source_bytes.decode("utf-8", errors="replace"), folder_name=folder_name)
+            if result is not None:
+                save_package_version_result(str(workshop_id), archive, source_bytes, folder_name, result)
+        resolved = normalize_version_result(result, "legacy_package")
         with _PACKAGE_VERSION_CACHE_LOCK:
             _PACKAGE_VERSION_CACHE[key] = (*fingerprint, resolved)
         return resolved
