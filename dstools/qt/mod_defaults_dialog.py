@@ -46,13 +46,14 @@ _STATES = {
 def _scan_configurable_mods(known_icons: dict) -> dict:
     """后台扫描：只保留有配置项的 Mod；图标先取已缓存的 PNG，没有的留给第二轮转换。"""
     from dstools.features.mod.icons import get_cached_mod_icon_path, load_mod_icon_image
-    from dstools.features.mod.parser import find_mod_folder, list_installed_mod_ids, parse_modinfo
+    from dstools.features.mod.modinfo_cache import parse_modinfo_cached
+    from dstools.features.mod.parser import find_mod_folder, list_installed_mod_ids
 
     infos, folders, icons, icon_todo = {}, {}, {}, []
     for wid in list_installed_mod_ids():
         try:
             folder = find_mod_folder(wid)
-            info = parse_modinfo(folder) if folder else None
+            info = parse_modinfo_cached(folder) if folder else None
         except Exception:
             continue
         if not info or not (info.config_options or info.unsupported_schema):

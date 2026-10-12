@@ -34,13 +34,14 @@ def sync_available(ctx) -> bool:
 
 def _client_only_keys() -> set[str]:
     """本机已安装的 client_only Mod：它们的全局配置文件不带 _CLIENT 后缀。"""
-    from dstools.features.mod.parser import find_mod_folder, list_installed_mod_ids, parse_modinfo
+    from dstools.features.mod.modinfo_cache import parse_modinfo_cached
+    from dstools.features.mod.parser import find_mod_folder, list_installed_mod_ids
 
     keys = set()
     for wid in list_installed_mod_ids():
         try:
             folder = find_mod_folder(wid)
-            info = parse_modinfo(folder) if folder else None
+            info = parse_modinfo_cached(folder) if folder else None
         except Exception:
             continue
         if info and info.client_only:

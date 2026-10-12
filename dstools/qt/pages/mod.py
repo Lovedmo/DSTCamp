@@ -29,9 +29,10 @@ from dstools.features.mod.list_model import (
 from dstools.features.mod.local_version import resolve_local_version_target
 from dstools.features.mod.locations import resolve_mod_open_location
 from dstools.features.mod.manager import enable_mod, load_mod_overrides, save_mod_overrides, sync_mods
+from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 from dstools.features.mod.parser import (
     find_game_mods_dir, find_mod_folder, find_wegame_client_dir, find_wegame_server_dir,
-    is_dedicated_server_mods_dir, list_installed_mod_ids, parse_modinfo, resolve_full_modinfo,
+    is_dedicated_server_mods_dir, list_installed_mod_ids, resolve_full_modinfo,
     resolve_wegame_client_mods_dir,
 )
 from dstools.features.mod.sandbox_apply import apply_full_sandbox_result
@@ -602,6 +603,7 @@ class ModPage(Page):
         """跑在线程池里——不能碰任何 Qt 对象。本地存档以 Master/save/shardindex 为准（游戏开服时据此重写 modoverrides.lua）。"""
         mod_data, mod_infos, mod_paths, icon_imgs = {}, {}, {}, {}
         icon_targets = []
+        cached_icon_targets = []
         version_targets = []
         luajit_active = False
         if local_index is not None:
@@ -645,7 +647,7 @@ class ModPage(Page):
                 if cached is not None:
                     mod_info = cached
                 else:
-                    mod_info = parse_modinfo(mod_folder) if mod_folder else None
+                    mod_info = parse_modinfo_cached(mod_folder) if mod_folder else None
                     if full and mod_info and mod_folder:
                         modinfo_path = mod_folder / "modinfo.lua"
                         result = load_cached_result(wid, modinfo_path)
@@ -659,20 +661,19 @@ class ModPage(Page):
                 # Mod 可能在运行期间被 Steam 更新；version_cache 按内容哈希判断，没变时立即返回
                 if mod_info and mod_folder and not full:
                     version_targets.append((wid, mod_folder, mod_info.workshop_id))
-                if mod_info and mod_folder and wid not in icon_imgs:
+                if mod_info and mod_folder:
+                    # 这里只判断缓存是否有效；读图放到列表显示之后，Mod 多时能少挡几百毫秒
                     cached_icon = get_cached_mod_icon_path(mod_info, mod_folder, platform)
                     if cached_icon is not None:
-                        try:
-                            icon_imgs[wid] = load_mod_icon_image(cached_icon)
-                        except Exception:
-                            icon_targets.append((wid, mod_info, mod_folder))
+                        cached_icon_targets.append((wid, cached_icon, mod_info, mod_folder))
                     else:
                         icon_targets.append((wid, mod_info, mod_folder))
             except Exception:
                 mod_infos.setdefault(wid, None)
         self.ctx.mod_catalog.publish(platform, mod_infos, mod_paths, icon_imgs, wegame_client_mods_dir)
         return dict(mod_data=mod_data, mod_infos=mod_infos, mod_paths=mod_paths, icon_imgs=icon_imgs,
-                   icon_targets=icon_targets, version_targets=version_targets,
+                   icon_targets=icon_targets, cached_icon_targets=cached_icon_targets,
+                   version_targets=version_targets,
                    full_resolved_cache=full_resolved_cache,
                    luajit_active=luajit_active, platform=platform,
                    wegame_client_mods_dir=wegame_client_mods_dir)
@@ -695,34 +696,40 @@ class ModPage(Page):
         self._update_enabled_count()
         self._refresh_workshop_update_button_state()
         self._render_list()
+        platform, wegame_dir = result["platform"], result["wegame_client_mods_dir"]
+
+        def apply_icons(icons: dict) -> None:
+            if gen != self._refresh_gen or not icons:
+                return
+            self._icon_imgs.update(icons)
+            self.ctx.mod_catalog.update_icons(platform, icons, wegame_dir)
+            self._render_list()
+
         icon_targets = result["icon_targets"]
-        if icon_targets:
-            platform, wegame_dir = result["platform"], result["wegame_client_mods_dir"]
-
-            def work():
-                icons = {}
-                for wid, mod_info, mod_folder in icon_targets:
+        cached_icon_targets = result["cached_icon_targets"]
+        if cached_icon_targets:
+            # 已缓存的图标单独一个任务先读，不排在需要 ktech 转换的图标后面；读失败的转交转换任务
+            def load_cached():
+                icons, failed = {}, []
+                for wid, path, mod_info, mod_folder in cached_icon_targets:
                     try:
-                        path = get_mod_icon_path(mod_info, mod_folder, platform)
-                        if path is not None:
-                            icons[wid] = load_mod_icon_image(path)
+                        icons[wid] = load_mod_icon_image(path)
                     except Exception:
-                        continue
-                return icons
+                        failed.append((wid, mod_info, mod_folder))
+                return icons, failed
 
-            def done(icons: dict) -> None:
-                if gen != self._refresh_gen or not icons:
-                    return
-                self._icon_imgs.update(icons)
-                self.ctx.mod_catalog.update_icons(platform, icons, wegame_dir)
-                self._render_list()
+            def cached_done(loaded) -> None:
+                icons, failed = loaded
+                apply_icons(icons)
+                if failed:
+                    self._convert_icons(gen, failed, platform, apply_icons)
 
-            run_async(work, done, lambda _exc: None)
+            run_async(load_cached, cached_done, lambda _exc: None)
+        if icon_targets:
+            self._convert_icons(gen, icon_targets, platform, apply_icons)
 
         version_targets = result["version_targets"]
         if version_targets:
-            platform, wegame_dir = result["platform"], result["wegame_client_mods_dir"]
-
             def work():
                 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -760,6 +767,24 @@ class ModPage(Page):
 
             run_async(work, done, lambda _exc: None)
         self._refresh_main_workshop_status(gen)
+
+    def _convert_icons(self, gen: int, targets: list, platform, on_done) -> None:
+        """后台转换（必要时调用 ktech）并读取图标，完成后在界面线程交给 on_done。"""
+        if gen != self._refresh_gen:
+            return
+
+        def work():
+            icons = {}
+            for wid, mod_info, mod_folder in targets:
+                try:
+                    path = get_mod_icon_path(mod_info, mod_folder, platform)
+                    if path is not None:
+                        icons[wid] = load_mod_icon_image(path)
+                except Exception:
+                    continue
+            return icons
+
+        run_async(work, on_done, lambda _exc: None)
 
     # ── 渲染 ────────────────────────────────────────────────────────────
     def _build_rows(self):

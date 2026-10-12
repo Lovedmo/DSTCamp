@@ -675,5 +675,30 @@ def test_mod_config_memory_two_way_sync():
         assert report.conflicts == [(game_file.name, "game")] and cm.recall("workshop-9", path=mem)["a"] == 4
 
 
+def test_modinfo_cache_invalidates_on_edit_and_skips_lossy_results():
+    import dstools.features.mod.modinfo_cache as modinfo_cache
+    from dstools.features.mod.parser import ModConfigOption
+
+    with tempfile.TemporaryDirectory() as temp:
+        folder = Path(temp) / "workshop-123"
+        folder.mkdir()
+        modinfo = folder / "modinfo.lua"
+        with patch.object(modinfo_cache, "_CACHE_DIR", Path(temp) / "cache"):
+            modinfo.write_text('name = "A"\nversion = "1.0"\n', encoding="utf-8")
+            assert modinfo_cache.parse_modinfo_cached(folder).version == "1.0"
+            # 第二次读缓存；改了内容必须重新解析
+            assert modinfo_cache.parse_modinfo_cached(folder).version == "1.0"
+            modinfo.write_text('name = "A"\nversion = "2.0"\n', encoding="utf-8")
+            assert modinfo_cache.parse_modinfo_cached(folder).version == "2.0"
+
+            # JSON 存不住元组：不能缓存，否则下次读回来变成列表
+            lossy = ModInfo(name="B", config_options=[ModConfigOption(name="o", default=(1, 2))])
+            with patch.object(modinfo_cache, "parse_modinfo", return_value=lossy):
+                modinfo.write_text('name = "B"\n', encoding="utf-8")
+                assert modinfo_cache.parse_modinfo_cached(folder) is lossy
+            assert all('"name": "B"' not in p.read_text(encoding="utf-8")
+                       for p in (Path(temp) / "cache").glob("*.json"))
+
+
 if __name__ == "__main__":
     run(globals())
