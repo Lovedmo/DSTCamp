@@ -36,8 +36,12 @@ class ManifestVerification:
 def sdbm_path_hash(relative_path: str) -> int:
     """游戏 Manifest 使用的 SDBM 路径哈希（路径统一为小写正斜杠，已用真实样本验证）。"""
     normalized = str(relative_path).replace("\\", "/").strip("/").lower()
-    value = 0
-    for byte in normalized.encode("utf-8"):
+    return _sdbm_extend(0, normalized)
+
+
+def _sdbm_extend(value: int, text: str) -> int:
+    """从已有哈希值接着累加 text：SDBM 逐字节流式计算，目录前缀的结果可以给下面所有文件复用。"""
+    for byte in text.encode("utf-8"):
         # 游戏原生实现的 ``char`` 在 Windows 构建中为有符号类型；ASCII
         # 结果相同，但中文等 UTF-8 高位字节必须按 -128..-1 参与运算。
         if byte >= 0x80:
@@ -82,16 +86,27 @@ def verify_mod_manifest(
         return ManifestVerification(False, None)
     try:
         manifest = load_mod_manifest(manifest_path)
-        # rglob 在大量 Mod 的目录中开销很高：只跟踪未命中的声明哈希，全部命中立即停止
+        # Mod 多时文件有好几万个：只跟踪未命中的声明哈希，全部命中立即停止；
+        # 每个目录的"相对路径/"前缀哈希只算一次，文件只再累加文件名
         expected = set(manifest.path_hashes)
         missing_set = set(expected)
-        for current_root, _dirs, files in os.walk(mod_folder):
-            for filename in files:
-                full_path = os.path.join(current_root, filename)
-                relative = os.path.relpath(full_path, mod_folder).replace(os.sep, "/")
-                missing_set.discard(sdbm_path_hash(relative))
-            if not missing_set:
-                break
+        pending = [(str(mod_folder), 0)]
+        while pending and missing_set:
+            directory, prefix_hash = pending.pop()
+            try:
+                entries = list(os.scandir(directory))
+            except OSError:
+                continue  # 与原先 os.walk 一致：读不了的目录跳过
+            for entry in entries:
+                try:
+                    is_dir = entry.is_dir()
+                except OSError:
+                    is_dir = False
+                if not is_dir:
+                    missing_set.discard(_sdbm_extend(prefix_hash, entry.name.lower()))
+                elif not (entry.is_symlink() or entry.is_junction()):
+                    # 与 os.walk 默认一致：链接目录不展开
+                    pending.append((entry.path, _sdbm_extend(prefix_hash, entry.name.lower() + "/")))
         missing = tuple(sorted(missing_set))
         return ManifestVerification(
             True,
