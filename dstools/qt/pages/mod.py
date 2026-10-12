@@ -580,11 +580,12 @@ class ModPage(Page):
                 luajit_bin64_dir = find_bin64_dir(install_dir)
         full_resolved_cache = dict(self._full_resolved_cache)
         overrides_path = shard.mod_overrides_path
+        first_screen = (self._row_filter_args(), self._first_screen_count())
 
         def work():
             return self._load_mods_worker(
                 overrides_path, full, platform, wegame_client_mods_dir, steam_runtime_mods_dir,
-                luajit_bin64_dir, full_resolved_cache, local_index)
+                luajit_bin64_dir, full_resolved_cache, local_index, first_screen)
 
         def done(result) -> None:
             self._apply_loaded_mods(gen, result)
@@ -599,7 +600,8 @@ class ModPage(Page):
         run_async(work, done, error)
 
     def _load_mods_worker(self, overrides_path, full, platform, wegame_client_mods_dir,
-                          steam_runtime_mods_dir, luajit_bin64_dir, full_resolved_cache, local_index=None):
+                          steam_runtime_mods_dir, luajit_bin64_dir, full_resolved_cache, local_index=None,
+                          first_screen=None):
         """跑在线程池里——不能碰任何 Qt 对象。本地存档以 Master/save/shardindex 为准（游戏开服时据此重写 modoverrides.lua）。"""
         mod_data, mod_infos, mod_paths, icon_imgs = {}, {}, {}, {}
         icon_targets = []
@@ -670,6 +672,9 @@ class ModPage(Page):
                         icon_targets.append((wid, mod_info, mod_folder))
             except Exception:
                 mod_infos.setdefault(wid, None)
+        if first_screen is not None and cached_icon_targets:
+            self._preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
+                                             icon_imgs, cached_icon_targets)
         self.ctx.mod_catalog.publish(platform, mod_infos, mod_paths, icon_imgs, wegame_client_mods_dir)
         return dict(mod_data=mod_data, mod_infos=mod_infos, mod_paths=mod_paths, icon_imgs=icon_imgs,
                    icon_targets=icon_targets, cached_icon_targets=cached_icon_targets,
@@ -677,6 +682,28 @@ class ModPage(Page):
                    full_resolved_cache=full_resolved_cache,
                    luajit_active=luajit_active, platform=platform,
                    wegame_client_mods_dir=wegame_client_mods_dir)
+
+    @staticmethod
+    def _preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
+                                    icon_imgs, cached_icon_targets) -> None:
+        """按界面同样的排序和筛选算出首屏的 Mod，先读它们已缓存的图标，列表一出现就有图；
+        其余留在 cached_icon_targets 里等列表显示后再读。读失败的也留下，由后台任务转换。"""
+        filter_args, count = first_screen
+        priority_mod_id = luajit_injector.WORKSHOP_MOD_KEY if luajit_active else None
+        rows = build_mod_rows(sort_mod_data(mod_data, mod_infos, priority_mod_id=priority_mod_id), mod_infos,
+                              platform=platform, locked_mod_id=priority_mod_id, **filter_args)
+        wanted = {row["workshop_id"] for row in rows[:count]}
+        remaining = []
+        for target in cached_icon_targets:
+            wid, path = target[0], target[1]
+            if wid in wanted:
+                try:
+                    icon_imgs[wid] = load_mod_icon_image(path)
+                    continue
+                except Exception:
+                    pass
+            remaining.append(target)
+        cached_icon_targets[:] = remaining
 
     def _apply_loaded_mods(self, gen: int, result: dict) -> None:
         if gen != self._refresh_gen:
@@ -791,12 +818,8 @@ class ModPage(Page):
         cluster = self.get_cluster()
         platform = cluster.platform if cluster else Platform.STEAM
         locked_id = luajit_injector.WORKSHOP_MOD_KEY if self._luajit_mod_locked else None
-        show_map = {0: "all", 1: "enabled", 2: "disabled", 3: "custom", 4: "client"}
-        show = show_map[self._filter_tabs.current_index()]
-        # "全部"同时列出客户端模组；"客户端模组"只列它们；其余筛选只看服务端 Mod
-        rows = build_mod_rows(self._mod_data, self._mod_infos, self._filter_edit.text(), show, platform,
-                              show_local=show == "client", separate_client_mods=show != "all",
-                              locked_mod_id=locked_id)
+        rows = build_mod_rows(self._mod_data, self._mod_infos, platform=platform, locked_mod_id=locked_id,
+                              **self._row_filter_args())
         from dstools.features.mod.parser import detect_mod_format, find_workshop_dir
 
         workshop_root = find_workshop_dir()
@@ -813,6 +836,22 @@ class ModPage(Page):
                 row["name"] = row["name"] or t("mod.reference_missing_name")
                 row["version_text"] = referenced_missing_status_text(status)
         return rows
+
+    def _row_filter_args(self) -> dict:
+        """当前筛选页签与搜索词对应的 build_mod_rows 参数（界面线程读取，可交给后台线程用）。"""
+        show_map = {0: "all", 1: "enabled", 2: "disabled", 3: "custom", 4: "client"}
+        show = show_map[self._filter_tabs.current_index()]
+        # "全部"同时列出客户端模组；"客户端模组"只列它们；其余筛选只看服务端 Mod
+        return dict(query=self._filter_edit.text(), show=show,
+                    show_local=show == "client", separate_client_mods=show != "all")
+
+    def _first_screen_count(self) -> int:
+        """首屏能显示几个 Mod；页面还没显示时列表尺寸未定，按窗口尺寸估计（宁多勿少）。"""
+        panel = self._list_panel
+        if panel.isVisible() and panel.viewport().height() > 100:
+            return panel.first_screen_count()
+        window = self.window()
+        return panel.first_screen_count(window.width(), window.height())
 
     def _render_list(self) -> None:
         if self._loading:

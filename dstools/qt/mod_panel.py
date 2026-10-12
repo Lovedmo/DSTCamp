@@ -116,6 +116,14 @@ class ModListPanel(QAbstractScrollArea):
         self._update_scrollbar()
         self.viewport().update()
 
+    def first_screen_count(self, width: int | None = None, height: int | None = None) -> int:
+        """不滚动时首屏能显示几项（含最后一行露出一部分的），按当前列数；1 列和多列格子行距相同。
+        控件还没显示、尺寸未定时由调用方传入估计的宽高。"""
+        m = _Metrics(width or self.viewport().width())
+        view_h = height or self.viewport().height()
+        lines = int(max(0.0, view_h - m.pad_x) // m.row_step) + 1
+        return lines * self._column_count
+
     def set_center_message(self, text: str) -> None:
         """设置列表为空时首行位置显示的提示文字；传空串取消。"""
         if text != self._center_message:
