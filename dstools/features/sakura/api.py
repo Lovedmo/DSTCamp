@@ -6,6 +6,7 @@
 
 import hashlib
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,8 +21,10 @@ _USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/
 
 # /nodes 返回的 flag 位域（见 github.com/natfrp/api 的 openapi.yaml）。
 _NODE_FLAG_ALLOW_CREATE = 1 << 2
+_NODE_FLAG_MAINLAND = 1 << 3
 _NODE_FLAG_UDP = 1 << 5
 _NODE_FLAG_OFFLINE = 1 << 9
+_NODE_FLAG_PUBLIC_GAME = 1 << 11  # 官方说明："是否允许穿透公开游戏"
 
 
 class SakuraApiError(Exception):
@@ -120,6 +123,34 @@ def node_supports_udp(node: dict) -> bool:
 def node_accepts_new_tunnel(node: dict) -> bool:
     flag = node.get("flag", 0)
     return bool(flag & _NODE_FLAG_ALLOW_CREATE) and not (flag & _NODE_FLAG_OFFLINE)
+
+
+def node_is_mainland(node: dict) -> bool:
+    return bool(node.get("flag", 0) & _NODE_FLAG_MAINLAND)
+
+
+def node_allows_public_game(node: dict) -> bool:
+    return bool(node.get("flag", 0) & _NODE_FLAG_PUBLIC_GAME)
+
+
+def get_node_loads(token: str) -> dict[int, float]:
+    """``GET /node/stats``：{节点ID: 负载百分比}，离线（online 为 -1）的节点不返回。"""
+    data = _request(token, "GET", "/node/stats") or {}
+    loads = {}
+    for item in (data.get("nodes") or []) if isinstance(data, dict) else []:
+        load = item.get("load")
+        if item.get("online", 0) >= 0 and isinstance(load, (int, float)):
+            loads[int(item["id"])] = float(load)
+    return loads
+
+
+def node_sort_key(node: dict, eligible: bool) -> tuple:
+    """中国大陆在前 → 组内可选的在前 → VIP 等级从低到高 → 名称自然排序（"PLUS2" 排在 "PLUS10" 前）。
+    不按负载排：负载是实时值，每次刷新顺序都会跳。"""
+    name = str(node.get("name") or "")
+    natural = tuple((0, int(part), "") if part.isdigit() else (1, 0, part)
+                    for part in re.split(r"(\d+)", name) if part)
+    return not node_is_mainland(node), not eligible, node.get("vip", 0), natural
 
 
 def sanitize_tunnel_name(cluster_folder_name: str, shard_name: str, source: str, platform: str,

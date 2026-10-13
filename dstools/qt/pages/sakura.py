@@ -159,6 +159,7 @@ class _SakuraMappingPanel(QWidget):
         self._current_cluster = None
         self._tunnels_by_key: dict[tuple[str, str], dict] = {}
         self._nodes: dict[str, dict] = {}
+        self._node_loads: dict[int, float] = {}
         self._node_choices: list[tuple[int, dict, bool]] = []
         self._selected_node_id: int | None = None
         self._my_group_level = 0
@@ -304,14 +305,37 @@ class _SakuraMappingPanel(QWidget):
     def _open_node_picker(self) -> None:
         if not self._node_choices:
             return
-        choices = [NodeChoice(node_id, node.get("name", str(node_id)), self._node_tag(node), eligible)
-                   for node_id, node, eligible in self._node_choices]
-        dialog = NodePickerDialog(self.window(), t("sakura.node_picker_title"), choices, self._selected_node_id)
+        dialog = NodePickerDialog(self.window(), t("sakura.node_picker_title"), self._build_picker_choices(),
+                                  self._selected_node_id)
         if not dialog.exec() or dialog.result_id is None:
             return
         self._selected_node_id = dialog.result_id
         app_settings.set_sakura_last_node_id(dialog.result_id)
         self._update_node_display()
+
+    def _build_picker_choices(self) -> list[NodeChoice]:
+        """按中国大陆 / 海外及港澳台分组（_node_choices 已按 node_sort_key 排好），卡片上补充实时负载、
+        "可穿透公开游戏"和高负载标记，悬停显示节点说明。"""
+        mainland_count = sum(1 for _nid, node, _ok in self._node_choices if sakura_frp.node_is_mainland(node))
+        overseas_count = len(self._node_choices) - mainland_count
+        choices = []
+        for node_id, node, eligible in self._node_choices:
+            load = self._node_loads.get(node_id)
+            detail = self._node_tag(node)
+            if load is not None:
+                detail = t("sakura.node_tag_load", tag=detail, load=f"{load:.0f}%")
+            badges = []
+            if sakura_frp.node_allows_public_game(node):
+                badges.append((t("sakura.node_public_game"), "SUCCESS"))
+            if load is not None and round(load) >= 80:  # 与卡片上显示的整数一致
+                badges.append((t("sakura.node_high_load"), "ERROR"))
+            group = (t("sakura.node_group_mainland", count=mainland_count) if sakura_frp.node_is_mainland(node)
+                     else t("sakura.node_group_overseas", count=overseas_count))
+            # 官方说明用 " | " 分隔多条提示，悬停时分行显示
+            tooltip = "\n".join(p.strip() for p in str(node.get("description") or "").split("|") if p.strip())
+            choices.append(NodeChoice(node_id, str(node.get("name", node_id)), detail, eligible,
+                                      group=group, badges=badges, tooltip=tooltip))
+        return choices
 
     @staticmethod
     def _node_tag(node: dict) -> str:
@@ -344,6 +368,10 @@ class _SakuraMappingPanel(QWidget):
         def work():
             user_info = sakura_frp.get_user_info(token)
             nodes = sakura_frp.list_nodes(token)
+            try:
+                node_loads = sakura_frp.get_node_loads(token)
+            except sakura_frp.SakuraApiError:
+                node_loads = {}  # 负载只是参考信息，取不到不影响选节点
             tunnels = sakura_frp.list_tunnels(token)
             by_key = {}
             if cluster and cluster.source == SaveSource.SERVER:
@@ -376,7 +404,7 @@ class _SakuraMappingPanel(QWidget):
                     occupant_tunnel = self._find_cluster_tunnel(tunnels, c, shard)
                     if occupant_tunnel:
                         occupants.append(f"{c.name}（{shard.name}）")
-            return user_info, nodes, by_key, recent_bytes, len(tunnels), occupants
+            return user_info, nodes, node_loads, by_key, recent_bytes, len(tunnels), occupants
 
         def done(result) -> None:
             self._apply_loaded(*result, gen, cluster_key, token)
@@ -398,10 +426,12 @@ class _SakuraMappingPanel(QWidget):
         self._recent_traffic_label.setText("")
         self._status_label.setText(t("sakura.api_error", detail=str(exc)))
 
-    def _apply_loaded(self, user_info, nodes, by_key, recent_bytes, tunnel_count, occupants, gen, cluster_key, token) -> None:
+    def _apply_loaded(self, user_info, nodes, node_loads, by_key, recent_bytes, tunnel_count, occupants,
+                      gen, cluster_key, token) -> None:
         if not self._reload_is_current(gen, cluster_key, token):
             return
         self._nodes = nodes
+        self._node_loads = node_loads
         self._tunnels_by_key = by_key
         self._tunnel_count = tunnel_count
         self._tunnel_occupants = list(occupants)
@@ -420,7 +450,7 @@ class _SakuraMappingPanel(QWidget):
                 continue
             eligible = node.get("vip", 0) <= self._my_group_level
             self._node_choices.append((int(node_id_str), node, eligible))
-        self._node_choices.sort(key=lambda item: (not item[2], item[1].get("vip", 0)))
+        self._node_choices.sort(key=lambda item: sakura_frp.node_sort_key(item[1], item[2]))
 
         last_node_id = app_settings.get_sakura_last_node_id()
         eligible_ids = [nid for nid, _n, ok in self._node_choices if ok]
