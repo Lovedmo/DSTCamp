@@ -1058,9 +1058,10 @@ MOD_ICON_ATLAS: dict[str, tuple[str, str]] = {
 
 
 # workshop-3811652910 == 三合一测试mod（岛屿冒险核心/海难 + 云霄国度 + 补丁 + 兼容层整合版），
-# 0.1.4-public-test.22。integrated_loader.lua 按 core→sw→pl→patch→compat 在各自子环境执行原 Mod
-# 入口；注册世界设置的 modservercreationmain.lua / modcustomizeitems.lua 及三张图集 XML 与本机
-# 独立版 3435352667 1.0.77 / 1467214795 1.0.62 / 3322803908 1.0.50 逐字节相同，patch/compat 不注册
+# 已核对到 0.1.4-public-test.31（内含 core 1.0.77 / sw 1.0.62 / pl 1.0.50）。integrated_loader.lua 按
+# core→sw→pl→patch→compat 在各自子环境执行原 Mod 入口；注册世界设置的 modservercreationmain.lua /
+# modcustomizeitems.lua 及三张图集与本机独立版 3435352667 1.0.79 / 1467214795 1.0.62 /
+# 3322803908 1.0.50 逐字节相同，patch/compat 不注册
 # 新条目，故直接复用三张登记表。图集被 shared_assets.lua 映射到 Mod 根目录的同名路径。
 # 同名 poison 按 core 先注册生效（AddCustomizeItem 遇已注册 name 直接 return）。
 _THREE_WORLDS_ID = "3811652910"
