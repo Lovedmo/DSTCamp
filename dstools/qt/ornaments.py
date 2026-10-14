@@ -49,7 +49,7 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         # 右上呼应：拐角一朵大花，沿上边往左、沿右边往下各一串
         Sprite("sakura_spray_corner.png", 1, 0, -228.5, 132, 322),
         # 右下角：拐角几朵大花，花朵花瓣沿下边缘向左散落、越往左越贴边越稀，右边花朵上方也飘几片；左下角留白
-        Sprite("sakura_spray_bottom.png", 1, 1, -179, -83.5, 187),
+        Sprite("sakura_spray_bottom.png", 1, 1, -180.5, -84.5, 185),
     ),
 }
 
