@@ -23,6 +23,6 @@ campfire_fire.png 中的篝火
   修改：删除投影
 
 campfire_spray_right.png、campfire_spray_down.png、campfire_spray_corner.png、campfire_fire.png
-  连接叶片的褐色细枝、篝火上方的火星为本项目自绘
+  连接叶片的褐色细枝、篝火上方的火星、篝火底下的暖光为本项目自绘
 
 以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。

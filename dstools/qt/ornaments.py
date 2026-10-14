@@ -42,15 +42,15 @@ class Sprite:
 
 _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "campfire": (
-        # 从左上角沿上边框向右、沿左边框向下各一根细枝挂着秋叶，末端收向外框线，落叶渐稀渐淡
-        Sprite("campfire_spray_right.png", 0, 0, 286.5, -21, 72),
-        Sprite("campfire_spray_down.png", 0, 0, -23, 226, 456),
-        # 左上主角：几片大叶压在拐角上，后创建的小窗叠在细枝上面
-        Sprite("campfire_cluster.png", 0, 0, 8.5, 2.5, 77),
-        # 右上呼应：拐角一片大枫叶，沿上边往左、沿右边往下各一小段细枝
-        Sprite("campfire_spray_corner.png", 1, 0, -107.5, 59.5, 209),
-        # 右下收尾：篝火跨在拐角上，火星沿右边框往上飘，下边缘往左散几片落叶；左下角留白
-        Sprite("campfire_fire.png", 1, 1, -108.5, -157, 350),
+        # 从左上角贴着上边框向右、贴着左边框向下各一根挂满秋叶的细枝，末端收到外框线上，落叶渐稀渐淡
+        Sprite("campfire_spray_right.png", 0, 0, 307, -9.5, 61),
+        Sprite("campfire_spray_down.png", 0, 0, -11, 242, 500),
+        # 左上主角：一簇大叶压在拐角上，后创建的小窗叠在细枝上面
+        Sprite("campfire_cluster.png", 0, 0, 8, 1.5, 93),
+        # 右上呼应：拐角一片大枫叶，沿上边往左、沿右边往下各一段挂叶细枝
+        Sprite("campfire_spray_corner.png", 1, 0, -153.5, 94.5, 253),
+        # 右下收尾：拐角铺一圈落叶，篝火跨在拐角上、底下一层暖光，火星贴着右边框往上飘；左下角留白
+        Sprite("campfire_fire.png", 1, 1, -147, -150.5, 337),
     ),
     "sakura": (
         # 从左上角沿上边框向右、沿左边框向下各一串花朵、花蕾，粉色细茎相连，末端收向外框线、花瓣渐稀渐淡
