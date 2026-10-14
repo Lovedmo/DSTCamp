@@ -4,8 +4,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $owner = 'orange-blade'
-$repo = 'DSTCamp-chengzhiren'
-$githubRepo = 'chengzhirenchaoshuai/DSTCamp-chengzhiren'
+$repo = 'DSTCamp'
+$githubRepo = 'chengzhirenchaoshuai/DSTCamp'
 $keepCount = 3
 $tokenPath = Join-Path $PSScriptRoot '..\reference\gitee_token.txt'
 

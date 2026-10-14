@@ -13,8 +13,8 @@ from dstools.shared.ssl_context import default_ssl_context
 
 _TIMEOUT = 8
 _SOURCES = (
-    ("gitee", "https://gitee.com/api/v5/repos/orange-blade/DSTCamp-chengzhiren/releases/latest"),
-    ("github", "https://api.github.com/repos/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases/latest"),
+    ("gitee", "https://gitee.com/api/v5/repos/orange-blade/DSTCamp/releases/latest"),
+    ("github", "https://api.github.com/repos/chengzhirenchaoshuai/DSTCamp/releases/latest"),
 )
 # 本地端到端验证自动更新用：设置该环境变量后只从此地址读取发布信息（格式同 releases/latest），
 # 为防被利用只接受本机回环地址
@@ -59,7 +59,7 @@ def _parse_release(data: dict, source: str) -> UpdateRelease | None:
     page_url = str(data.get("html_url") or "").strip()
     if tag and source == "gitee" and not page_url:
         page_url = (
-            "https://gitee.com/orange-blade/DSTCamp-chengzhiren/releases/tag/"
+            "https://gitee.com/orange-blade/DSTCamp/releases/tag/"
             + tag
         )
     if not tag or not page_url:

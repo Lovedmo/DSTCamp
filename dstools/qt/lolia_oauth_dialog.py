@@ -17,7 +17,7 @@ from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
 from dstools.shared import app_settings
 
-_HOMEPAGE = "https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren"
+_HOMEPAGE = "https://github.com/chengzhirenchaoshuai/DSTCamp"
 
 
 class LoliaOAuthAppDialog(dialogs.Dialog):

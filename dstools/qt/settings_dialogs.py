@@ -608,7 +608,7 @@ class AboutDialog(dialogs.Dialog):
         if desc_text:
             self.body.addWidget(self.text_label(desc_text))
 
-        repo_url = "https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren"
+        repo_url = "https://github.com/chengzhirenchaoshuai/DSTCamp"
         repo_row = QHBoxLayout()
         repo_row.addWidget(self.text_label(t("about.repo_label"), size_key="FONT_SIZE_SM"))
         repo_link = QLabel(f'<a href="{repo_url}">{t("about.repo_link_text")}</a>')

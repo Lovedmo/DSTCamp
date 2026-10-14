@@ -33,7 +33,7 @@ TOKEN_URL = f"{API_BASE}/oauth2/token"
 SCOPES = "user:read tunnel:read tunnel:write node:read traffic:read"
 REDIRECT_PATH = "/callback"
 REMARK_PREFIX = "DSTCamp "
-_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren)"
+_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp)"
 _REFRESH_MARGIN_SECONDS = 300
 _token_lock = threading.Lock()
 

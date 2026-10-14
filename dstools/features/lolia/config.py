@@ -28,7 +28,7 @@ from dstools.shared.ssl_context import default_ssl_context
 
 API_BASE = "https://api.lolia.link/api/v1"
 DASHBOARD_URL = "https://dash.lolia.link"
-_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren)"
+_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp)"
 _BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 
 

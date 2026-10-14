@@ -56,7 +56,7 @@ python scripts/build_exe.py
 ## Gitee 发行版
 
 - 说明不能含表情符号（同步脚本已自动去掉）和"代理"等字样，否则整段被替换为"内容可能含有违规信息"；改用"TUN 虚拟网卡"等说法。
-- 同步后用 `GET /api/v5/repos/orange-blade/DSTCamp-chengzhiren/releases/tags/vX.Y.Z` 回读说明与附件，被替换时改写后 `PATCH .../releases/{id}`。
+- 同步后用 `GET /api/v5/repos/orange-blade/DSTCamp/releases/tags/vX.Y.Z` 回读说明与附件，被替换时改写后 `PATCH .../releases/{id}`。
 - 本机没有 git 凭据，`git push gitee` 会卡住：用临时 `GIT_ASKPASS` 读 `reference/gitee_token.txt`（用户名 `orange-blade`），令牌不写进 URL、命令行或配置。
 
 ## 关键约束

@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases"><img alt="Release" src="https://img.shields.io/github/v/release/chengzhirenchaoshuai/DSTCamp-chengzhiren?color=orange"></a>
+  <a href="https://github.com/chengzhirenchaoshuai/DSTCamp/releases"><img alt="Release" src="https://img.shields.io/github/v/release/chengzhirenchaoshuai/DSTCamp?color=orange"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue">
   <img alt="UI" src="https://img.shields.io/badge/UI-Qt%20(PySide6)-41cd52">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-informational">
@@ -47,7 +47,7 @@ Also included: Chinese/English UI, five themes, three fonts with four size level
 
 ## 📦 Download and run
 
-Download from [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases) or [Gitee Releases](https://gitee.com/orange-blade/DSTCamp-chengzhiren/releases):
+Download from [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp/releases) or [Gitee Releases](https://gitee.com/orange-blade/DSTCamp/releases):
 
 | File | Description |
 |---|---|

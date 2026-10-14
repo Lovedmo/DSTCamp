@@ -15,7 +15,7 @@ from dstools import __version__
 from dstools.shared.ssl_context import default_ssl_context
 
 _API_BASE = "https://api.natfrp.com/v4"
-_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren)"
+_USER_AGENT = f"DSTCamp/{__version__} (+https://github.com/chengzhirenchaoshuai/DSTCamp)"
 
 # 坑：樱花的 Cloudflare WAF 会以 403（error code: 1010）拦截默认的 Python-urllib UA，换一个自定义 UA 即可
 

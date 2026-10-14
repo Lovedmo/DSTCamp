@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases"><img alt="Release" src="https://img.shields.io/github/v/release/chengzhirenchaoshuai/DSTCamp-chengzhiren?color=orange"></a>
+  <a href="https://github.com/chengzhirenchaoshuai/DSTCamp/releases"><img alt="Release" src="https://img.shields.io/github/v/release/chengzhirenchaoshuai/DSTCamp?color=orange"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue">
   <img alt="UI" src="https://img.shields.io/badge/UI-Qt%20(PySide6)-41cd52">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-informational">
@@ -49,7 +49,7 @@
 
 ## 📦 下载与运行
 
-从 [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases) 或 [Gitee 发行版](https://gitee.com/orange-blade/DSTCamp-chengzhiren/releases) 下载：
+从 [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp/releases) 或 [Gitee 发行版](https://gitee.com/orange-blade/DSTCamp/releases) 下载：
 
 | 文件 | 说明 |
 |---|---|
@@ -374,7 +374,7 @@ python scripts/build_exe.py         # 打包：在 build/ 暂存白名单资源�
 
 </details>
 
-历史版本请查看 [Releases](https://github.com/chengzhirenchaoshuai/DSTCamp-chengzhiren/releases)。
+历史版本请查看 [Releases](https://github.com/chengzhirenchaoshuai/DSTCamp/releases)。
 
 ## 许可
 
