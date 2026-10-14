@@ -35,7 +35,7 @@ STRINGS = {
         "theme.ornaments": "窗口点缀",
         "theme.mint": "自然绿",
         "theme.sky": "天空蓝",
-        "theme.twilight": "暮色蓝",
+        "theme.twilight": "星夜蓝",
         "theme.campfire": "篝火橙",
         "theme.sakura": "樱花粉",
         # 设置菜单
@@ -1439,7 +1439,7 @@ STRINGS = {
         "theme.ornaments": "Window Ornaments",
         "theme.mint": "Nature",
         "theme.sky": "Sky",
-        "theme.twilight": "Twilight",
+        "theme.twilight": "Starry Night",
         "theme.campfire": "Campfire",
         "theme.sakura": "Sakura",
         # 设置菜单

@@ -3,7 +3,7 @@
 
 构图讲主次，各主题共用一个骨架：左上角一簇作主角，沿上边、左边各延伸一串，末端越飘越稀、越淡；
 右上角一组作呼应，右下角一组收尾，左下角留白。樱花主题右下角是窗内散落的花朵花瓣；
-篝火主题右下角是跨在拐角上的一堆篝火，火星沿右边框往上飘。
+篝火主题右下角是跨在拐角上的一堆篝火，火星沿右边框往上飘；星夜蓝右下角是跨在拐角上的一顶帐篷，萤火虫往外飞散。
 图片素材在 icons/ornaments/（来源与授权见同目录 *_SOURCES.txt），按 3 倍屏预渲染成 PNG；
 精灵按 (主题, 序号, 缩放比) 缩放到物理像素并缓存，主窗口移动时只挪小窗位置，不重画。
 主窗口本身不开 WA_TranslucentBackground（整窗变分层窗口会拖慢绘制和缩放），只有这些小窗是透明的。
@@ -38,7 +38,7 @@ class Sprite:
 # ── 注册表 ───────────────────────────────────────────────────────────
 # 标题栏高 32：图标约在 x 10~28、y 7~25，标题文字从 x 约 34 起。主花团允许压住标题开头。
 # 各张图的相对位置在 reference/dev_scripts/ornaments/ 的排版脚本里一起排好（樱花 compose.py、
-# 篝火 compose_campfire.py、自然绿 mint/compose_mint.py、天空 sky/compose_sky.py），那边重新导出图片后按它打印的坐标同步这里。
+# 篝火 compose_campfire.py、自然绿 mint/compose_mint.py、天空 sky/compose_sky.py、星夜 twilight/compose_twilight.py），那边重新导出图片后按它打印的坐标同步这里。
 
 _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "campfire": (
@@ -88,16 +88,16 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("sky_bottom.png", 1, 1, -173.5, -137.5, 297),
     ),
     "twilight": (
-        # 排版脚本 compose_twilight.py。沿上边框向右、沿左边框向下各一串金线挂星，往外鼓出，
-        # 串边撒一道星屑，越远越小越稀越淡；星只停在外框线外侧，不挡标题文字
-        Sprite("twilight_spray_right.png", 0, 0, 304.5, -15, 34),
-        Sprite("twilight_spray_down.png", 0, 0, -19, 257.5, 429),
-        # 左上主角：一弯月牙斜靠在拐角外侧，下方两朵小云托着，周围几颗星
-        Sprite("twilight_cluster.png", 0, 0, -2, -17.5, 123),
-        # 右上呼应：拐角一颗大星，沿上边往左、沿右边往下各一小串挂星；都不挡标题栏按钮
-        Sprite("twilight_spray_corner.png", 1, 0, -163.5, 125.5, 311),
-        # 右下角：两朵云压在拐角，星星沿下边缘往左、沿右边缘往上散开；左下角留白
-        Sprite("twilight_bottom.png", 1, 1, -185, -124, 258),
+        # 星夜蓝，排版脚本 twilight/compose_twilight.py，素材全部自绘。沿上边框向右一组北斗七星、
+        # 沿左边框向下一组仙后座（按真实星位），之后零散星点越远越稀越淡；都停在外框线外侧，不挡标题文字
+        Sprite("twilight_spray_right.png", 0, 0, 322.5, -33, 64),
+        Sprite("twilight_spray_down.png", 0, 0, -34.5, 243, 398),
+        # 左上主角：一枚深蓝夜空圆章斜挂在拐角外，章里一弯月牙和几颗小星，不压标题栏图标
+        Sprite("twilight_cluster.png", 0, 0, -15, -17, 94),
+        # 右上呼应：一颗流星从拐角外侧沿上边往左划过，几颗星沿右边框外侧往下；都不挡标题栏按钮
+        Sprite("twilight_spray_corner.png", 1, 0, -159, 108.5, 331),
+        # 右下角：一顶深蓝帐篷跨在拐角上、门里透出暖光，萤火虫沿下边缘往左、沿右边框往上飞散；左下角留白
+        Sprite("twilight_bottom.png", 1, 1, -126, -131.5, 273),
     ),
 }
 
