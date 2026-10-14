@@ -1,0 +1,28 @@
+篝火橙主题窗口点缀素材来源
+
+campfire_fire.png 中的篝火
+  Openclipart #23803 "fire"，页面署名 Anonymous
+  https://openclipart.org/detail/23803
+  授权：Public Domain（Openclipart 全站声明 100% Public Domain）
+  修改：删除地面上的径向渐变光晕
+
+各 PNG 中的枫叶
+  Openclipart #1375 "maple leaf"，作者 zeimusu
+  https://openclipart.org/detail/1375
+  授权：Public Domain
+
+  Openclipart #263809 "Autumn Leaves"，作者 Arvin61r58
+  https://openclipart.org/detail/263809
+  授权：Public Domain
+  修改：只取六片中的四片暖色叶；深绿叶柄改成褐色；去掉渲染时不支持的滤镜
+
+各 PNG 中的橡叶
+  Openclipart #11747 "Oak Leaf - Autumn 2"，作者 rwwgub
+  https://openclipart.org/detail/11747
+  授权：Public Domain
+  修改：删除投影
+
+campfire_spray_right.png、campfire_spray_down.png、campfire_spray_corner.png、campfire_fire.png
+  连接叶片的褐色细枝、篝火上方的火星为本项目自绘
+
+以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
