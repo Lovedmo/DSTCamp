@@ -40,7 +40,7 @@
 | 💾 | **Saves** | Player status and Klei IDs, manual/automatic backup and restore, copy to a server save, package for sharing, create/delete saves |
 | 🌐 | **Tunneling & acceleration** | SakuraFrp, Lolia, self-hosted frps (one-click SSH deploy), Mihomo TUN + WireGuard lobby acceleration with route diagnostics |
 
-Also included: Chinese/English UI, five themes, three fonts with four size levels, custom backgrounds, system tray, remembered window size and position, and verified auto-update.
+Also included: Chinese/English UI, six themes, three fonts with four size levels, custom backgrounds, system tray, remembered window size and position, and verified auto-update.
 
 > [!NOTE]
 > WeGame does not provide one-click dedicated-server launching. DSTCamp does not bypass platform restrictions.

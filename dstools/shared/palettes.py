@@ -1,4 +1,4 @@
-"""五套颜色主题的调色板（纯数据）。新增颜色键须五套主题同时添加（测试会校验键一致）。
+"""各颜色主题的调色板（纯数据）。新增颜色键须全部主题同时添加（测试会校验键一致）。
 
 ORNAMENT 系列是窗口点缀（qt/ornaments.py）外框渐隐描边用色：浅色段 / 最浓的左上角。
 """
@@ -21,6 +21,16 @@ THEMES = {
         "SHADOW": "#C9E4D8", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#37474f",
         "BANNER_BG": "#fff3cd", "BANNER_TEXT": "#856404",
         "ORNAMENT": "#9BDDB8", "ORNAMENT_ACCENT": "#3FAE74",
+        "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
+        "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
+    },
+    "sky": {
+        "PRIMARY": "#4FB0E8", "PRIMARY_DARK": "#3596D1", "PRIMARY_LIGHT": "#D6EEFB",
+        "BG_SOFT": "#EBF7FD", "ACCENT": "#1E7FC2", "TEXT": "#24384A", "TEXT_MUTED": "#66808F",
+        "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#F3FAFE", "CARD_BORDER": "#CBE7F7",
+        "SHADOW": "#BFDDEE", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#2C4A63",
+        "BANNER_BG": "#fff3cd", "BANNER_TEXT": "#856404",
+        "ORNAMENT": "#A9DCF5", "ORNAMENT_ACCENT": "#3A9BD9",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
@@ -55,4 +65,4 @@ THEMES = {
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
 }
-THEME_NAMES = ["gray", "mint", "twilight", "campfire", "sakura"]  # 菜单里出现的顺序
+THEME_NAMES = ["gray", "mint", "sky", "twilight", "campfire", "sakura"]  # 菜单里出现的顺序

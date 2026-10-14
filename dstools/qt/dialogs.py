@@ -82,7 +82,7 @@ def style_button(button: QPushButton, variant: str) -> QPushButton:
 
 # ── 消息框 ──────────────────────────────────────────────────────────────
 
-# 图标：底色键（None 表示固定色）、固定色、符号。警告用固定琥珀色，五套主题里都醒目。
+# 图标：底色键（None 表示固定色）、固定色、符号。警告用固定琥珀色，各主题里都醒目。
 _MESSAGE_ICONS = {
     "info": ("PRIMARY", "", "i"),
     "warning": (None, "#E6A23C", "!"),
