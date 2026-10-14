@@ -38,7 +38,7 @@ class Sprite:
 # ── 注册表 ───────────────────────────────────────────────────────────
 # 标题栏高 32：图标约在 x 10~28、y 7~25，标题文字从 x 约 34 起。主花团允许压住标题开头。
 # 各张图的相对位置在 reference/dev_scripts/ornaments/ 的排版脚本里一起排好（樱花 compose.py、
-# 篝火 compose_campfire.py、薄荷 mint/compose_mint.py），那边重新导出图片后按它打印的坐标同步这里。
+# 篝火 compose_campfire.py、薄荷 mint/compose_mint.py、天空 sky/compose_sky.py），那边重新导出图片后按它打印的坐标同步这里。
 
 _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "campfire": (
@@ -73,6 +73,18 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("sakura_spray_corner.png", 1, 0, -228.5, 132, 322),
         # 右下角：拐角几朵大花，花朵花瓣沿下边缘向左散落、越往左越贴边越稀，右边花朵上方也飘几片；左下角留白
         Sprite("sakura_spray_bottom.png", 1, 1, -180.5, -84.5, 185),
+    ),
+    "sky": (
+        # 排版脚本 sky/compose_sky.py，素材全部自绘。沿上边框向右、沿左边框向下各一行飞鸟，
+        # 越远越小越淡，夹着几朵小白云；都停在外框线外侧，不挡标题文字
+        Sprite("sky_spray_right.png", 0, 0, 350, -23.5, 33),
+        Sprite("sky_spray_down.png", 0, 0, -32, 264, 388),
+        # 左上主角：一朵大白云压在拐角上，下方垫一朵小云，两只鸟从云边飞出
+        Sprite("sky_cluster.png", 0, 0, 11, -3.5, 97),
+        # 右上呼应：拐角一只风筝，风筝线沿上边往左渐隐，挂蝴蝶结的飘带沿右边框往下；都不挡标题栏按钮
+        Sprite("sky_spray_corner.png", 1, 0, -145.5, 96.5, 309),
+        # 右下角：三朵白云叠在拐角，飞鸟沿下边缘往左、沿右边框外侧往上散开；左下角留白
+        Sprite("sky_bottom.png", 1, 1, -173.5, -137.5, 297),
     ),
     "twilight": (
         # 排版脚本 compose_twilight.py。沿上边框向右、沿左边框向下各一串金线挂星，往外鼓出，
