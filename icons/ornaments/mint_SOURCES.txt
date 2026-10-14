@@ -1,0 +1,28 @@
+薄荷绿主题窗口点缀素材来源
+
+各 PNG 中的单片薄荷叶
+  Openclipart #335052 "Mint Leaf"，作者 Deluge，2021-12-26 上传
+  https://openclipart.org/detail/335052
+  原说明："sandcat01's trace of a mint leaf image with white background removed."
+  （#69757 的改作，原图描摹自 Wikimedia Commons 上 Köhler《药用植物》图谱中的胡椒薄荷）
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：转到叶尖朝上；色相往主题色 #6FCF97 偏、降低饱和度并提亮
+
+mint_cluster.png、mint_spray_corner.png、mint_spray_bottom.png 中的成对薄荷叶
+  Openclipart #192959 "Mint Two"，作者 doctormo，2014-04-21 上传
+  https://openclipart.org/detail/192959
+  原说明："A much simplified version of the original mint trace duplicated to make two of them."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：同上改色
+
+各 PNG 中的露珠
+  Openclipart #349156 "water droplet"，作者 nerdy，2024-08-22 上传
+  https://openclipart.org/detail/349156
+  原说明："Blue water drop with reflection of light, eyes removed from the original."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：色相往青绿偏、降低饱和度
+
+mint_spray_right.png、mint_spray_down.png、mint_spray_corner.png、mint_spray_bottom.png
+  连接叶片的绿色细茎为本项目自绘
+
+以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
