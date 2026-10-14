@@ -64,15 +64,16 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("sakura_spray_bottom.png", 1, 1, -180.5, -84.5, 185),
     ),
     "twilight": (
-        # 排版脚本 compose_twilight.py。沿上边框一根金线分段下垂挂着星星，沿左边框落下一道星屑，越远越小越稀越淡
-        Sprite("twilight_spray_right.png", 0, 0, 288, -9, 34),
-        Sprite("twilight_spray_down.png", 0, 0, -6.5, 242, 416),
-        # 左上主角：一弯月牙斜靠在拐角外侧，下方两朵小云托着
-        Sprite("twilight_cluster.png", 0, 0, -4.5, -13.5, 101),
-        # 右上呼应：拐角一颗大星，左边外框线上挂两颗小星，沿右边往下飘几粒闪光；都不挡标题栏按钮
-        Sprite("twilight_spray_corner.png", 1, 0, -67, 47.5, 145),
-        # 右下角：一朵小云压在拐角，闪光与微光沿右边框往上飘；左下角留白
-        Sprite("twilight_bottom.png", 1, 1, -59, -125.5, 267),
+        # 排版脚本 compose_twilight.py。沿上边框向右、沿左边框向下各一串金线挂星，往外鼓出，
+        # 串边撒一道星屑，越远越小越稀越淡；星只停在外框线外侧，不挡标题文字
+        Sprite("twilight_spray_right.png", 0, 0, 304.5, -15, 34),
+        Sprite("twilight_spray_down.png", 0, 0, -19, 257.5, 429),
+        # 左上主角：一弯月牙斜靠在拐角外侧，下方两朵小云托着，周围几颗星
+        Sprite("twilight_cluster.png", 0, 0, -2, -17.5, 123),
+        # 右上呼应：拐角一颗大星，沿上边往左、沿右边往下各一小串挂星；都不挡标题栏按钮
+        Sprite("twilight_spray_corner.png", 1, 0, -163.5, 125.5, 311),
+        # 右下角：两朵云压在拐角，星星沿下边缘往左、沿右边缘往上散开；左下角留白
+        Sprite("twilight_bottom.png", 1, 1, -185, -124, 258),
     ),
 }
 

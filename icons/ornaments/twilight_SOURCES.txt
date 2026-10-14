@@ -17,6 +17,6 @@ twilight_cluster.png、twilight_bottom.png 中的云朵
   授权：Openclipart 全站声明 100% Public Domain
   修改：灰色底改为淡蓝，黑色线条改为蓝色
 
-星星、四角闪光、挂星的金线、微光均为本项目自绘。
+星星、四角闪光、挂星的金线均为本项目自绘。
 
 以上 PNG 由排版脚本按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
