@@ -1,4 +1,7 @@
-"""五套颜色主题的调色板（纯数据）。新增颜色键须五套主题同时添加（测试会校验键一致）。"""
+"""五套颜色主题的调色板（纯数据）。新增颜色键须五套主题同时添加（测试会校验键一致）。
+
+ORNAMENT 系列是窗口点缀（qt/ornaments.py）外框渐隐描边用色：浅色段 / 最浓的左上角。
+"""
 
 THEMES = {
     "gray": {
@@ -7,6 +10,7 @@ THEMES = {
         "CARD_BG": "#FDFEFE", "CARD_BG_ALT": "#EFF3F4", "CARD_BORDER": "#D6DEE1",
         "SHADOW": "#C9D3D6", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#33393D",
         "BANNER_BG": "#fff3cd", "BANNER_TEXT": "#856404",
+        "ORNAMENT": "#B9C3CA", "ORNAMENT_ACCENT": "#5C7A89",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
@@ -16,6 +20,7 @@ THEMES = {
         "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#F4FBF7", "CARD_BORDER": "#CFEEDD",
         "SHADOW": "#C9E4D8", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#37474f",
         "BANNER_BG": "#fff3cd", "BANNER_TEXT": "#856404",
+        "ORNAMENT": "#9BDDB8", "ORNAMENT_ACCENT": "#2D9CDB",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
@@ -25,6 +30,7 @@ THEMES = {
         "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#F5F8FE", "CARD_BORDER": "#D3E1FA",
         "SHADOW": "#C7D6F0", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#33415C",
         "BANNER_BG": "#fdecc8", "BANNER_TEXT": "#7a5a12",
+        "ORNAMENT": "#F3D98B", "ORNAMENT_ACCENT": "#FFFFFF",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
@@ -34,6 +40,7 @@ THEMES = {
         "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#FDF6EC", "CARD_BORDER": "#F0DBB4",
         "SHADOW": "#E8D2A0", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#6B4A28",
         "BANNER_BG": "#fde3df", "BANNER_TEXT": "#a3392f",
+        "ORNAMENT": "#F2B54A", "ORNAMENT_ACCENT": "#E0583A",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
@@ -43,6 +50,7 @@ THEMES = {
         "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#FFF5F8", "CARD_BORDER": "#F5C4D3",
         "SHADOW": "#F0B8CB", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#7A3B54",
         "BANNER_BG": "#fff3cd", "BANNER_TEXT": "#856404",
+        "ORNAMENT": "#F9B3CA", "ORNAMENT_ACCENT": "#E0507F",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },

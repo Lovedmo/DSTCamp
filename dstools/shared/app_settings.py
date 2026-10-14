@@ -23,6 +23,7 @@ _KEY_CACHE_USE_EXE_DIR = "cache_use_exe_dir"
 _KEY_CACHE_DIR = "cache_dir"
 _KEY_CUSTOM_BG_FILENAME = "custom_bg_filename"
 _KEY_CUSTOM_BG_OPACITY = "custom_bg_opacity"
+_KEY_WINDOW_ORNAMENTS = "window_ornaments_enabled"
 _DEFAULT_CUSTOM_BG_OPACITY = 0.35
 _KEY_WINDOW_POS = "window_pos"
 _KEY_WINDOW_SIZE = "window_size"
@@ -487,6 +488,17 @@ def set_sakura_last_node_id(node_id: int | None) -> None:
         data[_KEY_SAKURA_LAST_NODE] = int(node_id)
     else:
         data.pop(_KEY_SAKURA_LAST_NODE, None)
+    save_settings(data)
+
+
+def get_window_ornaments_enabled() -> bool:
+    """主窗口是否显示随主题变化的装饰图案（樱枝等），默认开启。"""
+    return load_settings().get(_KEY_WINDOW_ORNAMENTS, True)
+
+
+def set_window_ornaments_enabled(value: bool) -> None:
+    data = load_settings()
+    data[_KEY_WINDOW_ORNAMENTS] = value
     save_settings(data)
 
 

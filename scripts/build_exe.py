@@ -48,6 +48,7 @@ ICON_PATTERNS = {
     "world": ("*.png",),
     "recommended": ("*.png",),
     "avatars": ("*.png",),
+    "ornaments": ("*.png",),
 }
 
 REQUIRED_ICON_FILES = (
@@ -236,6 +237,7 @@ def build() -> None:
                 (staged_icons / "app", "icons/app"),
                 (staged_icons / "recommended", "icons/recommended"),
                 (staged_icons / "avatars", "icons/avatars"),
+                (staged_icons / "ornaments", "icons/ornaments"),
                 (staged_tools, "tools"),
             ],
         ),

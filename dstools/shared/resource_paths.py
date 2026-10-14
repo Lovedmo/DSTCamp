@@ -1,7 +1,7 @@
 """统一解析只读发布资源与可写运行时目录。
 
 固定资源（每次启动都要用，随 EXE 打包，只读）：
-    icons/{app,ui,world,avatars,recommended}  tools/{fonts,ktools,vcredist,frp_selfhost,frpc-sakura}
+    icons/{app,ui,world,avatars,recommended,ornaments}  tools/{fonts,ktools,vcredist,frp_selfhost,frpc-sakura}
 
 %APPDATA%/DSTCamp/（运行时可写）：
     settings.json   全部用户设置

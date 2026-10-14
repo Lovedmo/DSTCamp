@@ -1,0 +1,21 @@
+樱花主题窗口点缀素材来源
+
+sakura_cluster.png
+  构图与花蕾、落瓣出自 Openclipart #301206 "Sakura (#1)"，作者 oksmith，2018-05-01 上传
+  https://openclipart.org/detail/301206
+  原说明："A public domain image from publicdomainq.net"
+  publicdomainq.net 首页声明：站内全部素材均为通过 CC0 等方式放弃著作权、或保护期已满的公有领域作品
+  Openclipart 全站声明：100% Public Domain
+  修改：删除叶子；三朵花换成下方 #238032 的花朵（放大约 1.4 倍、分别旋转）；
+        花蕾、落瓣、花萼、细茎改用 #238032 的配色，花蕾与落瓣加粉色描边
+
+各 PNG 中的花朵
+  Openclipart #238032 "Sakura flower"，作者 ozant，2016-01-20 上传
+  https://openclipart.org/detail/238032
+  原说明："sakura flower done in inkscape"
+  授权：Openclipart 全站声明 100% Public Domain
+
+sakura_spray_right.png、sakura_spray_down.png、sakura_spray_corner.png、sakura_spray_bottom.png
+  花朵、花蕾、落瓣均取自上述两件素材；连接它们的粉色细茎为本项目自绘（右下角那张没有细茎）
+
+以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。

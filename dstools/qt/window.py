@@ -10,7 +10,7 @@ import os
 from ctypes import wintypes
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction, QActionGroup, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap,
 )
@@ -26,6 +26,7 @@ from dstools.models import Platform
 from dstools.qt import dialogs
 from dstools.qt.background import Background
 from dstools.qt.context import AppContext
+from dstools.qt.ornaments import WindowOrnaments, paint_frame_accent
 from dstools.qt.pages.local_service import LocalServicePage
 from dstools.qt.pages.mod import ModPage
 from dstools.qt.pages.sakura import SakuraPage
@@ -38,8 +39,9 @@ from dstools.qt.self_update import SelfUpdater, is_update_available
 from dstools.qt.widgets import FrostedMenu, Grip, PillTabBar, ThemeMenuItem, TitleButton
 from dstools.shared.app_settings import (
     get_creation_wizard_size, get_minimize_on_close, get_mod_config_sync_enabled, get_remind_update_enabled,
-    get_window_position, get_window_size, set_creation_wizard_size, set_minimize_on_close,
-    set_mod_config_sync_enabled, set_window_position, set_window_size,
+    get_window_ornaments_enabled, get_window_position, get_window_size, set_creation_wizard_size,
+    set_minimize_on_close, set_mod_config_sync_enabled, set_window_ornaments_enabled, set_window_position,
+    set_window_size,
 )
 from dstools.shared.resource_paths import bundled_resource_dir
 from dstools.shared.single_instance import activate_message_id, version_code
@@ -219,6 +221,7 @@ class MenuStrip(QWidget):
         self._vcredist_action.setToolTip(t("app.install_vcredist_hint"))
         for name, action in self._theme_actions.items():
             action.setText(t(f"theme.{name}"))
+        self._ornaments_action.setText(t("theme.ornaments"))
         self._bg_settings_action.setText(t("theme.custom_bg_settings"))
         self._font_settings_action.setText(t("theme.font_settings"))
         self._minimize_action.setText(t("settings.minimize_on_close_label"))
@@ -280,6 +283,12 @@ class MenuStrip(QWidget):
             menu.addAction(action)
             self._theme_actions[name] = item
         menu.addSeparator()
+        # 点缀图案跟着主题走，这里只是总开关
+        ornaments = QAction(t("theme.ornaments"), self, checkable=True)
+        ornaments.setChecked(get_window_ornaments_enabled())
+        ornaments.triggered.connect(lambda checked: self._window.set_ornaments_enabled(bool(checked)))
+        menu.addAction(ornaments)
+        self._ornaments_action = ornaments
         # 背景图/字体样式是跟颜色主题解耦的全局设置，点开只弹设置窗口，不切主题。
         bg_settings = QAction(t("theme.custom_bg_settings"), self)
         bg_settings.triggered.connect(self._window.show_custom_bg_dialog)
@@ -715,6 +724,8 @@ class MainWindow(QWidget):
             (Qt.Edge.LeftEdge | Qt.Edge.BottomEdge, Qt.CursorShape.SizeBDiagCursor),
         ):
             self._grips.append(Grip(self, edges, cursor))
+        self._ornaments = WindowOrnaments(self, lambda: self._restore_geometry is not None,
+                                          get_window_ornaments_enabled())
         self._build_tray()
         self._update_status()
 
@@ -944,6 +955,10 @@ class MainWindow(QWidget):
         self.tabbar.update()
         self.repaint()
 
+    def set_ornaments_enabled(self, enabled: bool) -> None:
+        set_window_ornaments_enabled(enabled)
+        self._ornaments.set_enabled(enabled)
+
     # ── 位置/尺寸 ───────────────────────────────────────────────────────
     def _place_initially(self) -> None:
         avail = QGuiApplication.primaryScreen().availableGeometry()
@@ -990,6 +1005,7 @@ class MainWindow(QWidget):
         if self._restore_geometry is not None:
             self.setGeometry(self._restore_geometry)
             self._restore_geometry = None
+            self._ornaments.refresh()  # 移动事件发生时还处于最大化状态，还原后再摆放一次
             return
         self._restore_geometry = self.geometry()
         avail = (self.screen() or QGuiApplication.primaryScreen()).availableGeometry()
@@ -1051,6 +1067,8 @@ class MainWindow(QWidget):
         self.background.paint(painter, self.width(), self.height(), smooth=not self._resizing)
         painter.setPen(QPen(theme.color("CARD_BORDER"), 2))
         painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+        if self._ornaments.frame_accent_visible():
+            paint_frame_accent(painter, QRectF(self.rect().adjusted(1, 1, -1, -1)))
 
     # ── 托盘与退出 ──────────────────────────────────────────────────────
     def _build_tray(self) -> None:
