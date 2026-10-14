@@ -38,7 +38,7 @@ class Sprite:
 # ── 注册表 ───────────────────────────────────────────────────────────
 # 标题栏高 32：图标约在 x 10~28、y 7~25，标题文字从 x 约 34 起。主花团允许压住标题开头。
 # 各张图的相对位置在 reference/dev_scripts/ornaments/ 的排版脚本里一起排好（樱花 compose.py、
-# 篝火 compose_campfire.py、薄荷 mint/compose_mint.py、天空 sky/compose_sky.py），那边重新导出图片后按它打印的坐标同步这里。
+# 篝火 compose_campfire.py、自然绿 mint/compose_mint.py、天空 sky/compose_sky.py），那边重新导出图片后按它打印的坐标同步这里。
 
 _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "campfire": (
@@ -53,15 +53,16 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("campfire_fire.png", 1, 1, -147, -150.5, 337),
     ),
     "mint": (
-        # 从左上角沿上边框向右伸出前后叠着的两枝对生叶薄荷、沿左边框向下一枝，越往梢叶子越小，梢后小叶和露珠渐稀渐淡
-        Sprite("mint_spray_right.png", 0, 0, 342.5, -27, 62),
-        Sprite("mint_spray_down.png", 0, 0, -22.5, 285.5, 515),
-        # 左上主角：一簇薄荷叶压在拐角上，叶面挂露珠，后创建的小窗叠在两枝上面
-        Sprite("mint_cluster.png", 0, 0, -2, -10.5, 123),
-        # 右上呼应：拐角一对大叶，沿上边往左两枝叠着、沿右边往下一枝，叶间挂着水珠
-        Sprite("mint_spray_corner.png", 1, 0, -188, 165, 428),
-        # 右下角：窗内拐角一簇叶子，一枝小薄荷贴着下边缘往左伸，小叶和露珠沿下边缘往左、沿右边往上散开；左下角留白
-        Sprite("mint_spray_bottom.png", 1, 1, -210.5, -115.5, 243),
+        # 自然绿：从左上角沿上边框向右、沿左边框向下各一条枝叶带，后面是叶子朝外的绿枝，中间探出蕨叶，
+        # 最前面贴边一行小草往窗外长，越远越矮越稀越淡
+        Sprite("mint_spray_right.png", 0, 0, 260.5, -9, 64),
+        Sprite("mint_spray_down.png", 0, 0, -12, 214.5, 407),
+        # 左上主角：几片蕨叶从拐角放射，两根绿枝顺着上边、左边伸出，拐角上三叶草和一丛小草，后创建的小窗叠在两条带上面
+        Sprite("mint_cluster.png", 0, 0, 18, 19, 182),
+        # 右上呼应：沿上边往左、沿右边往下各一条短些的枝叶带，拐角几片蕨叶和一棵三叶草
+        Sprite("mint_spray_corner.png", 1, 0, -118, 97.5, 321),
+        # 右下角：一片草丛压在拐角，小草沿下边缘往左越来越矮越稀，蕨叶贴着右边往上伸，三叶草藏在草里；左下角留白
+        Sprite("mint_spray_bottom.png", 1, 1, -213, -57.5, 121),
     ),
     "sakura": (
         # 从左上角沿上边框向右、沿左边框向下各一串花朵、花蕾，粉色细茎相连，末端收向外框线、花瓣渐稀渐淡

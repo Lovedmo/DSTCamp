@@ -1,28 +1,37 @@
-薄荷绿主题窗口点缀素材来源
+自然绿主题（内部键 mint）窗口点缀素材来源
 
-各 PNG 中的单片薄荷叶
-  Openclipart #335052 "Mint Leaf"，作者 Deluge，2021-12-26 上传
-  https://openclipart.org/detail/335052
-  原说明："sandcat01's trace of a mint leaf image with white background removed."
-  （#69757 的改作，原图描摹自 Wikimedia Commons 上 Köhler《药用植物》图谱中的胡椒薄荷）
+各 PNG 中挂满叶子的绿枝
+  Openclipart #248553 "Branch"，作者 Firkin，2016-05-17 上传
+  https://openclipart.org/detail/248553
+  原说明：取自一幅公有领域的危地马拉国旗图中的枝叶
   授权：Openclipart 全站声明 100% Public Domain
-  修改：转到叶尖朝上；色相往主题色 #6FCF97 偏、降低饱和度并提亮
+  修改：往清新草绿偏色、提亮
 
-mint_cluster.png、mint_spray_corner.png、mint_spray_bottom.png 中的成对薄荷叶
-  Openclipart #192959 "Mint Two"，作者 doctormo，2014-04-21 上传
-  https://openclipart.org/detail/192959
-  原说明："A much simplified version of the original mint trace duplicated to make two of them."
+各 PNG 中的蕨叶
+  Openclipart #171185 "Fern leaf"，作者 Moini，2012-07-15 上传
+  https://openclipart.org/detail/171185
+  原说明："Silhouette of a fern leaf, plucked yesterday in a nearby wood, then scanned and vectorized."
   授权：Openclipart 全站声明 100% Public Domain
-  修改：同上改色
+  修改：往草绿偏色、加饱和度并提亮
 
-各 PNG 中的露珠
-  Openclipart #349156 "water droplet"，作者 nerdy，2024-08-22 上传
-  https://openclipart.org/detail/349156
-  原说明："Blue water drop with reflection of light, eyes removed from the original."
+mint_cluster.png、mint_spray_corner.png、mint_spray_bottom.png 中的三叶草
+  Openclipart #83059 "three leaves clover"，作者 mireille，2010-08-31 上传
+  https://openclipart.org/detail/83059
   授权：Openclipart 全站声明 100% Public Domain
-  修改：色相往青绿偏、降低饱和度
+  修改：往草绿偏色
 
-mint_spray_right.png、mint_spray_down.png、mint_spray_corner.png、mint_spray_bottom.png
-  连接叶片的绿色细茎为本项目自绘
+mint_spray_bottom.png 中拐角的大片草丛
+  Openclipart #84037 "grass"，作者 netalloy，2010-09-07 上传
+  https://openclipart.org/detail/84037
+  原说明："Green grass patch."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：轻微偏色
+
+各 PNG 中贴边的一丛丛小草
+  Openclipart #164635 "grass"，作者 deemonizer，2011-10-24 上传
+  https://openclipart.org/detail/164635
+  原说明："set of grass"
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：把一组十丛逐丛拆开（颜色最深的一丛不用），轻微偏色，根部做渐隐
 
 以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
