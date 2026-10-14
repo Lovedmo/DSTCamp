@@ -314,19 +314,20 @@ class FrostedMenu(QMenu):
         super().paintEvent(event)
 
 
-class ThemeMenuItem(QWidget):
-    """"主题"菜单里的一项：文字用该主题自己的主色画，当前主题前面打勾。
-    QAction 没法单独设文字颜色，所以用 QWidgetAction 包这个自绘控件。"""
+class CheckMenuItem(QWidget):
+    """菜单里一项自绘的文字项，左侧固定一列放勾选标记。原生 QAction 的文字起点受勾选列、
+    QSS 内边距共同影响，跟自绘项对不齐；同一菜单里的项都用这个类，文字起点就一致。"""
 
-    _PAD_LEFT = 24   # 左侧留出勾选标记位置；主题菜单里其它普通项的左内边距也设成同值对齐
+    _PAD_LEFT = 24   # 左侧勾选标记列宽，也是文字起点
     _PAD_RIGHT = 24
 
-    def __init__(self, menu: QMenu, name: str, text: str, on_pick):
+    def __init__(self, menu: QMenu, text: str, on_click, is_checked=None):
         super().__init__(menu)
         self._menu = menu
-        self._name = name
         self._text = text
-        self._on_pick = on_pick
+        self._on_click = on_click
+        # 现查是否打勾，不缓存选中态
+        self._is_checked = is_checked or (lambda: False)
         self._hover = False
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
@@ -342,9 +343,10 @@ class ThemeMenuItem(QWidget):
                      metrics.height() + 12)
 
     def _item_font(self):
-        font = self.font()
-        font.setBold(self._name == theme.name)
-        return font
+        return self.font()
+
+    def _text_color(self) -> QColor:
+        return theme.color("TEXT")
 
     def enterEvent(self, event):
         self._hover = True
@@ -359,26 +361,42 @@ class ThemeMenuItem(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self._menu.hide()
-            self._on_pick(self._name)
+            self._on_click()
             return
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, _event):
-        from dstools.shared import palettes
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._hover:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(theme.color("PRIMARY_LIGHT"))
             painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 0, -1, 0), 4, 4)
-        color = QColor(palettes.THEMES[self._name]["PRIMARY_DARK"])
-        painter.setPen(color)
+        painter.setPen(self._text_color())
         painter.setFont(self._item_font())
-        if self._name == theme.name:
+        if self._is_checked():
             painter.drawText(QRect(0, 0, self._PAD_LEFT, self.height()), int(Qt.AlignmentFlag.AlignCenter), "✓")
         painter.drawText(self.rect().adjusted(self._PAD_LEFT, 0, 0, 0),
                          int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), self._text)
+
+
+class ThemeMenuItem(CheckMenuItem):
+    """"主题"菜单里的一项：文字用该主题自己的主色画，当前主题前面打勾加粗。
+    QAction 没法单独设文字颜色，所以用自绘项。"""
+
+    def __init__(self, menu: QMenu, name: str, text: str, on_pick):
+        super().__init__(menu, text, lambda: on_pick(name), lambda: name == theme.name)
+        self._name = name
+
+    def _item_font(self):
+        font = self.font()
+        font.setBold(self._name == theme.name)
+        return font
+
+    def _text_color(self) -> QColor:
+        from dstools.shared import palettes
+
+        return QColor(palettes.THEMES[self._name]["PRIMARY_DARK"])
 
 
 class MenuTextItem(QWidget):

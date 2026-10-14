@@ -36,7 +36,7 @@ from dstools.qt.pages.world_settings import WorldSettingsPage
 from dstools.qt.theme import THEME_NAMES, theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.self_update import SelfUpdater, is_update_available
-from dstools.qt.widgets import FrostedMenu, Grip, PillTabBar, ThemeMenuItem, TitleButton
+from dstools.qt.widgets import CheckMenuItem, FrostedMenu, Grip, PillTabBar, ThemeMenuItem, TitleButton
 from dstools.shared.app_settings import (
     get_creation_wizard_size, get_minimize_on_close, get_mod_config_sync_enabled, get_remind_update_enabled,
     get_window_ornaments_enabled, get_window_position, get_window_size, set_creation_wizard_size,
@@ -272,32 +272,29 @@ class MenuStrip(QWidget):
 
     def _theme_menu(self) -> QMenu:
         menu = FrostedMenu(self)
-        # 主题菜单里普通项（背景/字体设置）的文字起点跟上面自绘主题项对齐。
-        menu.setStyleSheet(f"FrostedMenu::item {{ padding-left: {ThemeMenuItem._PAD_LEFT}px; }}")
-        # 每个主题名用该主题自己的主色显示（QAction 设不了单独文字颜色，用自绘项）；
-        # 当前主题打勾加粗，直接现查 theme.name，不需要 QActionGroup 维护选中态。
-        for name in THEME_NAMES:
-            item = ThemeMenuItem(menu, name, t(f"theme.{name}"), theme.set_theme)
+
+        def add_item(item: CheckMenuItem) -> CheckMenuItem:
             action = QWidgetAction(menu)
             action.setDefaultWidget(item)
             menu.addAction(action)
-            self._theme_actions[name] = item
+            return item
+
+        # 每个主题名用该主题自己的主色显示（QAction 设不了单独文字颜色，用自绘项）；
+        # 当前主题打勾加粗，直接现查 theme.name，不需要 QActionGroup 维护选中态。
+        for name in THEME_NAMES:
+            self._theme_actions[name] = add_item(ThemeMenuItem(menu, name, t(f"theme.{name}"), theme.set_theme))
         menu.addSeparator()
+        # 下面几项也用同款自绘项：原生 QAction 有勾选列，文字起点跟主题项对不齐。
         # 点缀图案跟着主题走，这里只是总开关
-        ornaments = QAction(t("theme.ornaments"), self, checkable=True)
-        ornaments.setChecked(get_window_ornaments_enabled())
-        ornaments.triggered.connect(lambda checked: self._window.set_ornaments_enabled(bool(checked)))
-        menu.addAction(ornaments)
-        self._ornaments_action = ornaments
+        self._ornaments_action = add_item(CheckMenuItem(
+            menu, t("theme.ornaments"),
+            lambda: self._window.set_ornaments_enabled(not get_window_ornaments_enabled()),
+            get_window_ornaments_enabled))
         # 背景图/字体样式是跟颜色主题解耦的全局设置，点开只弹设置窗口，不切主题。
-        bg_settings = QAction(t("theme.custom_bg_settings"), self)
-        bg_settings.triggered.connect(self._window.show_custom_bg_dialog)
-        menu.addAction(bg_settings)
-        self._bg_settings_action = bg_settings
-        font_settings = QAction(t("theme.font_settings"), self)
-        font_settings.triggered.connect(self._window.show_font_settings_dialog)
-        menu.addAction(font_settings)
-        self._font_settings_action = font_settings
+        self._bg_settings_action = add_item(CheckMenuItem(
+            menu, t("theme.custom_bg_settings"), self._window.show_custom_bg_dialog))
+        self._font_settings_action = add_item(CheckMenuItem(
+            menu, t("theme.font_settings"), self._window.show_font_settings_dialog))
         return menu
 
     def _on_settings_menu_hovered(self, action) -> None:
