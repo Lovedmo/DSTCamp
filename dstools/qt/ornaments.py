@@ -63,6 +63,17 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         # 右下角：拐角几朵大花，花朵花瓣沿下边缘向左散落、越往左越贴边越稀，右边花朵上方也飘几片；左下角留白
         Sprite("sakura_spray_bottom.png", 1, 1, -180.5, -84.5, 185),
     ),
+    "twilight": (
+        # 排版脚本 compose_twilight.py。沿上边框一根金线分段下垂挂着星星，沿左边框落下一道星屑，越远越小越稀越淡
+        Sprite("twilight_spray_right.png", 0, 0, 288, -9, 34),
+        Sprite("twilight_spray_down.png", 0, 0, -6.5, 242, 416),
+        # 左上主角：一弯月牙斜靠在拐角外侧，下方两朵小云托着
+        Sprite("twilight_cluster.png", 0, 0, -4.5, -13.5, 101),
+        # 右上呼应：拐角一颗大星，左边外框线上挂两颗小星，沿右边往下飘几粒闪光；都不挡标题栏按钮
+        Sprite("twilight_spray_corner.png", 1, 0, -67, 47.5, 145),
+        # 右下角：一朵小云压在拐角，闪光与微光沿右边框往上飘；左下角留白
+        Sprite("twilight_bottom.png", 1, 1, -59, -125.5, 267),
+    ),
 }
 
 _images: dict[str, QImage] = {}

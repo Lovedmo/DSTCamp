@@ -1,0 +1,22 @@
+暮色蓝主题窗口点缀素材来源
+
+twilight_cluster.png 中的月牙
+  Openclipart #247072 "Crescent moon"，作者 m1981，2016-04-19 上传
+  https://openclipart.org/detail/247072
+  原说明："A crescent moon, part of a celestial objects series."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：橙色线条改为金色，底色改为奶白
+
+twilight_cluster.png、twilight_bottom.png 中的云朵
+  Openclipart #236010 "Grey cloud #1"，作者 barnheartowl，2016-01-05 上传
+  https://openclipart.org/detail/236010
+  原说明："A fluffy grey cloud"
+  Openclipart #236012 "Grey cloud #3"，作者 barnheartowl，2016-01-05 上传
+  https://openclipart.org/detail/236012
+  原说明："Gray fluffy cloud"
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：灰色底改为淡蓝，黑色线条改为蓝色
+
+星星、四角闪光、挂星的金线、微光均为本项目自绘。
+
+以上 PNG 由排版脚本按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。

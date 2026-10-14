@@ -30,7 +30,7 @@ THEMES = {
         "CARD_BG": "#FFFFFF", "CARD_BG_ALT": "#F5F8FE", "CARD_BORDER": "#D3E1FA",
         "SHADOW": "#C7D6F0", "ERROR": "#c62828", "SUCCESS": "#2E7D32", "HEADING": "#33415C",
         "BANNER_BG": "#fdecc8", "BANNER_TEXT": "#7a5a12",
-        "ORNAMENT": "#F3D98B", "ORNAMENT_ACCENT": "#FFFFFF",
+        "ORNAMENT": "#F3D98B", "ORNAMENT_ACCENT": "#D9A441",
         "FONT_SIZE_XL": 18, "FONT_SIZE_LG": 15, "FONT_SIZE_MD": 12,
         "FONT_SIZE_BASE": 11, "FONT_SIZE_SM": 10, "FONT_SIZE_XS": 9,
     },
