@@ -1,10 +1,18 @@
 星夜蓝主题窗口点缀素材来源
 
-twilight_*.png 中的夜空圆章、月牙、星点与星芒、星座连线、流星、帐篷、矮草与萤火虫均为本项目自绘，未使用第三方图片。
+twilight_cluster.png 中的月亮
+  NASA's Scientific Visualization Studio，CGI Moon Kit（2025 版彩色贴图 lroc_color_2k.jpg）
+  https://svs.gsfc.nasa.gov/4720
+  贴图改编自 LRO 相机 LROC WAC Hapke Normalized 彩色镶嵌图。
+  授权：NASA 影像在美国一般不受版权保护，按 NASA 素材使用指南注明来源即可，
+  不得暗示 NASA 认可本软件（https://www.nasa.gov/nasa-brand-center/images-and-media/）。
+  修改：按正射投影渲染成球体，加盈凸月的光照与偏蓝地照，整体略偏暖。
 
 北斗七星、仙后座按真实星位绘制（J2000 赤经赤纬），数据核对自维基百科：
   https://en.wikipedia.org/wiki/List_of_stars_in_Ursa_Major
   https://en.wikipedia.org/wiki/List_of_stars_in_Cassiopeia
 星位是天文事实，不涉及版权；投影后只整体旋转、缩放，不镜像。
+
+银河光带、夜云由排版脚本用分形噪声生成；星点、流星、松树、帐篷、萤火虫均为本项目自绘。
 
 以上 PNG 由排版脚本按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
