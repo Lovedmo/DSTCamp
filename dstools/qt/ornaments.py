@@ -93,7 +93,7 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "twilight": (
         # 星夜蓝，排版脚本 twilight/compose_twilight.py。沿上边框向右、沿左边框向下各一道银河光带，
         # 越远越淡，光带里撒满小星，北斗七星、仙后座（按真实星位）叠在上面；左边光带紧贴外框线
-        Sprite("twilight_spray_right.png", 0, 0, 396, -42, 84),
+        Sprite("twilight_spray_right.png", 0, 0, 396, -30, 84),
         Sprite("twilight_spray_down.png", 0, 0, -29, 318.5, 533),
         # 左上主角：一轮真实月面（NASA 月面贴图渲染）的盈凸月带月晕，前后两团月光镶边的夜云，
         # 周围几道小流星；压住标题开头
