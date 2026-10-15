@@ -950,6 +950,7 @@ class MainWindow(QWidget):
         self.status.setText(self.ctx.status_text())
 
     def _on_theme_changed(self) -> None:
+        self.background.reload()  # 提亮下限随主题底色和文字色变化
         self.tabbar.update()
         self.repaint()
 
