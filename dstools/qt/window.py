@@ -25,6 +25,7 @@ from dstools.i18n import get_lang, set_lang, t
 from dstools.models import Platform
 from dstools.qt import dialogs
 from dstools.qt.background import Background
+from dstools.qt.text_halo import TextHaloManager
 from dstools.qt.context import AppContext
 from dstools.qt.ornaments import WindowOrnaments, paint_frame_accent
 from dstools.qt.pages.local_service import LocalServicePage
@@ -659,6 +660,9 @@ class MainWindow(QWidget):
         super().__init__()
         self.ctx = ctx
         self.background = Background()
+        self.text_halo = TextHaloManager(self.background)
+        self.text_halo.watch(self)
+        self.text_halo.refresh()
         self._resizing = False
         self._restore_geometry: QRect | None = None
         self._quitting = False
@@ -911,6 +915,7 @@ class MainWindow(QWidget):
         from dstools.qt.creation_wizard import CreationWizardDialog
 
         dialog = CreationWizardDialog(self.ctx, background=self.background)
+        self.text_halo.watch(dialog)
         # 向导是无父窗口的顶层窗，按主窗口所在显示器重新限尺寸，并把位置夹在工作区内
         area = (self.screen() or QGuiApplication.primaryScreen()).availableGeometry()
         dialogs.fit_to_screen(dialog, 1400, 860, area)

@@ -8,7 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider,
-    QVBoxLayout, QWidget,
+    QStyle, QStyleOptionSlider, QVBoxLayout, QWidget,
 )
 
 from dstools import __version__
@@ -58,7 +58,7 @@ class BackgroundImageDialog(dialogs.Dialog):
 
         row2 = QHBoxLayout()
         row2.addWidget(self.text_label(t("settings.custom_bg_opacity_label")))
-        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider = _JumpSlider(Qt.Orientation.Horizontal)
         self._slider.setRange(0, 100)
         self._slider.setValue(round(get_custom_bg_opacity() * 100))
         self._slider.setFixedWidth(160)
@@ -88,14 +88,38 @@ class BackgroundImageDialog(dialogs.Dialog):
     def _on_opacity_change(self, value: int) -> None:
         # 绘制时现读 opacity，无需节流；松开滑块时再持久化
         self._window.background.opacity = value / 100
+        self._window.text_halo.refresh()  # 拉到 0 时卸掉文字描边，跨过明暗临界点时整窗换深浅字
         self._window.update()
+        if not self._slider.isSliderDown():  # 点击、键盘直接改值时立即持久化，拖动中等松开
+            self._on_opacity_release()
 
     def _on_opacity_release(self) -> None:
         set_custom_bg_opacity(self._slider.value() / 100)
 
     def _refresh_bg(self) -> None:
         self._window.background.reload()
+        self._window.text_halo.refresh()
         self._window.update()
+
+
+class _JumpSlider(QSlider):
+    """点击滑槽直接跳到点击位置并可接着拖动（默认只按页步进一点）。"""
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            option = QStyleOptionSlider()
+            self.initStyleOption(option)
+            style = self.style()
+            groove = style.subControlRect(QStyle.ComplexControl.CC_Slider, option,
+                                          QStyle.SubControl.SC_SliderGroove, self)
+            handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, option,
+                                          QStyle.SubControl.SC_SliderHandle, self)
+            if not handle.contains(event.position().toPoint()):
+                span = groove.width() - handle.width()
+                pos = round(event.position().x()) - groove.x() - handle.width() // 2
+                self.setValue(QStyle.sliderValueFromPosition(
+                    self.minimum(), self.maximum(), pos, max(1, span), option.upsideDown))
+        super().mousePressEvent(event)  # 此时手柄已在指针下，交给默认处理即开始拖动
 
 
 class _FontChoiceCard(QWidget):

@@ -4,6 +4,7 @@ from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
 
+from dstools.qt.text_halo import draw_adaptive_text
 from dstools.qt.theme import theme
 
 
@@ -208,8 +209,12 @@ class PillTabBar(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(theme.color("PRIMARY") if selected else theme.color("PRIMARY_LIGHT"))
                 painter.drawRoundedRect(rect, self._pill_h / 2, self._pill_h / 2)
-            painter.setPen(QColor("#FFFFFF") if selected else theme.color("TEXT_MUTED"))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._labels[i])
+            if selected:
+                painter.setPen(QColor("#FFFFFF"))
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._labels[i])
+            else:  # 未选中页签的文字直接压在背景上，自定义背景图时随底下明暗调整
+                draw_adaptive_text(painter, self, rect, Qt.AlignmentFlag.AlignCenter, self._labels[i],
+                                   theme.color("TEXT_MUTED"))
 
 
 class Grip(QWidget):
