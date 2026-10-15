@@ -43,14 +43,14 @@ class Sprite:
 _SPRITES: dict[str, tuple[Sprite, ...]] = {
     "campfire": (
         # 从左上角贴着上边框向右、贴着左边框向下各一根挂满秋叶的细枝，末端收到外框线上，落叶渐稀渐淡
-        Sprite("campfire_spray_right.png", 0, 0, 307, -9.5, 61),
-        Sprite("campfire_spray_down.png", 0, 0, -11, 242, 500),
+        Sprite("campfire_spray_right.png", 0, 0, 310.5, -16.5, 63),
+        Sprite("campfire_spray_down.png", 0, 0, -10.5, 242, 500),
         # 左上主角：一簇大叶压在拐角上，后创建的小窗叠在细枝上面
         Sprite("campfire_cluster.png", 0, 0, 8, 1.5, 93),
         # 右上呼应：拐角一片大枫叶，沿上边往左、沿右边往下各一段挂叶细枝
-        Sprite("campfire_spray_corner.png", 1, 0, -153.5, 94.5, 253),
-        # 右下收尾：拐角铺一圈落叶，篝火跨在拐角上、底下一层暖光，火星贴着右边框往上飘；左下角留白
-        Sprite("campfire_fire.png", 1, 1, -147, -150.5, 337),
+        Sprite("campfire_spray_corner.png", 1, 0, -155.5, 91.5, 259),
+        # 右下收尾：拐角铺一圈落叶，篝火收在拐角里侧、两旁垫几片大叶、底下一层暖光，火星飘到右边框再往上飘；左下角留白
+        Sprite("campfire_fire.png", 1, 1, -151.5, -155, 328),
     ),
     "mint": (
         # 自然绿：从左上角沿上边框向右、沿左边框向下各一条枝叶带，后面是叶子朝外的绿枝，中间探出蕨叶，
