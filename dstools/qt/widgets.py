@@ -167,10 +167,6 @@ class PillTabBar(QWidget):
             x += width + self._gap
         return rects
 
-    def text_backdrop_rects(self) -> list[QRectF]:
-        """自定义背景图只在文字附近提亮：未选中页签的文字直接压在背景上。"""
-        return [rect for i, rect in enumerate(self._rects()) if i != self._index]
-
     def _font(self):
         if self._font_size_key:
             return theme.font(self._font_size_key, bold=self._bold)

@@ -53,7 +53,6 @@ from dstools.shared.server_ports import (
 )
 from dstools.shared.token_manager import read_token
 from dstools.qt import dialogs
-from dstools.qt.background import text_backdrop_rects
 from dstools.qt.mod_config_dialog import open_mod_config
 from dstools.qt.mod_panel import ModListPanel
 from dstools.qt.mod_presets_dialogs import SavePresetDialog
@@ -257,9 +256,10 @@ class CreationWizardDialog(QDialog):
         self.ctx = ctx
         # 无父窗口的顶层对话框不会继承主窗口图标，任务栏和左上角都会是空白——显式设置。
         self.setWindowIcon(QIcon(str(bundled_resource_dir() / "icons" / "app" / "icon.png")))
-        # 直接复用主窗口已加载的 Background（同一份图，不重复读图）；成品图由它按窗口分开缓存，
-        # 重绘时只做贴图，文字区域变化时才重新合成。
+        # 直接复用主窗口已加载的 Background（同一张 QPixmap，不重复读图）；
+        # 按窗口尺寸缓存一张缩放好的成品图，重绘时只做贴图，不再每次平滑缩放。
         self._background = background
+        self._bg_cache: QPixmap | None = None
         # 主窗口被本窗口模态阻挡时用户点了主窗口：自绘标题栏没有系统的标题栏闪烁，
         # 这里自己闪几下边框和标题栏（见 flash_attention）
         self._attention_ticks = 0
@@ -1345,9 +1345,9 @@ class CreationWizardDialog(QDialog):
         painter = QPainter(self)
         painter.fillRect(self.rect(), theme.color("BG_SOFT"))
         if self._background is not None and self._background.active:
-            stale = self._background.paint(painter, self, smooth=True, text_rects=text_backdrop_rects(self))
-            if not stale.isEmpty():
-                self.update(stale)  # 文字区域变了，补画遮罩波及的周边
+            self._paint_background(painter)
+        else:
+            self._bg_cache = None
         if self._attention_on:
             highlight = theme.color("ACCENT")
             highlight.setAlpha(70)
@@ -1380,6 +1380,19 @@ class CreationWizardDialog(QDialog):
         self._attention_frame.raise_()
         self._attention_frame.setVisible(self._attention_on)
         self.update()
+
+    def _paint_background(self, painter: QPainter) -> None:
+        dpr = self.devicePixelRatioF()
+        size = self.size() * dpr
+        if self._bg_cache is None or self._bg_cache.size() != size:
+            cache = QPixmap(size)
+            cache.setDevicePixelRatio(dpr)
+            cache.fill(Qt.GlobalColor.transparent)
+            cache_painter = QPainter(cache)
+            self._background.paint(cache_painter, self.width(), self.height(), smooth=True)
+            cache_painter.end()
+            self._bg_cache = cache
+        painter.drawPixmap(0, 0, self._bg_cache)
 
     def _has_unsaved_changes(self) -> bool:
         if self._dirty:

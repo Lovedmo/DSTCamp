@@ -24,7 +24,7 @@ from dstools import __version__
 from dstools.i18n import get_lang, set_lang, t
 from dstools.models import Platform
 from dstools.qt import dialogs
-from dstools.qt.background import Background, text_backdrop_rects
+from dstools.qt.background import Background
 from dstools.qt.context import AppContext
 from dstools.qt.ornaments import WindowOrnaments, paint_frame_accent
 from dstools.qt.pages.local_service import LocalServicePage
@@ -950,7 +950,6 @@ class MainWindow(QWidget):
         self.status.setText(self.ctx.status_text())
 
     def _on_theme_changed(self) -> None:
-        self.background.reload()  # 提亮图随主题底色和次要文字色变化
         self.tabbar.update()
         self.repaint()
 
@@ -1063,11 +1062,7 @@ class MainWindow(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), theme.color("BG_SOFT"))
-        if self.background.active:
-            stale = self.background.paint(painter, self, smooth=not self._resizing,
-                                          text_rects=text_backdrop_rects(self))
-            if not stale.isEmpty():
-                self.update(stale)  # 文字区域变了，补画遮罩波及的周边
+        self.background.paint(painter, self.width(), self.height(), smooth=not self._resizing)
         painter.setPen(QPen(theme.color("CARD_BORDER"), 2))
         painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
         if self._ornaments.frame_accent_visible():
