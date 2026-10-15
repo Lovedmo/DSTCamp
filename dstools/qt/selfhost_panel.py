@@ -30,7 +30,7 @@ from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import AutoHideLabel, PillTabBar, ToggleSwitch, section_card
 from dstools.shared import app_settings
-from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping
+from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
 from dstools.shared.resource_paths import data_dir, runtime_tool_path
 from dstools.shared.server_ports import stable_path_key
 
@@ -1059,10 +1059,7 @@ class SelfHostPanel(QWidget):
             dialogs.show_warning(self.window(), t("sakura.require_stopped_title"),
                                   t("sakura.require_stopped_msg", shards="、".join(running)))
             return
-        conflicting = [s.name for s in cluster.shards if self.ctx.mapping_owner(cluster, s) not in (None, "selfhost")]
-        if conflicting:
-            dialogs.show_warning(self.window(), t("selfhost.enable_btn"),
-                                  t("sakura.other_mapping_conflict_msg", shards="、".join(conflicting)))
+        if not ensure_no_other_mapping(self.window(), self.ctx, cluster, "selfhost", t("selfhost.enable_btn")):
             return
         if not ensure_lan_free_for_mapping(self.window(), self.ctx, cluster):
             return

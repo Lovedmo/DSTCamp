@@ -32,7 +32,7 @@ from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, section_card
 from dstools.shared import app_settings
-from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping
+from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
 from dstools.shared.server_ports import stable_path_key
 from dstools.shared.token_manager import is_valid_token, mask_token
 
@@ -754,10 +754,7 @@ class _SakuraMappingPanel(QWidget):
             dialogs.show_warning(self.window(), t("sakura.require_stopped_title"),
                                   t("sakura.require_stopped_msg", shards="、".join(running)))
             return
-        conflicting = [s.name for s in cluster.shards if self.ctx.mapping_owner(cluster, s) not in (None, "sakura")]
-        if conflicting:
-            dialogs.show_warning(self.window(), t("sakura.enable_btn"),
-                                  t("sakura.other_mapping_conflict_msg", shards="、".join(conflicting)))
+        if not ensure_no_other_mapping(self.window(), self.ctx, cluster, "sakura", t("sakura.enable_btn")):
             return
         if self._ensure_frpc_available() is None:
             return

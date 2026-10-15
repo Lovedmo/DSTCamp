@@ -1,6 +1,8 @@
-"""开启端口映射前检查存档是否开着仅局域网/离线模式。
+"""开启端口映射前的检查。
 
-映射会把 server_port 改成远程端口，而这两个模式要求端口在 10998~11018，二者不能同时生效；开启映射时就提示。
+- 存档是否开着仅局域网/离线模式：映射会把 server_port 改成远程端口，而这两个模式要求端口在 10998~11018，
+  二者不能同时生效；开启映射时就提示。
+- 世界是否已被另一种映射方式接管：多种方式会互相覆盖 server_port 等配置。
 """
 
 from __future__ import annotations
@@ -30,3 +32,19 @@ def ensure_lan_free_for_mapping(parent, ctx, cluster) -> bool:
         return False
     ctx.cluster_config_saved.emit(cluster)  # 服务器配置页、本地服务器页据此刷新
     return True
+
+
+# mapping_owner 返回值 → 对应子页签名称（用户据此找到要关闭的那边）
+_OWNER_LABEL_KEYS = {"sakura": "selfhost.tab_sakura", "lolia": "selfhost.tab_lolia", "selfhost": "selfhost.tab_selfhost"}
+
+
+def ensure_no_other_mapping(parent, ctx, cluster, own: str, title: str) -> bool:
+    """当前存档有世界已被另一种映射方式（非 own）接管时提示并返回 False，否则返回 True。"""
+    owners = {s.name: ctx.mapping_owner(cluster, s) for s in cluster.shards}
+    conflicting = {name: owner for name, owner in owners.items() if owner not in (None, own)}
+    if not conflicting:
+        return True
+    methods = list(dict.fromkeys(t(_OWNER_LABEL_KEYS[o]) for o in conflicting.values()))
+    dialogs.show_warning(parent, title, t("sakura.other_mapping_conflict_msg",
+                                          shards="、".join(conflicting), methods="、".join(methods)))
+    return False

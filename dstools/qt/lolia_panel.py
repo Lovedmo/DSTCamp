@@ -29,7 +29,7 @@ from dstools.features.lolia import config as lolia_config
 from dstools.i18n import t
 from dstools.models import SaveSource
 from dstools.qt import dialogs
-from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping
+from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
 from dstools.qt.lolia_oauth_dialog import LoliaOAuthAppDialog
 from dstools.qt.node_picker import NodeChoice, NodePickerDialog
 from dstools.qt.theme import theme
@@ -666,10 +666,7 @@ class LoliaPanel(QWidget):
             dialogs.show_warning(self.window(), t("sakura.require_stopped_title"),
                                   t("sakura.require_stopped_msg", shards="、".join(running)))
             return
-        conflicting = [s.name for s in cluster.shards if self.ctx.mapping_owner(cluster, s) not in (None, "lolia")]
-        if conflicting:
-            dialogs.show_warning(self.window(), t("lolia.enable_btn"),
-                                  t("sakura.other_mapping_conflict_msg", shards="、".join(conflicting)))
+        if not ensure_no_other_mapping(self.window(), self.ctx, cluster, "lolia", t("lolia.enable_btn")):
             return
         if not ensure_lan_free_for_mapping(self.window(), self.ctx, cluster):
             return
