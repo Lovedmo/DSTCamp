@@ -92,14 +92,14 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
     ),
     "twilight": (
         # 星夜蓝，排版脚本 twilight/compose_twilight.py。沿上边框向右、沿左边框向下各一道银河光带，
-        # 越远越淡，光带里撒满小星，北斗七星、仙后座（按真实星位）叠在上面；都在外框线外侧
+        # 越远越淡，光带里撒满小星，北斗七星、仙后座（按真实星位）叠在上面；左边光带紧贴外框线
         Sprite("twilight_spray_right.png", 0, 0, 396, -42, 84),
-        Sprite("twilight_spray_down.png", 0, 0, -40, 318.5, 533),
+        Sprite("twilight_spray_down.png", 0, 0, -29, 318.5, 533),
         # 左上主角：一轮真实月面（NASA 月面贴图渲染）的盈凸月带月晕，前后两团月光镶边的夜云，
         # 周围几道小流星；压住标题开头
         Sprite("twilight_cluster.png", 0, 0, -6, -24.5, 219),
         # 右上呼应：几道流星收在拐角附近、两道斜切进窗口落在按钮下方，沿右边框外侧一道短光带；不挡标题栏按钮
-        Sprite("twilight_spray_corner.png", 1, 0, -31.5, 136, 428),
+        Sprite("twilight_spray_corner.png", 1, 0, -35, 131.5, 419),
         # 右下角：松林跨在拐角上，帐篷搭在林前、门里透出暖光，萤火虫在林边飞散；左下角留白
         Sprite("twilight_bottom.png", 1, 1, -145.5, -145, 302),
     ),
