@@ -76,16 +76,17 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("sakura_spray_bottom.png", 1, 1, -180.5, -84.5, 185),
     ),
     "sky": (
-        # 排版脚本 sky/compose_sky.py，素材全部自绘。沿上边框向右、沿左边框向下各一行飞鸟，
-        # 越远越小越淡，夹着几朵小白云；都停在外框线外侧，不挡标题文字
-        Sprite("sky_spray_right.png", 0, 0, 350, -23.5, 33),
-        Sprite("sky_spray_down.png", 0, 0, -32, 264, 388),
-        # 左上主角：一朵大白云压在拐角上，下方垫一朵小云，两只鸟从云边飞出
-        Sprite("sky_cluster.png", 0, 0, 11, -3.5, 97),
-        # 右上呼应：拐角一只风筝，风筝线沿上边往左渐隐，挂蝴蝶结的飘带沿右边框往下；都不挡标题栏按钮
-        Sprite("sky_spray_corner.png", 1, 0, -145.5, 96.5, 309),
-        # 右下角：三朵白云叠在拐角，飞鸟沿下边缘往左、沿右边框外侧往上散开；左下角留白
-        Sprite("sky_bottom.png", 1, 1, -173.5, -137.5, 297),
+        # 排版脚本 sky/compose_sky.py。沿上边框向右、沿左边框向下各一行燕子与海鸥，越远越小越淡，
+        # 夹着几朵小白云，上边末端一小段雁阵；都停在外框线外侧，不挡标题文字
+        Sprite("sky_spray_right.png", 0, 0, 382.5, -24, 56),
+        Sprite("sky_spray_down.png", 0, 0, -36, 253, 346),
+        # 左上主角：三朵白云叠在拐角上，两只海鸥从云边飞出
+        Sprite("sky_cluster.png", 0, 0, 14.5, -8, 96),
+        # 右上呼应：拐角外一只风筝，蝴蝶结飘带往右下垂在窗外，风筝线沿上边往左渐隐，远处一只小风筝；
+        # 都不挡标题栏按钮
+        Sprite("sky_spray_corner.png", 1, 0, -138, -31, 120),
+        # 右下角：白云叠在拐角，飞鸟沿下边缘往左、沿右边框外侧往上散开；左下角留白
+        Sprite("sky_bottom.png", 1, 1, -170.5, -126.5, 283),
     ),
     "twilight": (
         # 星夜蓝，排版脚本 twilight/compose_twilight.py，素材全部自绘。沿上边框向右一组北斗七星、

@@ -1,5 +1,56 @@
 天空蓝主题窗口点缀素材来源
 
-sky_*.png 中的白云、飞鸟、风筝、风筝线与飘带蝴蝶结均为本项目自绘，未使用第三方图片。
+sky_cluster.png、sky_bottom.png 中的白云团
+  Openclipart #19440 "Simple Clouds"，作者 wirelizard，2008-09-26 上传
+  https://openclipart.org/detail/19440
+  原说明："Simple greyscale clouds, symbolic or as an icon."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：三朵云按 path 拆开单用（上面那朵未用）；灰色暗部改淡天蓝，黑色描边改蓝并加粗
+
+各 PNG 中的小积云
+  Openclipart #168626 "Cumulus Cloud"，作者 Xoff，2012-03-01 上传
+  https://openclipart.org/detail/168626
+  原说明："A small cumulus cloud"
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：灰白底改纯白，深灰描边改蓝并加粗
+
+sky_spray_corner.png 中的风筝
+  Openclipart #19648 "Kite"，作者 schoolfreeware，2008-10-19 上传
+  https://openclipart.org/detail/19648
+  原说明："A colorful kite."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：红黄蓝绿四片与飘带蝴蝶结改成深浅不同的蓝白相间，描边改深蓝
+
+sky_spray_corner.png 中远处的小风筝
+  Openclipart #23391 "Blue Kite"，作者 adam_lowe，2009-03-27 上传
+  https://openclipart.org/detail/23391
+  原说明："A blue kite."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：各处蓝色调到主题蓝系
+
+各 PNG 中的海鸥
+  Openclipart #246778 "Seagull (silhouette)"、#246779 "Seagul (silhouette 2)"，作者 Firkin，2016-04-16 上传
+  https://openclipart.org/detail/246778
+  https://openclipart.org/detail/246779
+  原说明："A silhouette version of the seagull originally from Pixabay."
+          "Another silhouette version of the seagull originally from Pixabay."
+  授权：Openclipart 全站声明 100% Public Domain（原图来自 Pixabay，其授权允许修改后免署名使用）
+  修改：黑色剪影改深蓝
+
+各 PNG 中的燕子
+  Openclipart #262278 "swallow silhouette 01"，作者 yamachem，2016-09-21 上传
+  https://openclipart.org/detail/262278
+  原说明："The image depicts a silhouette of a flying swallow."
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：黑色剪影改深蓝
+
+sky_spray_right.png 末端的雁阵
+  Openclipart #314213 "Birds Flying In Formation Silhouette"，作者 GDJ，2019-01-24 上传
+  https://openclipart.org/detail/314213
+  原说明："Birds Flying In Formation Silhouette derived from an image on Pixabay."
+  授权：Openclipart 全站声明 100% Public Domain（原图来自 Pixabay，其授权允许修改后免署名使用）
+  修改：剪影填深蓝，旋转成朝右飞
+
+sky_spray_corner.png 中的风筝线为本项目自绘。
 
 以上 PNG 由排版脚本按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
