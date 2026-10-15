@@ -23,6 +23,7 @@ from dstools.features.save_browser.save_delete import recycle_cluster_dir
 from dstools.i18n import t
 from dstools.models import SaveSource
 from dstools.qt import dialogs
+from dstools.qt.lan_mapping_guard import mapping_method_names
 from dstools.qt.pages.base import Page
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async, run_async_with_log
@@ -364,9 +365,12 @@ class SaveInfoPage(Page):
         if self._cluster_in_use(cluster):
             dialogs.show_warning(self._window(), title, t("save.delete_running", name=cluster.name))
             return
+        message = t("save.delete_confirm", name=cluster.name, dir=str(default_save_bundle_output_dir()))
+        methods = mapping_method_names(self.ctx, cluster)
+        if methods:
+            message += t("save.delete_mapping_note", methods="、".join(methods))
         choice = dialogs.ask_choice(
-            self._window(), title,
-            t("save.delete_confirm", name=cluster.name, dir=str(default_save_bundle_output_dir())),
+            self._window(), title, message,
             [(t("save.delete_backup_btn"), "backup"), (t("save.delete_direct_btn"), "delete"),
              (t("dlg.cancel_btn"), "cancel")],
             default="cancel", min_width=420, danger_values=("backup", "delete"))
@@ -388,14 +392,23 @@ class SaveInfoPage(Page):
             self._delete_button.setEnabled(True)
 
         def done(backup) -> None:
-            finish()
+            # 存档已移走：关闭它的映射（本地记录要在重新扫描前清掉），远程隧道在后台删完再提示
+            release = self.ctx.release_cluster_mappings(cluster, True)
             self.ctx.refresh_env()
+            run_async(release, lambda failures: report(backup, failures),
+                      lambda exc: report(backup, [str(exc)]))
+
+        def report(backup, failures: list[str]) -> None:
+            finish()
             if backup is not None:
                 dialogs.show_file_location(self._window(), title, backup,
                                            t("save.delete_done_backup", name=cluster.name, path="").strip(),
                                            "")
             else:
                 dialogs.show_info(self._window(), title, t("save.delete_done", name=cluster.name))
+            if failures:
+                dialogs.show_warning(self._window(), title, t("save.delete_mapping_failed_msg", name=cluster.name,
+                                                              items="\n".join(failures)))
 
         def failed(exc: Exception) -> None:
             finish()
@@ -528,5 +541,6 @@ class SaveInfoPage(Page):
             log.finish()
             self._copy_to_server.setEnabled(True)
             self.ctx.refresh_env()
+            self.ctx.clear_stale_mappings(klei_root / new_name)
 
         run_async_with_log(work, log.append, done)

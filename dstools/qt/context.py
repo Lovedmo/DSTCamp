@@ -12,6 +12,7 @@ from dstools.shared.app_settings import (
     get_last_cluster_path, get_last_platform, get_lobby_accel_enabled,
     set_last_cluster_path, set_last_platform, set_selected_account,
 )
+from dstools.qt.threads import run_async
 from dstools.shared.discovery import discover_environment
 
 
@@ -45,6 +46,9 @@ class AppContext(QObject):
         self.stop_frpc_for_shard = lambda cluster, shard, on_done: on_done()
         self.maybe_start_frpc = lambda cluster, shard: None
         self.frpc_ready = lambda cluster: False
+        # 内网穿透页接管：删除存档（remote=True）或新存档撞上残留记录（remote=False）时关闭这个存档的全部映射，
+        # 本地记录立即清掉，返回在后台停 frpc、删远程隧道的函数（结果是未能删除的隧道说明列表）
+        self.release_cluster_mappings = lambda cluster, remote: (lambda: [])
         # 跨页共享的已安装 Mod 元数据快照（图标/路径/解析结果，不含每存档的启用状态）。
         self.mod_catalog = ModCatalogStore()
         # Mod 页尚未保存的启用集合预览，供世界设置页即时显示"来自 Mod"的设置；None 表示按磁盘已保存内容
@@ -129,6 +133,13 @@ class AppContext(QObject):
         if any(proc.cluster_path == cluster.path for proc in self.manager.running()):
             text += t("selector.running_suffix")
         return text
+
+    def clear_stale_mappings(self, cluster_path: Path) -> None:
+        """新建存档后调用：同一路径上旧存档（在 DSTCamp 之外删除的）残留的映射记录会让新存档被当成已映射，
+        清掉本地记录并停掉 frpc。账号上的旧隧道不删：樱花、Lolia 都按存档名和路径识别隧道，新存档开启映射时直接复用。"""
+        cluster = next((c for c in self.env.clusters if c.path == cluster_path), None)
+        if cluster is not None:
+            run_async(self.release_cluster_mappings(cluster, False), lambda _result: None, lambda _exc: None)
 
     def goto_tab(self, key: str) -> None:
         self.tab_requested.emit(key)

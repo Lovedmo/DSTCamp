@@ -1122,6 +1122,24 @@ class SelfHostPanel(QWidget):
         self._render_shard_rows()
         self.ctx.cluster_config_saved.emit(cluster)
 
+    def release_cluster(self, cluster):
+        """存档被删除（或新存档撞上旧存档残留的记录）时关闭自建节点映射：端口记账立即清掉，返回在后台
+        停 frpc、删配置的函数。自建 frps 没有分配接口，远端没有要删的东西。"""
+        if not any(self.has_active_mapping(cluster, s) for s in cluster.shards):
+            return None
+        for shard in cluster.shards:
+            app_settings.set_selfhost_frp_mapping(cluster.path, shard.name, None)
+        config_path = self._frpc_config_path(cluster.path)
+
+        def work() -> list[str]:
+            # 停服后 frpc 仍在运行，可能是上次启动 DSTCamp 时留下的，要按配置路径认领后再停
+            if self.frpc.reconcile(cluster.path, _frpc_exe_path(), config_path) is not None:
+                self.frpc.stop_blocking(cluster.path)
+            config_path.unlink(missing_ok=True)
+            return []
+
+        return work
+
     # ── 大厅加速 ────────────────────────────────────────────────────────
     def ensure_lobby_accel(self, cluster, on_done) -> None:
         if not app_settings.get_lobby_accel_enabled():

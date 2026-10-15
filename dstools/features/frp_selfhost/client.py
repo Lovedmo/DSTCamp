@@ -239,6 +239,14 @@ class FrpcManager:
         self._procs[key] = proc
         return proc
 
+    def stop_blocking(self, cluster_path: Path) -> None:
+        """阻塞到进程退出并移出跟踪，须在后台线程调用。"""
+        key = str(cluster_path)
+        proc = self._procs.get(key)
+        if proc:
+            proc.stop_blocking()
+            self._procs.pop(key, None)
+
     def stop(self, cluster_path: Path, on_done=None) -> None:
         key = str(cluster_path)
         proc = self._procs.get(key)

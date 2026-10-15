@@ -1,8 +1,9 @@
-"""开启端口映射前的检查。
+"""三种内网穿透映射共用的界面辅助。
 
-- 存档是否开着仅局域网/离线模式：映射会把 server_port 改成远程端口，而这两个模式要求端口在 10998~11018，
-  二者不能同时生效；开启映射时就提示。
-- 世界是否已被另一种映射方式接管：多种方式会互相覆盖 server_port 等配置。
+- 开启前检查存档是否开着仅局域网/离线模式：映射会把 server_port 改成远程端口，而这两个模式要求端口在
+  10998~11018，二者不能同时生效；开启映射时就提示。
+- 开启前检查世界是否已被另一种映射方式接管：多种方式会互相覆盖 server_port 等配置。
+- 删除存档时列出要一并关闭的映射方式，汇总未能删除的远程隧道。
 """
 
 from __future__ import annotations
@@ -48,3 +49,15 @@ def ensure_no_other_mapping(parent, ctx, cluster, own: str, title: str) -> bool:
     dialogs.show_warning(parent, title, t("sakura.other_mapping_conflict_msg",
                                           shards="、".join(conflicting), methods="、".join(methods)))
     return False
+
+
+def mapping_method_names(ctx, cluster) -> list[str]:
+    """这个存档各世界正在用的映射方式名称（去重，按世界顺序）。"""
+    owners = (ctx.mapping_owner(cluster, s) for s in cluster.shards)
+    return list(dict.fromkeys(t(_OWNER_LABEL_KEYS[o]) for o in owners if o))
+
+
+def remote_failure_item(owner: str, shard_names, error) -> str:
+    """一条"未能从账号上删除的隧道"说明，删除存档完成后汇总提示用户手动处理。"""
+    return t("save.delete_mapping_failed_item", method=t(_OWNER_LABEL_KEYS[owner]),
+             shards="、".join(shard_names), error=str(error))

@@ -32,7 +32,7 @@ from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, section_card
 from dstools.shared import app_settings
-from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
+from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.shared.server_ports import stable_path_key
 from dstools.shared.token_manager import is_valid_token, mask_token
 
@@ -840,6 +840,53 @@ class _SakuraMappingPanel(QWidget):
 
         run_async(work, done, lambda _exc: done(None))
 
+    def release_cluster(self, cluster, remote: bool):
+        """存档被删除（或新存档撞上旧存档残留的记录）时关闭樱花映射：本地指针与 frpc 立即清掉；
+        remote 为 True 时返回在后台删除账号上隧道的函数，结果是未能删除的说明列表。"""
+        pointers = {s.name: _frpc_pointer_path(cluster.path, s.name, self.ctx.env) for s in cluster.shards}
+        mapped = [s for s in cluster.shards if pointers[s.name].exists()]
+        if not mapped:
+            return None
+        pointer_ids = {}
+        for shard in mapped:
+            try:
+                pointer_ids[shard.name] = int(pointers[shard.name].read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                pass
+            pointers[shard.name].unlink(missing_ok=True)
+            if self.frpc.get(cluster.path, shard.name):
+                self.frpc.stop(cluster.path, shard.name)
+        if not remote:
+            return None
+        token = app_settings.get_sakura_token()
+        identity = stable_path_key(cluster.path)
+        # 调用方随后会重新扫描环境（删除的存档不在其中），名字是否唯一要在这里先算好
+        allow_legacy = self._legacy_tunnel_name_is_unambiguous(cluster)
+        names = [s.name for s in mapped]
+
+        def work() -> list[str]:
+            if not token:
+                return [remote_failure_item("sakura", names, t("save.delete_mapping_not_logged_in"))]
+            try:
+                tunnels = sakura_frp.list_tunnels(token)
+                ids = set()
+                for shard in mapped:
+                    tunnel = sakura_frp.find_dstcamp_tunnel(
+                        tunnels, cluster.path.name, shard.name, cluster.source.value, cluster.platform.value,
+                        cluster_identity=identity, allow_legacy=allow_legacy)
+                    if tunnel is None:
+                        tunnel = next((x for x in tunnels if str(x.get("id", "")) == str(pointer_ids.get(shard.name))),
+                                      None)
+                    if tunnel is not None:
+                        ids.add(int(tunnel["id"]))
+                if ids:
+                    sakura_frp.delete_tunnel(token, sorted(ids))
+            except (sakura_frp.SakuraApiError, OSError) as exc:
+                return [remote_failure_item("sakura", names, exc)]
+            return []
+
+        return work
+
 
 class SakuraPage(Page):
     def __init__(self, ctx):
@@ -878,6 +925,7 @@ class SakuraPage(Page):
         ctx.stop_frpc_for_shard = self._stop_frpc_for_shard
         ctx.maybe_start_frpc = self._maybe_start_frpc
         ctx.frpc_ready = self._frpc_ready
+        ctx.release_cluster_mappings = self._release_cluster_mappings
 
     @staticmethod
     def _tab_labels() -> list[str]:
@@ -913,6 +961,18 @@ class SakuraPage(Page):
     def _frpc_ready(self, cluster) -> bool:
         return (self._mapping.frpc_all_running(cluster) or self._lolia.frpc_running(cluster)
                 or self._selfhost.frpc_running(cluster))
+
+    def _release_cluster_mappings(self, cluster, remote: bool):
+        """关闭这个存档上全部三种映射：本地记录立即清掉（须在重新扫描环境前调用），
+        返回在后台停 frpc、删远程隧道的函数，结果是未能从账号上删除的隧道说明列表。"""
+        jobs = [job for job in (self._mapping.release_cluster(cluster, remote),
+                                self._lolia.release_cluster(cluster, remote),
+                                self._selfhost.release_cluster(cluster)) if job]
+
+        def work() -> list[str]:
+            return [item for job in jobs for item in job()]
+
+        return work
 
     # ── Page 协议 ───────────────────────────────────────────────────────
     def on_cluster_changed(self, cluster) -> None:

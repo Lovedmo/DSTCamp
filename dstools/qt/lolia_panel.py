@@ -29,7 +29,7 @@ from dstools.features.lolia import config as lolia_config
 from dstools.i18n import t
 from dstools.models import SaveSource
 from dstools.qt import dialogs
-from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
+from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.qt.lolia_oauth_dialog import LoliaOAuthAppDialog
 from dstools.qt.node_picker import NodeChoice, NodePickerDialog
 from dstools.qt.theme import theme
@@ -812,3 +812,47 @@ class LoliaPanel(QWidget):
                     pass
 
         run_async(work, lambda _r: self._reload_async(), lambda _e: self._reload_async())
+
+    def release_cluster(self, cluster, remote: bool):
+        """存档被删除（或新存档撞上旧存档残留的记录）时关闭 Lolia 映射：本地记录立即清掉，返回在后台
+        停 frpc、删配置的函数；remote 为 True 时顺带删除 DSTCamp 自动创建的隧道，结果是未能删除的说明列表。"""
+        for shard in cluster.shards:
+            # 粘贴过的隧道来源含节点凭据，存档没了一并删除
+            if app_settings.get_lolia_source(cluster.path, shard.name) is not None:
+                app_settings.set_lolia_source(cluster.path, shard.name, None)
+        mappings = {s.name: app_settings.get_lolia_mapping(cluster.path, s.name) for s in cluster.shards}
+        mapped = [s for s in cluster.shards if mappings[s.name] is not None]
+        if not mapped:
+            return None
+        for shard in mapped:
+            app_settings.set_lolia_mapping(cluster.path, shard.name, None)
+        procs = [(self._proc_key(cluster, s), self._frpc_config_path(cluster, s)) for s in mapped]
+        # 只有 OAuth 自动创建的隧道归 DSTCamp 管；粘贴配置方式的隧道是用户自己建的，与关闭映射一样不删
+        tunnels = {s.name: mappings[s.name]["tunnel"] for s in mapped if mappings[s.name]["tunnel"]} if remote else {}
+
+        def work() -> list[str]:
+            # 停服后 frpc 仍在运行，可能是上次启动 DSTCamp 时留下的，要按配置路径认领后再停
+            for key, config_path in procs:
+                if self.frpc.reconcile(key, _frpc_exe_path(), config_path) is not None:
+                    self.frpc.stop_blocking(key)
+                config_path.unlink(missing_ok=True)
+            if not tunnels:
+                return []
+            if not lolia_api.is_logged_in():
+                return [remote_failure_item("lolia", tunnels, t("save.delete_mapping_not_logged_in"))]
+            try:
+                existing = {item.get("name") for item in lolia_api.list_tunnels()}
+            except (lolia_config.LoliaError, OSError) as exc:
+                return [remote_failure_item("lolia", tunnels, exc)]
+            failed, error = [], None
+            for shard_name, name in tunnels.items():
+                if name not in existing:
+                    continue  # 已在控制台手动删掉
+                try:
+                    lolia_api.delete_tunnel(name)
+                except (lolia_config.LoliaError, OSError) as exc:
+                    failed.append(shard_name)
+                    error = exc
+            return [remote_failure_item("lolia", failed, error)] if failed else []
+
+        return work

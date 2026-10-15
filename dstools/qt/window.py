@@ -939,6 +939,7 @@ class MainWindow(QWidget):
         cluster = next((c for c in self.ctx.clusters() if c.path == path), None)
         if cluster is None:
             return
+        self.ctx.clear_stale_mappings(path)
         self.ctx.select_cluster(cluster)
         self.cluster_bar.reload()
         if launch:
