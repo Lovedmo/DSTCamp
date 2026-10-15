@@ -1,13 +1,28 @@
-烈焰橙主题（内部标识 campfire）窗口点缀「凤凰涅槃」素材来源
+篝火橙主题窗口点缀素材来源
 
-campfire_phoenix.png 中的火凤
-  Openclipart #117001 "Phoenix Bird 1"，作者 Merlin2525
-  https://openclipart.org/detail/117001
+campfire_fire.png 中的篝火
+  Openclipart #23803 "fire"，页面署名 Anonymous
+  https://openclipart.org/detail/23803
   授权：Public Domain（Openclipart 全站声明 100% Public Domain）
-  取用：该图的 SVG 下载接口持续返回 504，改取站点导出的 2400px PNG
-  修改：按亮度重新映射成金、橙、深红的火焰色（眼白保留），旋转并缩放
+  修改：删除地面上的径向渐变光晕
 
-campfire_tail.png、campfire_trail.png、campfire_corner.png、campfire_wall.png，以及火凤背后的火光
-  火焰飘带、羽眼、火舌、火墙、火星和光晕均为本项目自绘
+各 PNG 中的枫叶
+  Openclipart #1375 "maple leaf"，作者 zeimusu
+  https://openclipart.org/detail/1375
+  授权：Public Domain
 
-以上 PNG 按最高 3 倍屏缩放比预渲染。
+  Openclipart #263809 "Autumn Leaves"，作者 Arvin61r58
+  https://openclipart.org/detail/263809
+  授权：Public Domain
+  修改：只取六片中的四片暖色叶；深绿叶柄改成褐色；去掉渲染时不支持的滤镜
+
+各 PNG 中的橡叶
+  Openclipart #11747 "Oak Leaf - Autumn 2"，作者 rwwgub
+  https://openclipart.org/detail/11747
+  授权：Public Domain
+  修改：删除投影
+
+campfire_spray_right.png、campfire_spray_down.png、campfire_spray_corner.png、campfire_fire.png
+  连接叶片的褐色细枝、篝火上方的火星、篝火底下的暖光为本项目自绘
+
+以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。

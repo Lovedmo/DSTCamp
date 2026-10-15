@@ -36,7 +36,7 @@ STRINGS = {
         "theme.mint": "自然绿",
         "theme.sky": "天空蓝",
         "theme.twilight": "星夜蓝",
-        "theme.campfire": "烈焰橙",
+        "theme.campfire": "篝火橙",
         "theme.sakura": "樱花粉",
         # 设置菜单
         "settings.language_label": "语言",
@@ -1444,7 +1444,7 @@ STRINGS = {
         "theme.mint": "Nature",
         "theme.sky": "Sky",
         "theme.twilight": "Starry Night",
-        "theme.campfire": "Blaze",
+        "theme.campfire": "Campfire",
         "theme.sakura": "Sakura",
         # 设置菜单
         "settings.language_label": "Language",
