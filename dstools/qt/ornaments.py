@@ -101,7 +101,7 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         # 右上呼应：几道流星收在拐角附近、两道斜切进窗口落在按钮下方；不挡标题栏按钮
         Sprite("twilight_spray_corner.png", 1, 0, -36, 14.5, 185),
         # 右下角：松林跨在拐角上，帐篷搭在林前、门里透出暖光，萤火虫在林边飞散；左下角留白
-        Sprite("twilight_bottom.png", 1, 1, -145.5, -145, 302),
+        Sprite("twilight_bottom.png", 1, 1, -116, -116, 242),
     ),
 }
 
