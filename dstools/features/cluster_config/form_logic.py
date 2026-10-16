@@ -98,6 +98,11 @@ def make_field(section: str, key: str, value, *, readonly: bool = False, tooltip
             spec.display_text = next((disp for raw, disp in choices if raw == value), str(value))
         else:
             spec.display_text = str(value) if value is not None else ""
+        if not spec.display_text:
+            # 空值显示说明文字，不留空白；只改显示，spec.value 仍为空（只读字段保存时不写回）。
+            # 游戏自己生成的字段（如 cluster_cloud_id）在首次开服前没有值
+            generated = not is_shard and (ini_section, key) in ALWAYS_READONLY_FIELDS
+            spec.display_text = t("cluster.value_not_generated" if generated else "cluster.value_unset")
     elif is_bool:
         spec.kind = "bool"
     elif choices:
