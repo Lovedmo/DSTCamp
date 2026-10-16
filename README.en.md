@@ -18,16 +18,18 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#164-changes">Changelog</a> ·
+  <a href="#165-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.6.4 highlights
+## ✨ 1.6.5 highlights
 
-- 🔧 **Automatic V1 Mod folder repair**: V1 Mods that fail to load because of extra files in their folder are cleaned up before the server starts, no manual steps needed.
-- 🖥️ **More useful console banners**: failed Mods are named and open a failure list, and when everything loads you can export an image of the Mod list.
+- 🎨 **Refreshed themes and window ornaments**: a new Sky theme, and five color themes can show ornaments that match the theme.
+- 💾 **Edit server settings for local saves**: name, description, password, max players, and PVP can be changed directly.
+- 🪟 **Small-window friendly**: pages compact or scroll when the window gets short or narrow, and work well at 1280×720.
+- ⚡ **Faster Mod loading**: the Mod list and update checks are much faster, even with hundreds of Mods.
 
 ## 🧭 Features
 
@@ -105,24 +107,45 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.6.4 changes
+## 1.6.5 changes
 
 ### ✨ New features
+
+- **Refreshed themes and window ornaments**: new Sky theme; Mint is renamed Nature, and Twilight is renamed Starry Night with a deeper main color; Sakura, Campfire, Nature, Sky, and Starry Night gain theme-matched window ornaments (blossoms, autumn leaves and a campfire, a nest in the grass, clouds and birds, a moonlit night sky), off by default and enabled from "Theme → Window Ornaments"; Theme menu items are now aligned.
+- **Text adapts to custom backgrounds**: when the background is dark, dark text across the window switches to light text while the image itself is unchanged; clicking the opacity slider jumps straight to that position.
+- **Edit server settings for local saves**: server name, description, password, max players (1–6), and PVP can be changed and are written where the game actually reads them when starting; if the game is open you are asked to return to its start screen first, and saving is blocked while the save is running.
+- **Small-window and low-resolution layouts**: when the window gets short or narrow, the Local Server, Server Config, and tunnel pages switch to compact layouts or scroll instead of squashing or overlapping controls; room settings fit on one screen at 1280×720.
+- **Faster Mod list loading and update checks**: parsing results are cached on disk, and checking hundreds of Mods for updates takes about one network round trip; "Update All" in the update dialog becomes "Quick Update", updating only Mods that need it and showing the count.
+- **Sakura node picker**: nodes are grouped into Mainland China and Overseas/HK/Macau/Taiwan, showing live load, public-game support, and high-load markers.
+
+### 🐞 Fixes
+
+- Auto-update always failed when a `DSTCamp.exe` already existed in the program folder, and a failed update silently fell back to the old version without explaining why (it now rolls back and shows the reason).
+- Auto-update downloaded a new version again even if it had already been downloaded but not restarted (it is now reused when its size and SHA-256 match).
+- Deleting a save left its tunnel mappings running and remote tunnels behind (they are now stopped and deleted); a new save with no mapping was reported as already mapped another way; mapping conflict messages now name the methods already used by the current save.
+- Double-clicking a downloaded EXE did nothing (the download block is now cleared on startup, and the README explains it).
+- Empty read-only server settings were left blank; they now show "Not generated yet" or "Not set".
+- On the World Settings page, the window height stopped shrinking after the window was made narrower.
+- The repository is renamed DSTCamp, with GitHub/Gitee links and the update check updated accordingly.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.6.4)</strong></summary>
+
+### 1.6.4
+
+#### ✨ New features
 
 - **Automatic V1 Mod folder repair**: when a V1 folder contains extra files, they are cleaned up before the server starts, with a notice and a log entry; the Workshop update dialog gains a "V1 folder has extra files" status.
 - **Console banner improvements**: the Mod load failure banner shows Mod names and opens a failure list with icons, where each Mod's folder can be opened; when all Mods load, clicking the banner exports an image of the Mods the server actually loaded; crash and startup diagnostics support the English UI.
 - **Recommended Mods dialog uses icon cards**: icons are sharp at any display scaling, and descriptions support English.
 - **Leaner Mod update log**: each Mod shows a single "start checking" line with its name instead of repeating with download progress.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - V1 Mod folders with extra files failed to load or were skipped during deployment, and Mods re-uploaded as V2 with an old package left inside were treated as V1 (V1/V2 is now determined by the install size in Steam's manifest); temporary files were left in the Workshop folder when a V1 download failed.
 - When a world that had reported a token conflict later exited, the banner did not show the actual exit reason.
 - Clicking "Set Global Tokens" while creating a save did nothing and raised an error.
 - Shift+Enter in log search still jumped to the next match.
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.6.3)</strong></summary>
 
 ### 1.6.3
 
