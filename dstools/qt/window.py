@@ -289,7 +289,7 @@ class MenuStrip(QWidget):
             self._theme_actions[name] = add_item(ThemeMenuItem(menu, name, t(f"theme.{name}"), theme.set_theme))
         menu.addSeparator()
         # 下面几项也用同款自绘项：原生 QAction 有勾选列，文字起点跟主题项对不齐。
-        # 点缀图案跟着主题走，这里只是总开关
+        # 点缀图案随主题，这里是总开关
         self._ornaments_action = add_item(CheckMenuItem(
             menu, t("theme.ornaments"),
             lambda: self._window.set_ornaments_enabled(not get_window_ornaments_enabled()),
@@ -1044,7 +1044,7 @@ class MainWindow(QWidget):
         if self._restore_geometry is not None:
             self.setGeometry(self._restore_geometry)
             self._restore_geometry = None
-            self._ornaments.refresh()  # 移动事件发生时还处于最大化状态，还原后再摆放一次
+            self._ornaments.refresh()  # 移动事件时仍算最大化，还原后补摆一次
             return
         self._restore_geometry = self.geometry()
         avail = (self.screen() or QGuiApplication.primaryScreen()).availableGeometry()
