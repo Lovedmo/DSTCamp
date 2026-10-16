@@ -1142,6 +1142,32 @@ def test_world_reader_and_view_model():
     assert isinstance(day, WorldDisplayOverride) and day.persisted is False
 
 
+def test_local_server_data_roundtrip():
+    # 本地存档的房间设置在 Master shardindex 的 server 表：只替换这一段，表内未开放的键原样保留
+    from dstools.features.cluster_config.local_server_data import (
+        load_local_server_data, merge_local_values, save_local_server_data, validate_local_values,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "Master" / "save").mkdir(parents=True)
+        index_file = root / "Master" / "save" / "shardindex"
+        index_file.write_bytes(
+            b'KLEI     1 return {enabled_mods={}, server={game_mode="survival", max_players=6, '
+            b'name="old", password="", privacy_type=2, pvp=false}, world={options={}}}'
+        )
+        values = {("NETWORK", "cluster_name"): "新名字", ("GAMEPLAY", "max_players"): "4",
+                  ("GAMEPLAY", "pvp"): True}
+        assert validate_local_values(values) is None
+        assert validate_local_values({("GAMEPLAY", "max_players"): "7"}) is not None
+        save_local_server_data(root, merge_local_values(load_local_server_data(root), values))
+        saved = index_file.read_bytes()
+        assert saved.startswith(b"KLEI     1 ") and b"world={options={}}" in saved
+        assert load_local_server_data(root) == {
+            "game_mode": "survival", "max_players": 4, "name": "新名字", "password": "",
+            "privacy_type": 2, "pvp": True,
+        }
+
+
 def test_world_catalog_layers_are_isolated():
     """原版目录与猪镇 Mod 覆盖层必须分离。"""
 

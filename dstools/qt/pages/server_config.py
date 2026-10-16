@@ -1,6 +1,7 @@
 """服务器配置页：房间设置（cluster.ini）、世界设置（各世界 server.ini）、管理员、黑名单、服务器令牌。
 
-取值/校验/端口冲突检查在 features/cluster_config 的纯逻辑模块中；本地存档由游戏客户端管理，只读展示。
+取值/校验/端口冲突检查在 features/cluster_config 的纯逻辑模块中；本地存档由游戏客户端管理，房间设置只开放
+名称、描述、密码、人数、PVP（写入 Master shardindex，见 local_server_data.py），其余只读展示。
 """
 
 import webbrowser
@@ -15,6 +16,12 @@ from PySide6.QtWidgets import (
 from dstools.features.cluster_config import form_logic, save_checks
 from dstools.features.cluster_config.admin_manager import add_admin, remove_admin
 from dstools.features.cluster_config.config_manager import save_cluster_config, save_shard_config
+from dstools.features.cluster_config.local_server_data import (
+    load_local_server_data, merge_local_values, save_local_server_data, validate_local_values,
+)
+from dstools.features.mod.shardindex import (
+    LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
+)
 from dstools.features.save_browser.reader import list_known_player_ids, refresh_player_registry
 from dstools.i18n import t
 from dstools.models import SaveSource
@@ -425,11 +432,20 @@ class ServerConfigPage(Page):
             self._admin._list.clear()
             self._block._list.clear()
             return
-        self._banner.set_text("")
         is_server = cluster.source == SaveSource.SERVER
-        self._cluster_save.setEnabled(is_server)
+        local_server = None
+        if is_server:
+            self._banner.set_text("")
+        else:
+            # 本地存档的房间设置真正存在 Master shardindex 的 server 表；读不了时整页只读
+            try:
+                local_server = load_local_server_data(cluster.path)
+                self._banner.set_text(t("cluster.local_edit_banner"))
+            except ShardIndexError as exc:
+                self._banner.set_text(t("cluster.local_index_unreadable", detail=exc))
+        self._cluster_save.setEnabled(is_server or local_server is not None)
         self._shard_save.setEnabled(is_server)
-        self._rebuild_cluster_form(cluster)
+        self._rebuild_cluster_form(cluster, local_server)
         self._shard_combo.blockSignals(True)
         self._shard_combo.clear()
         names = [s.name for s in cluster.shards]
@@ -451,9 +467,9 @@ class ServerConfigPage(Page):
                 widget.deleteLater()
         self._cluster_grids = []
 
-    def _rebuild_cluster_form(self, cluster) -> None:
+    def _rebuild_cluster_form(self, cluster, local_server: dict | None = None) -> None:
         self._clear_cluster_form()
-        for groups in form_logic.build_cluster_columns(cluster):
+        for groups in form_logic.build_cluster_columns(cluster, local_server):
             column = Card(radius=18, alpha=0, border_key="PRIMARY", border=True)
             column_layout = QVBoxLayout(column)
             column_layout.setContentsMargins(14, 8, 14, 12)
@@ -549,6 +565,9 @@ class ServerConfigPage(Page):
         if cluster is None:
             return
         values = self._cluster_values()
+        if cluster.source != SaveSource.SERVER:
+            self._save_local_cluster(cluster, values)
+            return
         # 所有带范围的字段先整体校验，任何一个越界就中止保存、什么都不写
         error = save_checks.validate_ranges(values, shard=False)
         if error:
@@ -576,6 +595,9 @@ class ServerConfigPage(Page):
                 t("cluster.cross_cluster_port_confirm", details="\n".join(cross[:12])), min_width=780):
             return
         save_cluster_config(config, cluster.path)
+        self._after_cluster_saved(cluster)
+
+    def _after_cluster_saved(self, cluster) -> None:
         dialogs.show_info(self._window(), t("dlg.save_ok"), t("dlg.config_saved", name=cluster.name))
         # cluster_password 会拼进"本地服务器"页的直连代码，改了要通知它刷新
         self.ctx.cluster_config_saved.emit(cluster)
@@ -584,6 +606,42 @@ class ServerConfigPage(Page):
         if previous_shard in [s.name for s in cluster.shards]:  # 不能因为保存房间设置就把正在看的世界切回 Master
             self._shard_combo.setCurrentText(previous_shard)
             self._on_shard_picked(0)
+
+    def _save_local_cluster(self, cluster, values) -> None:
+        """本地存档：先写游戏真正读取的 Master shardindex 的 server 表，再同步写 cluster.ini 保持一致。
+        游戏只在回到开始页面时重读 shardindex，存档运行时开服进程自动存档还会覆盖它，进程检测放后台。"""
+        title = t("cluster.save_btn")
+        error = validate_local_values(values)
+        if error:
+            dialogs.show_error(self._window(), title, error)
+            return
+        self._cluster_save.setEnabled(False)
+
+        def done(state: str) -> None:
+            self._cluster_save.setEnabled(True)
+            current = self.ctx.selected_cluster()
+            if current is None or str(current.path) != str(cluster.path):  # 检测期间已切到别的存档
+                return
+            if state == LOCAL_SAVE_RUNNING:
+                dialogs.show_warning(self._window(), title, t("cluster.local_save_running"))
+                return
+            if state == LOCAL_SAVE_OPEN and not dialogs.ask_yes_no(
+                    self._window(), title, t("cluster.local_save_game_open_confirm", name=cluster.name)):
+                return
+            try:
+                server = merge_local_values(load_local_server_data(cluster.path), values)
+                save_local_server_data(cluster.path, server)
+                save_cluster_config(save_checks.build_cluster_config(cluster, values), cluster.path)
+            except (OSError, ShardIndexError) as exc:
+                dialogs.show_error(self._window(), t("dlg.save_fail"), str(exc))
+                return
+            self._after_cluster_saved(cluster)
+
+        def failed(exc: Exception) -> None:
+            self._cluster_save.setEnabled(True)
+            dialogs.show_error(self._window(), title, str(exc))
+
+        run_async(lambda: local_save_play_state(cluster), done, failed)
 
     def _resolve_lan_lock(self, cluster, config, issues) -> bool:
         """存档运行中或有映射、无法改端口时，说明原因并给出出路。返回 True 表示用户选择关闭 LAN 限制。"""

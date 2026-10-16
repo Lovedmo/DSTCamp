@@ -369,6 +369,26 @@ STRINGS = {
         "cluster.bool_off": "关闭",
         "cluster.value_not_generated": "尚未生成",
         "cluster.value_unset": "未设置",
+        "cluster.local_edit_banner": (
+            "当前是本地存档：游戏开服时会按存档设置重写 cluster.ini，这里只能改服务器名称、描述、密码、"
+            "最大玩家数和 PVP，保存时写入游戏真正读取的存档设置。若保存时游戏开着，请先让游戏回到开始页面"
+            "（在游戏主菜单「模组」里点「应用」，或重启游戏）再开启这个存档，否则会用旧设置覆盖你的修改。"
+        ),
+        "cluster.local_index_unreadable": "⚠ 无法读取本地存档的服务器设置（{detail}），暂时只能查看。",
+        "cluster.local_name_empty": "服务器名称不能为空。",
+        "cluster.local_password_space": "服务器密码首尾不能有空格，游戏不接受这样的密码。",
+        "cluster.local_max_players_range": "本地存档的最大玩家数只能在 {min}~{max} 之间（游戏内建服的上限）。",
+        "cluster.local_save_running": (
+            "这个存档可能正在运行（检测到游戏客户端开着，且有开服进程占用了该存档配置的端口）。"
+            "运行中的存档会在自动存档时覆盖存档设置，请先在游戏里退出这个存档（回到大厅）再保存。"
+        ),
+        "cluster.local_save_game_open_confirm": (
+            "检测到饥荒游戏客户端正在运行。\n\n"
+            "游戏只在回到开始页面（显示“登陆中...”的页面）时重新读取存档设置。现在保存后，"
+            "请先在游戏主菜单「模组」里点「应用」（或重启游戏）让游戏回到开始页面，再开启这个存档，修改才会"
+            "生效。\n\n"
+            "确定保存“{name}”的房间设置吗？"
+        ),
         "cluster.port_conflict_effective": "UDP 端口 {value} 在当前存档内冲突：{owners}。游戏实际使用的默认端口也参与检查，请修改后再保存。",
         "cluster.cross_cluster_port_title": "与其他存档端口重复",
         "cluster.cross_cluster_port_confirm": "该配置与其他服务器存档使用了相同端口。允许保存，但这些存档不能按当前配置同时启动：\n\n{details}\n\n仍要保存吗？",
@@ -1780,6 +1800,29 @@ STRINGS = {
         "cluster.bool_off": "Off",
         "cluster.value_not_generated": "Not generated yet",
         "cluster.value_unset": "Not set",
+        "cluster.local_edit_banner": (
+            "This is a local save: the game rewrites cluster.ini from the save settings when it starts the "
+            "save, so only the server name, description, password, max players and PVP can be changed here, "
+            "and they're saved into the save settings the game actually reads. If the game is open when you "
+            "save, send it back to the start screen first (click \"Apply\" in the main menu's \"Mods\", or "
+            "restart the game) before starting this save, otherwise the old settings overwrite your changes."
+        ),
+        "cluster.local_index_unreadable": "⚠ Couldn't read the local save's server settings ({detail}), so it's view-only for now.",
+        "cluster.local_name_empty": "The server name can't be empty.",
+        "cluster.local_password_space": "The server password can't start or end with spaces; the game rejects such passwords.",
+        "cluster.local_max_players_range": "Max players for a local save must be between {min} and {max} (the in-game hosting limit).",
+        "cluster.local_save_running": (
+            "This save may be running (the game client is open and a server process is using the port this "
+            "save is configured with). A running save overwrites the save settings when it autosaves, so "
+            "leave this save in the game (back to the lobby) before saving."
+        ),
+        "cluster.local_save_game_open_confirm": (
+            "The Don't Starve Together client is running.\n\n"
+            "The game only re-reads save settings when it returns to its start screen (the \"Logging in...\" "
+            "screen). After saving now, click \"Apply\" in the main menu's \"Mods\" (or restart the game) to "
+            "send it back to the start screen, then start this save for the changes to apply.\n\n"
+            "Save the cluster settings of \"{name}\"?"
+        ),
         "cluster.port_conflict_effective": "UDP port {value} conflicts inside this save: {owners}. Effective game defaults are included in this check; change the port before saving.",
         "cluster.cross_cluster_port_title": "Port Also Used by Another Save",
         "cluster.cross_cluster_port_confirm": "This configuration shares ports with another server save. It may be saved, but the saves cannot run together with their current settings:\n\n{details}\n\nSave anyway?",

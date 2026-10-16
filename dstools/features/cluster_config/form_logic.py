@@ -11,6 +11,7 @@ from dstools.features.cluster_config.config_manager import (
 from dstools.features.cluster_config.ini_field_info import (
     ALWAYS_READONLY_FIELDS, get_enum_choices, get_field_info, get_range_limits,
 )
+from dstools.features.cluster_config.local_server_data import LOCAL_MAX_PLAYERS_LIMITS, local_form_values
 from dstools.features.save_browser.reader import known_nicknames
 from dstools.i18n import t
 from dstools.models import Cluster, SaveSource, Shard
@@ -77,7 +78,8 @@ class FieldSpec:
         return self.section.startswith("SHARD_")
 
 
-def make_field(section: str, key: str, value, *, readonly: bool = False, tooltip: str | None = None) -> FieldSpec:
+def make_field(section: str, key: str, value, *, readonly: bool = False, tooltip: str | None = None,
+               limits: tuple | None = None) -> FieldSpec:
     is_shard = section.startswith("SHARD_")
     ini_section = section[len("SHARD_"):] if is_shard else section
     # 游戏自己生成、没有官方说明用途的字段（如 cluster_cloud_id）：一律只读
@@ -88,7 +90,7 @@ def make_field(section: str, key: str, value, *, readonly: bool = False, tooltip
     # bool 值来自 ini 解析的类型转换结果（不是靠猜的），可以放心据此画成开关
     is_bool = isinstance(value, bool)
     choices = None if is_shard else get_enum_choices(ini_section, key)
-    limits = get_range_limits(ini_section, key)
+    limits = limits or get_range_limits(ini_section, key)
     spec = FieldSpec(section, key, label, desc, "text", value, readonly, tooltip=tooltip)
     if readonly:
         spec.kind = "readonly"
@@ -123,8 +125,10 @@ class ClusterGroup:
     fields: list[FieldSpec] = field(default_factory=list)
 
 
-def build_cluster_columns(cluster: Cluster) -> list[list[ClusterGroup]]:
-    """返回三列，每列若干分区组；本地存档一律只读（游戏客户端自己管理和重写，改了也留不住）。"""
+def build_cluster_columns(cluster: Cluster, local_server: dict | None = None) -> list[list[ClusterGroup]]:
+    """返回三列，每列若干分区组。本地存档的 cluster.ini 由游戏开服时按 shardindex 重写，改了留不住：
+    传入 local_server（Master shardindex 的 server 表）时，LOCAL_SERVER_FIELDS 几项按它显示并可编辑，
+    其余一律只读；不传则全部只读。"""
     is_server = cluster.source == SaveSource.SERVER
     config = load_cluster_config(cluster.path)
     for section, key in REMOVED_CLUSTER_FIELDS:
@@ -132,6 +136,9 @@ def build_cluster_columns(cluster: Cluster) -> list[list[ClusterGroup]]:
     if is_server:
         # 游戏没写进文件不代表没有默认行为，只是这份存档还没存过；本地存档由客户端管理，不替它补
         backfill_cluster_defaults(config)
+    local_values = {} if is_server or local_server is None else local_form_values(local_server)
+    for (section, key), value in local_values.items():
+        getattr(config, section.lower())[key] = value
     columns = []
     for column in CLUSTER_COLUMNS:
         groups = []
@@ -142,10 +149,21 @@ def build_cluster_columns(cluster: Cluster) -> list[list[ClusterGroup]]:
             order = SECTION_FIELD_ORDER.get(section, [])
             keys = [k for k in order if k in data] + [k for k in data if k not in order]
             groups.append(ClusterGroup(section, t(SECTION_HEADER_KEYS[section]), [
-                make_field(section, key, data[key], readonly=not is_server) for key in keys
+                _cluster_field(section, key, data[key], is_server, (section, key) in local_values)
+                for key in keys
             ]))
         columns.append(groups)
     return columns
+
+
+def _cluster_field(section: str, key: str, value, is_server: bool, local_editable: bool) -> FieldSpec:
+    if is_server:
+        return make_field(section, key, value)
+    if not local_editable:
+        return make_field(section, key, value, readonly=True)
+    # 游戏内建服人数上限比专服小
+    limits = LOCAL_MAX_PLAYERS_LIMITS if (section, key) == ("GAMEPLAY", "max_players") else None
+    return make_field(section, key, value, limits=limits)
 
 
 # ── server.ini（每个世界一份）──────────────────────────────────────────
