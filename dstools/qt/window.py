@@ -1070,9 +1070,12 @@ class MainWindow(QWidget):
                 rect = RECT.from_address(msg.lParam)
                 enforce_aspect(msg.wParam, rect)
                 fit_desktop(msg.wParam, rect)
+                self._ornaments.follow_native_rect(rect.left, rect.top, rect.right, rect.bottom)
                 return True, 1
             if msg.message == WM_MOVING:
-                keep_on_desktop(RECT.from_address(msg.lParam))
+                rect = RECT.from_address(msg.lParam)
+                keep_on_desktop(rect)
+                self._ornaments.follow_native_rect(rect.left, rect.top, rect.right, rect.bottom)
                 return True, 1
             blocked_click = (msg.message == WM_SETCURSOR and (msg.lParam & 0xFFFF) == HTERROR
                              and ((msg.lParam >> 16) & 0xFFFF) in _MOUSE_DOWN_MESSAGES)

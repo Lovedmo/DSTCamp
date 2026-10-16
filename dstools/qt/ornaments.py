@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass
 from typing import Callable
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt
+from PySide6.QtCore import QEvent, QObject, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -220,10 +220,27 @@ class WindowOrnaments(QObject):
         self.refresh()
         self._window.update()
 
-    def refresh(self) -> None:
-        """按主窗口当前位置和状态摆放或隐藏全部小窗。"""
+    def follow_native_rect(self, left: int, top: int, right: int, bottom: int) -> None:
+        """系统拖动或缩放主窗口时（WM_MOVING / WM_SIZING），按即将生效的窗口矩形（物理像素）先把小窗摆好，
+        和主窗口在同一帧里到位；等主窗口真的动了再跟，小窗会慢一拍、和边框之间闪出缝隙。"""
+        screen = self._window.screen()
+        if screen is None:
+            return
+        # Qt 以各屏幕左上角为原点缩放：逻辑坐标 = 原点 + (物理坐标 - 原点) / 缩放比
+        dpr = screen.devicePixelRatio()
+        origin = screen.geometry().topLeft()
+        self.refresh(QRect(round(origin.x() + (left - origin.x()) / dpr), round(origin.y() + (top - origin.y()) / dpr),
+                           round((right - left) / dpr), round((bottom - top) / dpr)))
+
+    def refresh(self, geometry: QRect | None = None) -> None:
+        """按主窗口位置（缺省取当前位置）和状态摆放或隐藏全部小窗。"""
         sprites = _SPRITES.get(theme.name, ())
         window = self._window
+        if geometry is None:
+            # 拖上边框缩放时 Qt 先发移动事件、再发缩放事件，控件的 geometry 在两者之间是"新位置 + 旧尺寸"，
+            # 右下角的小窗会被摆错一下；原生窗口的 geometry 位置和尺寸是一起更新的
+            handle = window.windowHandle()
+            geometry = handle.geometry() if handle is not None else window.geometry()
         visible = (self._enabled and window.isVisible() and not window.isMinimized()
                    and not self._is_maximized())
         while len(self._windows) < len(sprites):
@@ -236,8 +253,8 @@ class WindowOrnaments(QObject):
             _, _, box_w, box_h = _logical_size(sprite)
             sprite_window.index = i
             sprite_window.setGeometry(
-                round(window.x() + window.width() * sprite.fx + sprite.x - box_w / 2),
-                round(window.y() + window.height() * sprite.fy + sprite.y - box_h / 2),
+                round(geometry.x() + geometry.width() * sprite.fx + sprite.x - box_w / 2),
+                round(geometry.y() + geometry.height() * sprite.fy + sprite.y - box_h / 2),
                 math.ceil(box_w), math.ceil(box_h),
             )
             sprite_window.show()
