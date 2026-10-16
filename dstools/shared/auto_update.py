@@ -79,7 +79,8 @@ def _helper_script() -> Path:
     [string]$CurrentExe,
     [string]$NewExe,
     [string]$TargetExe,
-    [string]$BackupExe
+    [string]$BackupExe,
+    [string]$TargetBackupExe
 )
 $ErrorActionPreference = 'Stop'
 $LogFile = Join-Path (Split-Path -Parent $NewExe) 'apply_update.log'
@@ -87,29 +88,46 @@ Wait-Process -Id $ParentPid -ErrorAction SilentlyContinue
 # PyInstaller 6.9+ 默认让同一 onefile EXE 的子进程复用父进程 _MEI。
 # 更新后的程序必须独立解压；否则旧进程清理临时目录后会找不到 python DLL。
 $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
+$MovedTarget = $false
 $MovedCurrent = $false
 $InstalledTarget = $false
 try {
+    # 旧的带版本号安装名迁移到固定名字时，同目录可能已有一份旧的固定名字 EXE：
+    # 先备份成 .old（下次启动清理），失败时还原
+    if (($TargetExe -ne $CurrentExe) -and (Test-Path -LiteralPath $TargetExe)) {
+        if (Test-Path -LiteralPath $TargetBackupExe) { Remove-Item -LiteralPath $TargetBackupExe -Force }
+        Move-Item -LiteralPath $TargetExe -Destination $TargetBackupExe
+        $MovedTarget = $true
+    }
     if (Test-Path -LiteralPath $BackupExe) { Remove-Item -LiteralPath $BackupExe -Force }
     Move-Item -LiteralPath $CurrentExe -Destination $BackupExe
     $MovedCurrent = $true
-    if (Test-Path -LiteralPath $TargetExe) {
-        throw "更新目标已存在：$TargetExe"
-    }
     Move-Item -LiteralPath $NewExe -Destination $TargetExe
     $InstalledTarget = $true
     Start-Process -FilePath $TargetExe -WorkingDirectory (Split-Path -Parent $TargetExe)
 }
 catch {
-    if ($InstalledTarget -and (Test-Path -LiteralPath $TargetExe)) {
-        Remove-Item -LiteralPath $TargetExe -Force
+    # 先记下失败原因，回滚本身再出错也不丢；重启后的程序会读出并提示
+    $_ | Out-String | Set-Content -LiteralPath $LogFile -Encoding UTF8
+    try {
+        if ($InstalledTarget -and (Test-Path -LiteralPath $TargetExe)) {
+            Remove-Item -LiteralPath $TargetExe -Force
+        }
+        if ($MovedTarget -and (Test-Path -LiteralPath $TargetBackupExe)) {
+            Move-Item -LiteralPath $TargetBackupExe -Destination $TargetExe
+        }
+        if ($MovedCurrent -and (Test-Path -LiteralPath $BackupExe)) {
+            if (Test-Path -LiteralPath $CurrentExe) { Remove-Item -LiteralPath $CurrentExe -Force }
+            Move-Item -LiteralPath $BackupExe -Destination $CurrentExe
+        }
     }
-    if ($MovedCurrent -and (Test-Path -LiteralPath $BackupExe)) {
-        if (Test-Path -LiteralPath $CurrentExe) { Remove-Item -LiteralPath $CurrentExe -Force }
-        Move-Item -LiteralPath $BackupExe -Destination $CurrentExe
+    catch {
+        $_ | Out-String | Add-Content -LiteralPath $LogFile -Encoding UTF8
+    }
+    # 不管在哪一步失败，都把原程序重新启动，避免更新后程序直接消失
+    if (Test-Path -LiteralPath $CurrentExe) {
         Start-Process -FilePath $CurrentExe -WorkingDirectory (Split-Path -Parent $CurrentExe)
     }
-    $_ | Out-String | Set-Content -LiteralPath $LogFile -Encoding UTF8
 }
 '''
     if not path.is_file() or path.read_text(encoding="utf-8") != content:
@@ -141,6 +159,33 @@ def ensure_install_dir_writable() -> None:
         probe.unlink(missing_ok=True)
 
 
+def ensure_install_target_replaceable() -> None:
+    """退出前确认安装目标能被覆盖：迁移到固定名字时同目录已有的那份不能正在运行。"""
+    current = Path(sys.executable).resolve()
+    target = resolve_install_target(current, current)
+    if target == current or not target.exists():
+        return
+    try:
+        # 正在运行的 EXE 无法以写方式打开；追加模式打开不改动文件内容
+        with target.open("ab"):
+            pass
+    except OSError as exc:
+        raise RuntimeError(f"同目录的 {target.name} 正在运行或被占用，请先关闭它再更新") from exc
+
+
+def take_update_failure_log() -> str:
+    """读出并删除上次更新助手留下的失败日志；没有则返回空字符串。须在清理残留前调用。"""
+    if not getattr(sys, "frozen", False):
+        return ""
+    log = Path(sys.executable).resolve().parent / _UPDATE_LOG_NAME
+    try:
+        text = log.read_text(encoding="utf-8-sig", errors="replace").strip()
+    except OSError:
+        return ""
+    _safe_unlink(log)
+    return text
+
+
 def resolve_install_target(current_exe: Path, staged_exe: Path) -> Path:
     """标准安装固定用 STANDARD_EXE_NAME，用户自定义的 EXE 名称保持不变；旧的带版本号安装名在本次迁移。"""
     del staged_exe  # 保留参数只为了调用方语义清晰，命名不再影响安装目标
@@ -169,6 +214,7 @@ def launch_update_helper(staged_exe: Path) -> None:
         str(_helper_script()), "-ParentPid", str(os.getpid()), "-CurrentExe",
         str(current), "-NewExe", str(local_staged), "-TargetExe", str(target),
         "-BackupExe", str(backup),
+        "-TargetBackupExe", str(target.with_name(target.name + ".old")),
     ]
     helper_env = os.environ.copy()
     # PowerShell 更新助手会比当前 onefile 进程活得更久，并继续启动替换后的

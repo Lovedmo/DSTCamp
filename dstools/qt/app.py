@@ -51,10 +51,13 @@ def main() -> int:
         cleanup_stale_update_artifacts,
         cleanup_vestigial_external_tools,
         clear_download_mark,
+        take_update_failure_log,
     )
 
     from dstools.features.mod.workshop_api import cleanup_stale_worker_dirs
 
+    # 上次自动更新失败时助手已回滚并重启了本程序，先取出失败原因再清理残留
+    update_failure = take_update_failure_log()
     clear_download_mark()
     cleanup_stale_update_artifacts()
     cleanup_vestigial_external_tools()
@@ -65,6 +68,12 @@ def main() -> int:
     app = _application()
     window = create_window(app)
     window.show()
+    if update_failure:
+        from dstools.i18n import t
+        from dstools.qt import dialogs
+
+        QTimer.singleShot(0, lambda: dialogs.show_error(
+            window, t("update.title"), t("update.apply_failed", error=update_failure)))
     window.start_update_check()
     # 延迟到主窗口渲染稳定后再弹缓存目录警告，避免弹窗抢在窗口还没显示完整前出现
     QTimer.singleShot(500, window.check_cache_dir_on_startup)

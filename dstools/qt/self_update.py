@@ -158,6 +158,7 @@ class SelfUpdater:
         from dstools.shared.auto_update import (
             download_update,
             ensure_install_dir_writable,
+            ensure_install_target_replaceable,
             validate_staged_executable,
         )
 
@@ -177,6 +178,7 @@ class SelfUpdater:
             path = download_update(release, progress)
             validate_staged_executable(path)   # 实际启动一次新 EXE 的冒烟入口
             ensure_install_dir_writable()      # 退出前确认能替换 EXE 所在目录
+            ensure_install_target_replaceable()  # 同目录已有的固定名字 EXE 不能正在运行
             return path
 
         def failed(exc: Exception) -> None:
