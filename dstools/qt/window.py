@@ -550,6 +550,8 @@ class _AccountCombo(QComboBox):
 class ClusterBar(QWidget):
     """顶部统一存档选择栏：存档类型（Steam/WeGame）+ 游戏账号（本机有多个时）+ 存档下拉 + 刷新。全部页签共用。"""
 
+    _SPACING, _TIGHT_SPACING = 10, 6
+
     def __init__(self, ctx: AppContext, window: "MainWindow"):
         super().__init__()
         self._ctx = ctx
@@ -557,7 +559,8 @@ class ClusterBar(QWidget):
         row = QHBoxLayout(self)
         # 右边距与各页面内容区对齐（外壳另有 2px 边框），"刷新"与页面级按钮右对齐
         row.setContentsMargins(24, 4, 8, 4)
-        row.setSpacing(10)
+        row.setSpacing(self._SPACING)
+        self._row = row
         self._platform_label, self._account_label, self._archive_label = QLabel(), QLabel(), QLabel()
         for label in (self._platform_label, self._account_label, self._archive_label):
             label.setProperty("heading", True)
@@ -573,10 +576,11 @@ class ClusterBar(QWidget):
         self._platform.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._cluster = _RefreshingCombo()
         self._cluster.about_to_open.connect(self.reload)
-        # 按最长的存档名自适应宽度；Fixed 策略不随窗口拉伸
-        self._cluster.setMinimumWidth(200)
+        # 按最长的存档名自适应宽度，不随窗口拉伸；窗口窄放不下时可收到最小宽度（存档名被截断），
+        # 不再与右侧按钮重叠
+        self._cluster.setMinimumWidth(150)
         self._cluster.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._cluster.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._cluster.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         # "创建服务器存档"作用于整个存档集合，放在全局存档选择器右侧；"打开位置"在其左侧，打开当前存档文件夹
         self._open_location = QPushButton()
         self._open_location.clicked.connect(self._on_open_location)
@@ -600,6 +604,7 @@ class ClusterBar(QWidget):
         self._cluster.activated.connect(self._on_cluster)
         ctx.env_changed.connect(self.reload)
         ctx.platform_changed.connect(self.reload)
+        theme.changed.connect(self._fit_spacing)  # 字号变了，各控件理想宽度随之变化
         self.setFixedHeight(56)
         self.retranslate()
         self.reload()
@@ -613,6 +618,27 @@ class ClusterBar(QWidget):
         self._refresh.setText(t("save.refresh"))
         # "刷新"至少跟本地服务器页"更换路径"按钮一样宽（约 4 个字），不再只按两个字收窄。
         self._refresh.setMinimumWidth(QPushButton(t("local.install_change_btn")).sizeHint().width())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_spacing()
+
+    def _fit_spacing(self) -> None:
+        """按常规间距放不下全部控件时收窄间距；按各控件理想宽度判断，不随当前间距变化，不会来回切换。"""
+        row = self._row
+        widths = 0
+        for index in range(row.count()):
+            item = row.itemAt(index)
+            widget = item.widget()
+            if widget is not None:
+                widths += 0 if widget.isHidden() else widget.sizeHint().width()
+            elif item.spacerItem() is not None:
+                widths += item.spacerItem().minimumSize().width()
+        margins = row.contentsMargins()
+        need = widths + self._SPACING * (row.count() - 1) + margins.left() + margins.right()
+        spacing = self._SPACING if self.width() >= need else self._TIGHT_SPACING
+        if row.spacing() != spacing:
+            row.setSpacing(spacing)
 
     def _on_open_location(self) -> None:
         cluster = self._ctx.selected_cluster()
@@ -642,6 +668,7 @@ class ClusterBar(QWidget):
                     self._cluster.setCurrentIndex(self._cluster.count() - 1)
         finally:
             self._populating = False
+        self._fit_spacing()  # 账号框显隐、存档名长短都会改变所需宽度
 
     def _on_platform(self, _index: int) -> None:
         self._ctx.set_platform(Platform.WEGAME if self._platform.currentText() == "WeGame" else Platform.STEAM)
