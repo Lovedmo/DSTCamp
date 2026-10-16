@@ -492,8 +492,8 @@ def set_sakura_last_node_id(node_id: int | None) -> None:
 
 
 def get_window_ornaments_enabled() -> bool:
-    """主窗口是否显示随主题变化的装饰图案（樱枝等），默认开启。"""
-    return load_settings().get(_KEY_WINDOW_ORNAMENTS, True)
+    """主窗口是否显示随主题变化的装饰图案（樱枝等），默认关闭。"""
+    return load_settings().get(_KEY_WINDOW_ORNAMENTS, False)
 
 
 def set_window_ornaments_enabled(value: bool) -> None:
