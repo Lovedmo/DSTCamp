@@ -53,6 +53,9 @@ MIN_W, MIN_H = 960, 540
 ASPECT = BASE_W / BASE_H
 START_FILL = 0.8  # 首次启动默认尺寸最多占工作区的比例（宽高各自计）；之后沿用上次关闭时的尺寸
 MIN_VISIBLE = 100  # 窗口挪到桌面边缘时至少留这么多像素在屏幕里
+# 窗口低于这个高度时收窄各页签共用的固定区域；页面上下外边距常规/收窄值（各页签外层统一用 12）
+COMPACT_CHROME_H = 800
+PAGE_MARGIN_V, COMPACT_PAGE_MARGIN_V = 12, 6
 
 WM_SIZING, WM_MOVING = 0x0214, 0x0216
 # 客户区/非客户区的左、右、中键按下：主窗口被模态窗口阻挡时用来提醒用户
@@ -551,6 +554,7 @@ class ClusterBar(QWidget):
     """顶部统一存档选择栏：存档类型（Steam/WeGame）+ 游戏账号（本机有多个时）+ 存档下拉 + 刷新。全部页签共用。"""
 
     _SPACING, _TIGHT_SPACING = 10, 6
+    _HEIGHT, _COMPACT_HEIGHT = 56, 42  # 控件约 32 高，窗口矮时去掉多余的上下留白
 
     def __init__(self, ctx: AppContext, window: "MainWindow"):
         super().__init__()
@@ -605,7 +609,7 @@ class ClusterBar(QWidget):
         ctx.env_changed.connect(self.reload)
         ctx.platform_changed.connect(self.reload)
         theme.changed.connect(self._fit_spacing)  # 字号变了，各控件理想宽度随之变化
-        self.setFixedHeight(56)
+        self.setFixedHeight(self._HEIGHT)
         self.retranslate()
         self.reload()
 
@@ -618,6 +622,9 @@ class ClusterBar(QWidget):
         self._refresh.setText(t("save.refresh"))
         # "刷新"至少跟本地服务器页"更换路径"按钮一样宽（约 4 个字），不再只按两个字收窄。
         self._refresh.setMinimumWidth(QPushButton(t("local.install_change_btn")).sizeHint().width())
+
+    def set_compact(self, compact: bool) -> None:
+        self.setFixedHeight(self._COMPACT_HEIGHT if compact else self._HEIGHT)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -691,6 +698,7 @@ class MainWindow(QWidget):
         self.text_halo.watch(self)
         self.text_halo.refresh()
         self._resizing = False
+        self._compact_chrome = False
         self._restore_geometry: QRect | None = None
         self._quitting = False
         self._settle = QTimer(self, singleShot=True, interval=150)
@@ -764,6 +772,7 @@ class MainWindow(QWidget):
             self.pages[key] = page
             self.stack.addWidget(page)
         self.current_page().load()
+        self._fit_chrome_to_height()  # 窗口尺寸在页面建好之前就定了，这里补判一次
 
     def _make_page(self, key: str):
         page_cls = {
@@ -1085,7 +1094,25 @@ class MainWindow(QWidget):
         # 拖窄时高度停住不缩、16:9 被打破。窗口尺寸只由最小尺寸和 16:9 约束，页内换行照常。
         return False
 
+    def _fit_chrome_to_height(self) -> None:
+        """窗口矮时收窄各页签共用的固定区域（存档栏留白、页面上下外边距），把高度让给正文。
+
+        只按窗口高度判断，收窄本身不改变窗口高度，不会来回切换。"""
+        pages = getattr(self, "pages", None)
+        if not pages:  # _place_initially() 在界面装配前就会触发尺寸事件
+            return
+        compact = self.height() < COMPACT_CHROME_H
+        if compact == self._compact_chrome:
+            return
+        self._compact_chrome = compact
+        self.cluster_bar.set_compact(compact)
+        gap = COMPACT_PAGE_MARGIN_V if compact else PAGE_MARGIN_V
+        for page in pages.values():
+            margins = page.layout().contentsMargins()
+            page.layout().setContentsMargins(margins.left(), gap, margins.right(), gap)
+
     def resizeEvent(self, _event):
+        self._fit_chrome_to_height()
         self._resizing = True
         self._settle.start()
         w, h, g, c = self.width(), self.height(), 6, 12
