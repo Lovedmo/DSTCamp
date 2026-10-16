@@ -17,6 +17,12 @@ class FieldEditor:
         self.spec, self.widget, self.get = spec, widget, getter
 
 
+_VERTICAL_SPACING, _COMPACT_VERTICAL_SPACING = 4, 1
+_COMPACT_HEADER_TOP_GAP = 3
+# 紧凑模式只收窄输入框/下拉框的上下内边距，颜色、边框仍由全局主题样式表决定
+_COMPACT_STYLE = "QLineEdit { padding: 2px 10px; } QComboBox { padding: 1px 10px; min-height: 18px; }"
+
+
 class FormGrid(QWidget):
     """两列网格：左边标签（右对齐），右边编辑控件。values() 收集所有非只读字段当前的值。"""
 
@@ -25,9 +31,11 @@ class FormGrid(QWidget):
         self._grid = QGridLayout(self)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(8)
-        self._grid.setVerticalSpacing(4)
+        self._grid.setVerticalSpacing(_VERTICAL_SPACING)
         self._grid.setColumnStretch(1, 1)
         self._row = 0
+        self._headers: list[tuple[QLabel, int]] = []
+        self._compact = False
         self.editors: dict[tuple[str, str], FieldEditor] = {}
 
     def add_header(self, text: str, size_key: str = "FONT_SIZE_MD", heading: bool = True, top_gap: int = 8) -> None:
@@ -36,7 +44,21 @@ class FormGrid(QWidget):
         label.setProperty("heading", heading)
         label.setContentsMargins(4, top_gap, 0, 2)
         self._grid.addWidget(label, self._row, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        self._headers.append((label, top_gap))
         self._row += 1
+
+    def set_compact(self, compact: bool) -> None:
+        """可视高度放不下时收窄行距、分组标题上方空隙和输入框内边距，少滚动；空间够时恢复。"""
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self._grid.setVerticalSpacing(_COMPACT_VERTICAL_SPACING if compact else _VERTICAL_SPACING)
+        for label, top_gap in self._headers:
+            if compact:
+                label.setContentsMargins(4, min(top_gap, _COMPACT_HEADER_TOP_GAP), 0, 0)
+            else:
+                label.setContentsMargins(4, top_gap, 0, 2)
+        self.setStyleSheet(_COMPACT_STYLE if compact else "")
 
     def add_field(self, spec: FieldSpec, on_toggled=None, fixed_width: int | None = None) -> FieldEditor:
         label = QLabel(f"{spec.label}:")

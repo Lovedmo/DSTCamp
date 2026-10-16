@@ -5,7 +5,7 @@
 
 import webbrowser
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit, QPushButton, QScrollArea,
@@ -299,7 +299,8 @@ class ServerConfigPage(Page):
         self._cluster_layout.setSpacing(16)
         self._cluster_save = QPushButton()
         self._cluster_save.clicked.connect(self._save_cluster_ini)
-        self._stack.addWidget(self._page_with_save(_scroll(self._cluster_inner), self._cluster_save))
+        self._cluster_scroll = _scroll(self._cluster_inner)
+        self._stack.addWidget(self._page_with_save(self._cluster_scroll, self._cluster_save))
 
         # 2) 世界设置（server.ini）
         shard_holder = QWidget()
@@ -331,6 +332,12 @@ class ServerConfigPage(Page):
         for widget in (self._admin, self._block, self._token):
             self._stack.addWidget(widget)
 
+        # 房间设置/世界设置：常规排版放不下可视高度时切到紧凑排版（见 _update_compact）
+        self._cluster_normal_h = 0
+        self._shard_normal_h = 0
+        for scroll in (self._cluster_scroll, self._shard_scroll):
+            scroll.viewport().installEventFilter(self)
+
         theme.changed.connect(self._on_theme_changed)
         # 内网穿透页开关映射会改变 server_port 的可编辑性；正显示就立即重载，否则标脏
         ctx.cluster_config_saved.connect(self._on_cluster_config_saved_elsewhere)
@@ -342,6 +349,38 @@ class ServerConfigPage(Page):
         current = self.ctx.selected_cluster()
         if current is not None and cluster is not None and str(current.path) == str(cluster.path):
             self.stale = True
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Resize and watched in (
+                self._cluster_scroll.viewport(), self._shard_scroll.viewport()):
+            self._update_compact()
+        return super().eventFilter(watched, event)
+
+    @staticmethod
+    def _normal_height(inner: QWidget) -> int:
+        """表单刚建好（常规排版）时的内容高度；之后按它判断，不随紧凑与否变化，避免来回切换。"""
+        layout = inner.layout()
+        for index in range(layout.count()):
+            widget = layout.itemAt(index).widget()
+            # 刚加进可见布局的控件要等下一轮事件循环才显示，此前布局不计它的高度
+            if widget is not None and not widget.testAttribute(Qt.WidgetAttribute.WA_WState_ExplicitShowHide):
+                widget.show()
+        inner.ensurePolished()
+        return inner.sizeHint().height()
+
+    def _update_compact(self) -> None:
+        cluster_compact = self._cluster_normal_h > self._cluster_scroll.viewport().height()
+        for grid in self._cluster_grids:
+            self._set_grid_compact(grid, cluster_compact)
+        if self._shard_grid is not None:
+            self._set_grid_compact(self._shard_grid, self._shard_normal_h > self._shard_scroll.viewport().height())
+
+    @staticmethod
+    def _set_grid_compact(grid: FormGrid, compact: bool) -> None:
+        """表单本身收紧之外，外面那层卡片的上下内边距也一起收窄。"""
+        grid.set_compact(compact)
+        card_layout = grid.parentWidget().layout()
+        card_layout.setContentsMargins(14, 4 if compact else 8, 14, 6 if compact else 12)
 
     @staticmethod
     def _page_with_save(content: QWidget, save_button: QPushButton) -> QWidget:
@@ -427,6 +466,8 @@ class ServerConfigPage(Page):
             column_layout.addStretch()
             self._cluster_layout.addWidget(column, 1)
             self._cluster_grids.append(grid)
+        self._cluster_normal_h = self._normal_height(self._cluster_inner)
+        self._update_compact()
 
     def _cluster_values(self) -> dict:
         values: dict = {}
@@ -484,6 +525,8 @@ class ServerConfigPage(Page):
         self._shard_inner_layout.addWidget(card)
         self._shard_inner_layout.addStretch()
         self._shard_grid = grid
+        self._shard_normal_h = self._normal_height(self._shard_inner)
+        self._update_compact()
 
     def _on_is_master_toggled(self, _checked: bool) -> None:
         # 延到下一个事件循环再重画：别在开关自己的点击回调里销毁开关所在的行
