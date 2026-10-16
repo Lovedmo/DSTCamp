@@ -92,7 +92,7 @@ _SPRITES: dict[str, tuple[Sprite, ...]] = {
         Sprite("sky_spray_corner.png", 1, 0, -123, 118, 372),
         # 右下角：一道低矮的积云带压在拐角，几朵小积云沿下边框线往左散开，往左延一条薄层云，几只鸟沿右边框
         # 外侧往上飞、几只沿下边框外侧飞；左下角留白
-        Sprite("sky_bottom.png", 1, 1, -140.5, -61, 184),
+        Sprite("sky_bottom.png", 1, 1, -140.5, -73, 190),
     ),
     "twilight": (
         # 星夜蓝，排版脚本 twilight/compose_twilight.py。沿上边框向右、沿左边框向下各一道银河光带，
