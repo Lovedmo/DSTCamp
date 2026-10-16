@@ -14,7 +14,8 @@ from typing import Callable
 
 from dstools.shared.resource_paths import data_dir
 from dstools.shared.ssl_context import default_ssl_context
-from dstools.shared.update_check import UpdateRelease
+from dstools import __version__
+from dstools.shared.update_check import UpdateRelease, is_newer_version
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -37,13 +38,31 @@ def _hidden_staged_name(stem: str, pid: int) -> str:
     return f".{stem}.update-{pid}.exe"
 
 
+def _matches_release(path: Path, release: UpdateRelease) -> bool:
+    """已下载的文件长度和 SHA-256 都与清单一致时才可复用。"""
+    try:
+        if not path.is_file() or path.stat().st_size != release.size:
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.hexdigest().lower() == release.sha256.lower()
+
+
 def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:
-    """下载到持久更新目录，并严格校验长度和 SHA-256。"""
+    """下载到持久更新目录，并严格校验长度和 SHA-256；之前已下载且校验一致时直接复用。"""
     if not release.can_auto_update:
         raise ValueError("该发行版缺少自动更新文件或 SHA-256 清单")
     target_dir = data_dir("updates") / release.version
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"DSTCamp-{release.version}.exe"
+    if _matches_release(target, release):
+        if progress is not None:
+            progress(release.size, release.size)
+        return target
     temporary = target.with_suffix(".exe.part")
     temporary.unlink(missing_ok=True)
     digest = hashlib.sha256()
@@ -244,9 +263,10 @@ def _safe_rmtree(path: Path) -> None:
 
 
 def cleanup_stale_update_artifacts() -> None:
-    """尽力清理历史更新遗留的 ``*.exe.old``、staged 文件和失败日志，单个失败不影响启动。
+    """尽力清理历史更新遗留的 ``*.exe.old``、staged 文件、失败日志和过时的下载，单个失败不影响启动。
 
     能正常启动到这里就说明这些都已是残留，不依赖持久化的更新状态。
+    比当前版本新的下载目录保留（只删其中的半截 ``.part``），下次点更新直接复用。
     """
     if not getattr(sys, "frozen", False):
         return
@@ -264,6 +284,10 @@ def cleanup_stale_update_artifacts() -> None:
         if updates_dir.is_dir():
             for entry in updates_dir.iterdir():
                 if entry.name == _HELPER_SCRIPT_NAME:
+                    continue
+                if entry.is_dir() and is_newer_version(__version__, entry.name):
+                    for partial in entry.glob("*.part"):
+                        _safe_unlink(partial)
                     continue
                 if entry.is_dir():
                     _safe_rmtree(entry)

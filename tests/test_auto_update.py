@@ -64,6 +64,9 @@ def test_download_requires_matching_hash_and_size() -> None:
     ):
         path = auto_update.download_update(release)
         assert path.read_bytes() == payload
+        # 已下载且校验一致时再次更新直接复用，不再联网
+        with patch.object(auto_update.urllib.request, "urlopen", side_effect=AssertionError("不应重新下载")):
+            assert auto_update.download_update(release) == path
 
         bad = UpdateRelease(
             release.version,
@@ -179,6 +182,11 @@ def test_cleanup_removes_known_stale_artifacts() -> None:
         (updates_dir / "1.3.6").mkdir(parents=True)
         (updates_dir / "1.3.6" / "DSTCamp-1.3.6.exe").write_bytes(b"stale-download")
         updates_dir.joinpath("apply_update.ps1").write_text("script", encoding="utf-8")
+        # 比当前版本新的下载留给下次复用，只删半截文件
+        newer = updates_dir / "999.0.0"
+        newer.mkdir()
+        (newer / "DSTCamp-999.0.0.exe").write_bytes(b"ready")
+        (newer / "DSTCamp-999.0.0.exe.part").write_bytes(b"partial")
 
         with patch.object(auto_update.sys, "frozen", True, create=True), patch.object(
             auto_update.sys, "executable", str(current)
@@ -192,6 +200,8 @@ def test_cleanup_removes_known_stale_artifacts() -> None:
         assert current.exists()
         assert not (updates_dir / "1.3.6").exists()
         assert updates_dir.joinpath("apply_update.ps1").exists()
+        assert (newer / "DSTCamp-999.0.0.exe").exists()
+        assert not (newer / "DSTCamp-999.0.0.exe.part").exists()
 
 
 def test_cleanup_is_noop_when_not_frozen() -> None:
