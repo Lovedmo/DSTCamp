@@ -17,11 +17,11 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtGui import QFontMetrics, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QRadioButton, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QRadioButton, QScrollArea, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from dstools.features.cluster_config.config_manager import (
@@ -183,6 +183,42 @@ def _show_not_found_warning(parent, wanted_kind: RuntimeKind | None = None) -> N
     body = {None: "local.install_body", RuntimeKind.CLIENT: "local.install_client_body",
             RuntimeKind.DEDICATED: "local.install_dedicated_body"}[wanted_kind]
     dialogs.show_warning(parent, t("local.install_title"), t(body), min_width=720)
+
+
+class _VScrollArea(QScrollArea):
+    """只纵向滚动的透明滚动区，最小宽度跟随内容（预留滚动条），窗口变窄时不横向裁字。
+
+    fit_content=True 时理想高度就是内容高度（空间富余不拉伸、不留空白），空间不够时最矮收到
+    min_height() 再出现滚动条；否则按普通滚动区占满分到的空间。
+    """
+
+    def __init__(self, inner: QWidget, fit_content: bool = False, min_height=None):
+        super().__init__()
+        self._fit_content = fit_content
+        self._min_height = min_height
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        self.setWidget(inner)
+        inner.setAutoFillBackground(False)  # QScrollArea.setWidget 会把它改成 True，必须在之后再关
+        if fit_content:
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+    def minimumSizeHint(self) -> QSize:
+        inner = self.widget()
+        width = inner.minimumSizeHint().width() + self.verticalScrollBar().sizeHint().width()
+        if not self._fit_content:
+            return QSize(width, super().minimumSizeHint().height())
+        height = inner.sizeHint().height()
+        if self._min_height is not None:
+            height = min(height, self._min_height())
+        return QSize(width, height)
+
+    def sizeHint(self) -> QSize:
+        if not self._fit_content:
+            return super().sizeHint()
+        return QSize(self.minimumSizeHint().width(), self.widget().sizeHint().height())
 
 
 class _ShardRow(QWidget):
@@ -509,7 +545,8 @@ class LocalServicePage(Page):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(splitter, 1)
-        splitter.addWidget(self._build_left_panel())
+        # 左栏整体可纵向滚动兜底：窗口再矮也只出现滚动条，不会把各行压扁挤没
+        splitter.addWidget(_VScrollArea(self._build_left_panel()))
         self._console_tabs = ConsoleTabWidget()
         splitter.addWidget(self._console_tabs)
         splitter.setSizes([320, 900])
@@ -638,7 +675,10 @@ class LocalServicePage(Page):
         self._shard_list_layout = QVBoxLayout()
         shard_list_widget = QWidget()
         shard_list_widget.setLayout(self._shard_list_layout)
-        layout.addWidget(shard_list_widget)
+        # 世界多时只让列表自己滚动（最矮保留 3 行），下方的启动参数和直连信息始终留在原位
+        self._shard_scroll = _VScrollArea(shard_list_widget, fit_content=True,
+                                          min_height=self._shard_list_min_height)
+        layout.addWidget(self._shard_scroll)
         layout.addWidget(self._wegame_banner)
         layout.addWidget(self._wegame_detect_btn)
         layout.addWidget(self._wegame_detect_text)
@@ -672,6 +712,16 @@ class LocalServicePage(Page):
         theme.changed.connect(self._update_connect_widths)
         self._update_connect_widths()
         return left
+
+    def _shard_list_min_height(self) -> int:
+        """世界列表空间不够时最矮保留 3 行（含列表边距和行间距）。"""
+        layout = self._shard_list_layout
+        rows = list(self._shard_rows.values())[:3]
+        if not rows:
+            return 0
+        margins = layout.contentsMargins()
+        return (sum(row.sizeHint().height() for row in rows) + layout.spacing() * (len(rows) - 1)
+                + margins.top() + margins.bottom())
 
     def _update_connect_widths(self) -> None:
         """切字号后重新计算三行直连代码的标题/状态列宽，避免大字号下文字被裁剪。"""
@@ -754,6 +804,7 @@ class LocalServicePage(Page):
                 row.setParent(None)
             self._shard_rows = {}
             self._shard_rows_cluster_path = None
+            self._shard_scroll.updateGeometry()
             return
         names = {s.name for s in cluster.shards}
         if set(self._shard_rows) != names or self._shard_rows_cluster_path != str(cluster.path):
@@ -765,6 +816,7 @@ class LocalServicePage(Page):
                 self._shard_list_layout.addWidget(row)
                 self._shard_rows[shard.name] = row
             self._shard_rows_cluster_path = str(cluster.path)
+            self._shard_scroll.updateGeometry()  # 行数变了，列表理想高度随之变化
         else:
             for row in self._shard_rows.values():
                 row.update_state()
