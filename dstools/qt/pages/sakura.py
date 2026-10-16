@@ -30,7 +30,7 @@ from dstools.qt.node_picker import NodeChoice, NodePickerDialog
 from dstools.qt.selfhost_panel import SelfHostPanel
 from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
-from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, section_card
+from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, VScrollArea, section_card
 from dstools.shared import app_settings
 from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.shared.server_ports import stable_path_key
@@ -907,9 +907,9 @@ class SakuraPage(Page):
                                  height=36, pill_height=28, font_size_key="FONT_SIZE_SM")
         layout.addWidget(self._tabs)
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._mapping)
-        self._stack.addWidget(self._lolia)
-        self._stack.addWidget(self._selfhost)
+        # 各子页可纵向滚动：窗口矮或世界多时出现滚动条，不把按钮和世界映射文字压扁挤没
+        for panel in (self._mapping, self._lolia, self._selfhost):
+            self._stack.addWidget(VScrollArea(panel))
         layout.addWidget(self._stack, 1)
         self._tabs.current_changed.connect(self._on_sub_tab_changed)
         initial = app_settings.get_nat_sub_tab()

@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QLabel, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
 
 from dstools.qt.text_halo import draw_adaptive_text
 from dstools.qt.theme import theme
@@ -533,3 +533,22 @@ class TitleButton(QWidget):
         else:
             painter.drawLine(QPointF(cx - r, cy - r), QPointF(cx + r, cy + r))
             painter.drawLine(QPointF(cx + r, cy - r), QPointF(cx - r, cy + r))
+
+
+class VScrollArea(QScrollArea):
+    """只纵向滚动的透明滚动区：窗口矮时内容出现滚动条，而不是被压到比自身最小高度还矮、按钮和文字被挤没。
+
+    最小宽度跟随内容并预留滚动条宽度，窗口变窄时不横向裁字。"""
+
+    def __init__(self, inner: QWidget):
+        super().__init__()
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        self.setWidget(inner)
+        inner.setAutoFillBackground(False)  # QScrollArea.setWidget 会把它改成 True，必须在之后再关
+
+    def minimumSizeHint(self) -> QSize:
+        width = self.widget().minimumSizeHint().width() + self.verticalScrollBar().sizeHint().width()
+        return QSize(width, super().minimumSizeHint().height())
