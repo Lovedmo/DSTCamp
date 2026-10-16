@@ -14,18 +14,11 @@
   授权：Openclipart 全站声明 100% Public Domain
   修改：往草绿偏色、加饱和度并提亮
 
-mint_cluster.png、mint_spray_corner.png、mint_spray_bottom.png 中的三叶草
+mint_spray_corner.png、mint_spray_bottom.png 中的三叶草
   Openclipart #83059 "three leaves clover"，作者 mireille，2010-08-31 上传
   https://openclipart.org/detail/83059
   授权：Openclipart 全站声明 100% Public Domain
   修改：往草绿偏色
-
-mint_spray_bottom.png 中拐角的大片草丛
-  Openclipart #84037 "grass"，作者 netalloy，2010-09-07 上传
-  https://openclipart.org/detail/84037
-  原说明："Green grass patch."
-  授权：Openclipart 全站声明 100% Public Domain
-  修改：轻微偏色
 
 各 PNG 中贴边的一丛丛小草
   Openclipart #164635 "grass"，作者 deemonizer，2011-10-24 上传
@@ -34,4 +27,23 @@ mint_spray_bottom.png 中拐角的大片草丛
   授权：Openclipart 全站声明 100% Public Domain
   修改：把一组十丛逐丛拆开（颜色最深的一丛不用），轻微偏色，根部做渐隐
 
-以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）。
+mint_ivy_strand.png 中从左上角沿左边垂下的常春藤
+  Openclipart #307781 "Ivy Leaves Divider"
+  作者与上传日期待核实（2026-10-15 详情页持续 504，未能读取）
+  https://openclipart.org/detail/307781
+  授权：Openclipart 全站声明 100% Public Domain
+  修改：取原图左半段藤条，竖过来，往草绿偏色
+
+mint_cluster.png 中的鸟窝
+  freesvg.org "Red bird in the nest"，SVG ID 202038，2024-05-22 发布，发布方 publicdomainvectors.org
+  https://freesvg.org/red-bird-in-the-nest
+  授权：Public Domain（freesvg.org 详情页标注）
+  修改：去掉原图坐在窝里的红鸟，只留鸟窝和窝沿的嫩叶；窝身由近黑的深灰改成暖褐和干草色，轻微压暗
+
+mint_cluster.png 中坐在窝里的绿绣眼
+  freesvg.org "Graphics of white-eyes bird without legs"，SVG ID 34094，2015-10-17 发布，来源 OpenClipart
+  https://freesvg.org/graphics-of-white-eyes-bird-without-legs
+  授权：Public Domain（freesvg.org 详情页标注）
+  修改：去掉米色底框，往绿绣眼的黄绿偏色、提亮
+
+以上 PNG 由 SVG 按最高 3 倍屏缩放比预渲染（发布包不带 QtSvg）；常春藤因 SVG 下载持续超时，改用 Openclipart 提供的 1200px PNG。
