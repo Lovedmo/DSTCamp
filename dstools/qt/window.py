@@ -1052,6 +1052,12 @@ class MainWindow(QWidget):
         self._resizing = False
         self.update()
 
+    def hasHeightForWidth(self) -> bool:
+        # 页内有自动换行文字（如世界页的世界描述）时布局会变成高度随宽度变化，Qt 在 Windows 上
+        # 会把顶层窗口高度强制抬到 heightForWidth(宽度)（按各控件理想高度累加，远大于最小高度），
+        # 拖窄时高度停住不缩、16:9 被打破。窗口尺寸只由最小尺寸和 16:9 约束，页内换行照常。
+        return False
+
     def resizeEvent(self, _event):
         self._resizing = True
         self._settle.start()
