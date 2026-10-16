@@ -181,7 +181,8 @@ class WindowOrnaments(QObject):
         self._is_maximized = is_maximized
         self._enabled = enabled
         self._windows: list[_SpriteWindow] = []
-        window.installEventFilter(self)
+        if enabled:
+            window.installEventFilter(self)  # 关闭时不装，主窗口事件不经过这里
         theme.changed.connect(self._on_theme_changed)
 
     def frame_accent_visible(self) -> bool:
@@ -190,7 +191,10 @@ class WindowOrnaments(QObject):
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
-        if not enabled:
+        if enabled:
+            self._window.installEventFilter(self)
+        else:
+            self._window.removeEventFilter(self)
             _pixmaps.clear()
         self.refresh()
         self._window.update()
@@ -250,7 +254,7 @@ class WindowOrnaments(QObject):
         self.refresh()
 
     def eventFilter(self, obj, event) -> bool:
-        if self._enabled and obj is self._window and event.type() in (
+        if obj is self._window and event.type() in (
             QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.Hide,
             QEvent.Type.WindowStateChange,
         ):
