@@ -7,6 +7,7 @@
 import ctypes
 import html
 import ipaddress
+import os
 import re
 import shutil
 import socket
@@ -509,10 +510,21 @@ class _SteamBackendDialog(dialogs.Dialog):
             desc.setContentsMargins(24, 0, 0, 0)
             self.body.addWidget(desc)
 
-        # 默认用内置版本，只显示位置；自选 steamcmd.exe 收在勾选项里，大多数用户用不到
-        self._bundled_label = self.text_label(
-            t("local.backend_steamcmd_bundled", path=str(steamcmd_updater.bundled_steamcmd_path())), muted=True)
-        self._bundled_label.setContentsMargins(24, 0, 0, 0)
+        # 默认用内置版本，只显示位置；自选 steamcmd.exe 收在勾选项里，大多数用户用不到。
+        # 完整路径太长，正文用占位写法，悬停看完整路径，「打开位置」直接打开所在文件夹
+        self._bundled_label = QWidget()
+        bundled_row = QHBoxLayout(self._bundled_label)
+        bundled_row.setContentsMargins(24, 0, 0, 0)
+        bundled_path = str(steamcmd_updater.bundled_steamcmd_path())
+        # 文案里的 {{缓存目录}} 是转义花括号，带参数调用 t() 才会经 format 还原成单个花括号
+        bundled_text = self.text_label(t("local.backend_steamcmd_bundled", path=bundled_path), muted=True, wrap=False)
+        bundled_text.setToolTip(bundled_path)
+        self._open_bundled_btn = dialogs.style_button(QPushButton(t("env.open_location")), "secondary")
+        self._open_bundled_btn.setFont(theme.font("FONT_SIZE_SM"))
+        self._open_bundled_btn.clicked.connect(self._open_bundled_location)
+        bundled_row.addWidget(bundled_text)
+        bundled_row.addWidget(self._open_bundled_btn)
+        bundled_row.addStretch(1)
         self.body.addWidget(self._bundled_label)
         self._custom_check = QCheckBox(t("local.backend_steamcmd_custom"))
         self._custom_check.setChecked(steamcmd is not None)
@@ -568,6 +580,20 @@ class _SteamBackendDialog(dialogs.Dialog):
         self._account_label.setText(t("local.steamcmd_account_user", user=account) if account
                                     else t("local.steamcmd_account_anonymous"))
         self._sync_path_enabled()
+
+    def _open_bundled_location(self) -> None:
+        """打开内置 SteamCMD 所在文件夹；还没释放过就先释放，打开时就能看到程序。"""
+        bundled = steamcmd_updater.ensure_bundled_steamcmd()
+        if bundled is None:
+            key = ("local.backend_steamcmd_cache_non_ascii"
+                   if not path_is_ascii(steamcmd_updater.bundled_steamcmd_path())
+                   else "local.backend_steamcmd_extract_failed")
+            dialogs.show_warning(self, t("env.open_location"), t(key))
+            return
+        try:
+            os.startfile(str(bundled.parent))
+        except OSError as exc:
+            dialogs.show_error(self, t("env.open_location"), str(exc))
 
     def _steamcmd_from_edit(self) -> tuple[Path, Path | None] | None:
         """返回 (实际使用的 steamcmd.exe, 自选路径)；没勾选自选时用内置的（自选路径为 None）。不可用时提示并返回 None。"""
