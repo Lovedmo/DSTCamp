@@ -7,6 +7,8 @@
 - 刚释放的 SteamCMD 首次 app_update 会被立即挂起（应用信息还没取到）：空等约 2 分钟后照样打印 Success!，
   退出码有时是 0，实际什么也没做；content_log 里当场就有 "result Suspended"。这 2 分钟里它在下载并保存
   应用信息，提前结束的话重试照样被挂起（已实测），所以等它自己结束，再按失败重试；
+- 先单独登录一次（+login ... +quit，约 1 分钟）就不会被挂起（实测两次）：登录会话会取回并保存
+  appcache/appinfo.vdf，只跑 +quit 不会。所以首次更新/下载前先登录准备，界面也会提前在后台准备；
 - 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以优先放进伪控制台运行（输出实时）；
   不支持伪控制台时退回管道，改为跟踪它实时写入的 logs/content_log.txt；
 - 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5；
@@ -118,6 +120,12 @@ def find_steamcmd() -> Path | None:
     if custom is not None:
         return custom if is_steamcmd_exe(custom) and path_is_ascii(custom) else None
     return ensure_bundled_steamcmd()
+
+
+def steamcmd_needs_prepare(steamcmd: Path) -> bool:
+    """程序在、但还没登录取过应用信息（没有 appcache/appinfo.vdf）。"""
+    steamcmd = Path(steamcmd)
+    return steamcmd.is_file() and not (steamcmd.parent / "appcache" / "appinfo.vdf").is_file()
 
 
 def is_steam_library_install(install_dir: Path) -> bool:
@@ -329,6 +337,29 @@ def _run_piped(command: list[str], on_line: Callable[[str], None],
     return returncode
 
 
+def _prepare(steamcmd: Path, account: str, on_line: Callable[[str], None],
+             cancel_event: threading.Event | None) -> None:
+    """登录一次即退出，让 SteamCMD 取回应用信息；用已设置的账号登录，免得匿名登录影响账号的登录缓存。
+    失败（如账号登录已失效）不处理，交给随后的正式任务按原有逻辑报告。"""
+    _run_once([str(steamcmd), "+login", account or "anonymous", "+quit"], on_line, cancel_event)
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("SteamCMD 初始化已取消")
+
+
+@_exclusive_task
+def prepare_steamcmd(
+    steamcmd: Path,
+    *,
+    on_line: Callable[[str], None],
+    account: str = "",
+    cancel_event: threading.Event | None = None,
+) -> bool:
+    """首次使用前在后台准备 SteamCMD，返回是否已准备好；已准备过直接返回。"""
+    if steamcmd_needs_prepare(steamcmd):
+        _prepare(steamcmd, account, on_line, cancel_event)
+    return not steamcmd_needs_prepare(steamcmd)
+
+
 @_exclusive_task
 def run_update(
     steamcmd: Path,
@@ -344,6 +375,9 @@ def run_update(
 ) -> SteamAppSnapshot:
     """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，账号登录失败抛 SteamcmdLoginError，
     取消抛 InterruptedError。任务被挂起时先回调 on_suspended（之后约 2 分钟没有输出），本次按失败处理。"""
+    if steamcmd_needs_prepare(steamcmd):
+        on_line(t("steamcmd.preparing"))
+        _prepare(steamcmd, account, on_line, cancel_event)
     command = build_command(steamcmd, install_dir, validate=validate, account=account)
     content_log = Path(steamcmd).parent / "logs" / "content_log.txt"
     returncode = None
@@ -413,6 +447,9 @@ def download_workshop_items(
 
     ids = [str(wid) for wid in dict.fromkeys(workshop_ids) if str(wid).isdigit()]
     content_root = Path(steamcmd).parent / "steamapps" / "workshop" / "content" / WORKSHOP_APP_ID
+    if ids and steamcmd_needs_prepare(steamcmd):
+        on_line(t("steamcmd.preparing"))
+        _prepare(steamcmd, account, on_line, cancel_event)
     for start in range(0, len(ids), _WORKSHOP_BATCH):
         command = [str(steamcmd), "+login", account or "anonymous"]
         for wid in ids[start:start + _WORKSHOP_BATCH]:

@@ -102,6 +102,30 @@ def test_suspended_update_is_retried() -> None:
         assert len(attempts) == 2 and events == ["suspended"]
 
 
+def test_first_update_prepares_steamcmd_once() -> None:
+    """实测：先单独登录一次取回 appcache/appinfo.vdf，首次更新就不会被挂起空等 2 分钟。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "dstserver"
+        _make_steamcmd_install(root)
+        steamcmd = Path(tmp) / "steamcmd" / "steamcmd.exe"
+        steamcmd.parent.mkdir()
+        steamcmd.write_bytes(b"")
+        commands = []
+
+        def fake_run(command, on_line, cancel_event, **_kwargs):
+            commands.append(command[1:])
+            if command[1:] == ["+login", "hostbot", "+quit"]:  # 用已设置的账号登录准备
+                (steamcmd.parent / "appcache").mkdir()
+                (steamcmd.parent / "appcache" / "appinfo.vdf").write_bytes(b"")
+            return 0
+
+        with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+            for _ in range(2):
+                steamcmd_updater.run_update(steamcmd, root, on_line=lambda _l: None, account="hostbot")
+        assert len(commands) == 3 and commands[0] == ["+login", "hostbot", "+quit"]
+        assert all("+app_update" in command for command in commands[1:])
+
+
 def test_steamcmd_tasks_run_one_at_a_time() -> None:
     """同时跑两个 SteamCMD 会共写日志（实测），后来的任务须排队，等待中可取消。"""
     import threading

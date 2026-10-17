@@ -743,6 +743,8 @@ class LocalServicePage(Page):
         self._steam_update_running = False
         # 程序退出时通知 Steam 更新监控立即结束，否则线程池会等它最长 15 分钟，进程退不掉。
         self._steam_monitor_cancel = threading.Event()
+        self._steamcmd_preparing = False
+        self._steamcmd_prepare_tried: set[str] = set()  # 每份 SteamCMD 本次运行只在后台试一次，断网时不反复登录
         QGuiApplication.instance().aboutToQuit.connect(self._steam_monitor_cancel.set)
         # 公网/穿透两行各自独立获取与重试：state 为 loading/ok/failed/unavailable/nomap，
         # gen 用来丢弃过期结果，retry_due 是下次自动重试的时刻（monotonic）
@@ -1115,6 +1117,29 @@ class LocalServicePage(Page):
         self._install_path_label.setText(str(self._install_dir) if self._install_dir else t("local.install_not_found"))
         self._refresh_steam_update_button()
         self._refresh_steam_remote_build_async()
+        self._prepare_steamcmd_async()
+
+    def _prepare_steamcmd_async(self) -> None:
+        """SteamCMD 通道下提前在后台登录一次取回应用信息，免得用户首次更新时多等；静默进行，失败不提示。"""
+        if get_backend() is not SteamBackend.STEAMCMD or self._steamcmd_preparing:
+            return
+        self._steamcmd_preparing = True
+        account = get_steamcmd_account()
+        cancel_event = self._steam_monitor_cancel
+
+        def work():
+            steamcmd = steamcmd_updater.find_steamcmd()
+            if (steamcmd is None or str(steamcmd) in self._steamcmd_prepare_tried
+                    or not steamcmd_updater.steamcmd_needs_prepare(steamcmd)):
+                return
+            self._steamcmd_prepare_tried.add(str(steamcmd))
+            steamcmd_updater.prepare_steamcmd(steamcmd, on_line=lambda _line: None, account=account,
+                                              cancel_event=cancel_event)
+
+        def finished(_result=None) -> None:
+            self._steamcmd_preparing = False
+
+        run_async(work, finished, finished)
 
     @staticmethod
     def _runtime_mode_text(resolution) -> str:
