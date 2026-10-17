@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from dstools.features.cluster_config.config_manager import (
     get_cluster_option, get_shard_option, load_cluster_config, load_shard_config,
 )
-from dstools.features.local_service import luajit_injector, steam_client_updater
+from dstools.features.local_service import luajit_injector, steam_client_updater, steamcmd_updater
 from dstools.features.local_service.backup_manager import create_backup
 from dstools.features.local_service.dedicated_server import (
     ConfDirCrossDriveError, ServerStatus, detect_external_running_clusters,
@@ -57,7 +57,7 @@ from dstools.shared.app_settings import (
     get_dedicated_server_extra_args, get_global_tokens, get_lolia_mapping, get_sakura_token, get_selfhost_frp_mapping,
     get_selfhost_frp_server, get_token_holds, get_token_switch_on_timeout, clear_token_hold, prune_token_holds,
     set_auto_restart_enabled,
-    set_dedicated_server_extra_args, set_token_hold,
+    set_dedicated_server_extra_args, set_steamcmd_path, set_token_hold,
 )
 from dstools.shared.clipboard import copy_file_to_clipboard
 from dstools.shared.server_ports import (
@@ -901,6 +901,17 @@ class LocalServicePage(Page):
             return steam_client_updater.CLIENT_APP_ID
         return steam_client_updater.DEDICATED_SERVER_APP_ID
 
+    def _uses_steamcmd(self) -> bool:
+        """独立专服不在 Steam 库里时由 SteamCMD 管理（安装、更新都不经过 Steam 客户端）。"""
+        runtime = self._runtime
+        return (runtime is not None and not runtime.is_client
+                and not steamcmd_updater.is_steam_library_install(runtime.install_dir))
+
+    def _runtime_snapshot(self):
+        if self._uses_steamcmd():
+            return steamcmd_updater.snapshot_install(self._runtime.install_dir)
+        return steam_client_updater.snapshot_app(self._runtime_app_id())
+
     def _remote_build_for_runtime(self) -> str | None:
         """只返回属于当前开服程序 App 的远程版本。"""
         if self._steam_remote_build_app != self._runtime_app_id():
@@ -908,10 +919,15 @@ class LocalServicePage(Page):
         return self._steam_remote_build_id
 
     def _refresh_steam_update_button(self) -> None:
-        snapshot = steam_client_updater.snapshot_app(self._runtime_app_id())
+        snapshot = self._runtime_snapshot()
         remote_build_id = self._remote_build_for_runtime()
         mode = steam_client_updater.action_for_snapshot(snapshot, remote_build_id=remote_build_id)
-        labels = {"install": "local.steam_install_btn", "update": "local.steam_update_btn", "validate": "local.steam_validate_btn"}
+        if self._uses_steamcmd():
+            labels = {"install": "local.steamcmd_update_btn", "update": "local.steamcmd_update_btn",
+                      "validate": "local.steamcmd_validate_btn"}
+        else:
+            labels = {"install": "local.steam_install_btn", "update": "local.steam_update_btn",
+                      "validate": "local.steam_validate_btn"}
         # 更新进行中按钮保持"查看更新日志"，不被定时刷新改回去。
         self._steam_update_btn.setText(t("local.steam_view_log_btn" if self._steam_update_running else labels[mode]))
         self._steam_update_hint.setVisible(mode == "update")
@@ -950,6 +966,9 @@ class LocalServicePage(Page):
             self._steam_update_dialog.show()
             self._steam_update_dialog.raise_()
             self._steam_update_dialog.activateWindow()
+            return
+        if self._uses_steamcmd():
+            self._start_steamcmd_update()
             return
         if steam_client_updater.find_steam_executable() is None:
             dialogs.show_warning(self.window(), title, t("local.steam_update_no_client"))
@@ -1003,6 +1022,56 @@ class LocalServicePage(Page):
             self._finish_steam_update(dialog)
 
         run_async(work, done, error)
+
+    def _pick_steamcmd(self) -> Path | None:
+        """用之前选过的 steamcmd.exe，没有或已失效时让用户选一次并记住。"""
+        steamcmd = steamcmd_updater.find_steamcmd()
+        if steamcmd is not None:
+            return steamcmd
+        picked, _ = QFileDialog.getOpenFileName(
+            self.window(), t("local.steamcmd_pick_title"), "", "steamcmd.exe (steamcmd.exe)")
+        if not picked:
+            return None
+        path = Path(picked)
+        if not steamcmd_updater.is_steamcmd_exe(path):
+            dialogs.show_warning(self.window(), t("local.steamcmd_update_title"), t("local.steamcmd_invalid"))
+            return None
+        set_steamcmd_path(path)
+        return path
+
+    def _start_steamcmd_update(self) -> None:
+        steamcmd = self._pick_steamcmd()
+        if steamcmd is None:
+            return
+        install_dir = self._runtime.install_dir
+        remote_build_id = self._remote_build_for_runtime()
+        before = steamcmd_updater.snapshot_install(install_dir)
+        dialog = dialogs.LogDialog(self.window(), t("local.steamcmd_update_title"), closable=True)
+        self._steam_update_dialog = dialog
+        if remote_build_id:
+            dialog.append(t("local.steam_remote_build", remote=remote_build_id, local=before.build_id or "-"))
+        dialog.append(t("local.steamcmd_using", path=str(steamcmd)))
+        dialog.show()
+        self._steam_update_running = True
+        self._steam_update_btn.setText(t("local.steam_view_log_btn"))
+        cancel_event = self._steam_monitor_cancel
+
+        def work(emit):
+            return steamcmd_updater.run_update(
+                steamcmd, install_dir, on_line=emit, cancel_event=cancel_event,
+                on_retry=lambda code: emit(t("local.steamcmd_retry", code=code)))
+
+        def done(snapshot) -> None:
+            dialog.append(t("local.steamcmd_done", build=snapshot.build_id or "-"))
+            self._finish_steam_update(dialog)
+
+        def error(exc: Exception) -> None:
+            if isinstance(exc, InterruptedError):
+                return  # 程序正在退出
+            dialog.append(t("local.steamcmd_failed", detail=str(exc)))
+            self._finish_steam_update(dialog)
+
+        run_async_with_log(work, dialog.append, done, error)
 
     def _finish_steam_update(self, dialog) -> None:
         self._steam_update_running = False
@@ -1416,7 +1485,7 @@ class LocalServicePage(Page):
                                t("local.launch_already_pending", shards="、".join(duplicate)))
             return False
         if cluster.platform == Platform.STEAM:
-            server_snapshot = steam_client_updater.snapshot_app(self._runtime_app_id())
+            server_snapshot = self._runtime_snapshot()
             if steam_client_updater.action_for_snapshot(
                     server_snapshot, remote_build_id=self._remote_build_for_runtime()) == "update":
                 # 被拦下时直接给出更新入口，不让用户自己去找"通过 Steam 更新"按钮。

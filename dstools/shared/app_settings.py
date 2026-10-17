@@ -10,6 +10,7 @@ _KEY_CLIENT_RUNTIME_PATH = "client_runtime_path"
 _KEY_SERVER_RUNTIME_MODE = "server_runtime_mode"
 _KEY_WEGAME_ROOT_PATH = "wegame_root_path"
 _KEY_STEAM_MODS_PATH = "steam_mods_path"
+_KEY_STEAMCMD_PATH = "steamcmd_path"
 _KEY_THEME_NAME = "theme_name"
 _DEFAULT_THEME_NAME = "gray"
 _KEY_FONT_STYLE_CHOICE = "font_style_choice"
@@ -169,6 +170,22 @@ def set_wegame_root_path(path: Path | None) -> None:
         data[_KEY_WEGAME_ROOT_PATH] = str(path)
     else:
         data.pop(_KEY_WEGAME_ROOT_PATH, None)
+    save_settings(data)
+
+
+def get_steamcmd_path() -> Path | None:
+    """用户选过的 steamcmd.exe，未设置返回 None。"""
+    raw = load_settings().get(_KEY_STEAMCMD_PATH)
+    return Path(raw) if raw else None
+
+
+def set_steamcmd_path(path: Path | None) -> None:
+    """记住用户选过的 steamcmd.exe；传 None 清空。"""
+    data = load_settings()
+    if path:
+        data[_KEY_STEAMCMD_PATH] = str(path)
+    else:
+        data.pop(_KEY_STEAMCMD_PATH, None)
     save_settings(data)
 
 

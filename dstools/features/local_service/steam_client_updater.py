@@ -285,6 +285,18 @@ def snapshot_app(
     resolved_install = (
         library_root / "steamapps" / "common" / install_dir if install_dir else None
     )
+    return snapshot_from_manifest(app_id, path, resolved_install, values)
+
+
+def snapshot_from_manifest(
+    app_id: str,
+    path: Path,
+    resolved_install: Path | None,
+    values: dict[str, str] | None = None,
+) -> SteamAppSnapshot:
+    """按给定的实际安装目录读 manifest；SteamCMD 的安装目录不在 steamapps/common 下，由调用方给出。"""
+    if values is None:
+        values = _parse_scalar_manifest(path)
     return SteamAppSnapshot(
         app_id=app_id,
         manifest_path=path,

@@ -109,14 +109,17 @@ def _disable_power_throttling(pid: int) -> bool:
 def is_valid_install_dir(path: Path) -> bool:
     """目录下是否有专服 exe 且确实是独立专服安装包。
 
-    坑：客户端 bin64 里也自带同名专服 exe（供"开办本地游戏"），只看 exe 会误判。"""
-    if "dedicated server" not in path.name.lower():
-        return False
-    return _has_server_exe(path)
+    坑：客户端 bin64 里也自带同名专服 exe（供"开办本地游戏"），只看 exe 会误判，所以有客户端 exe 的不算。
+    不看目录名：SteamCMD 的 force_install_dir 可以是任意名字。"""
+    return _has_server_exe(path) and not _has_client_exe(path)
 
 
 def _has_server_exe(path: Path) -> bool:
     return any((path / _BIN_DIRS[b] / _EXE_NAMES[b]).exists() for b in (64, 32))
+
+
+def _has_client_exe(path: Path) -> bool:
+    return any((path / _BIN_DIRS[b] / _CLIENT_EXE_NAMES[b]).exists() for b in (64, 32))
 
 
 def is_client_install_dir(path: Path) -> bool:

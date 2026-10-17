@@ -66,6 +66,13 @@ def test_mode_resolution_and_migration() -> None:
             assert resolve_runtime().runtime.install_dir == dedicated
             assert app_settings.get_server_runtime_mode() == RuntimeMode.DEDICATED.value
 
+            # SteamCMD 装到任意名字的目录：手动指定后按独立专服使用；客户端目录不能冒充独立专服。
+            custom = _make_install(library, "dstserver", client=False)
+            assert server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, custom)
+            assert not server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, client)
+            app_settings.set_dedicated_server_path(custom)
+            assert resolve_runtime().runtime.install_dir == custom
+
 
 # 业务代码只能经 server_runtime 取开服程序目录。白名单：探测函数自身（dedicated_server/server_runtime）、
 # 清理 V1 残留需扫遍所有目录的 legacy_v1、只做路径比较的 parser.is_dedicated_server_mods_dir
