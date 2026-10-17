@@ -195,6 +195,23 @@ def test_account_login_failure_not_retried() -> None:
             steamcmd_updater.login(Path("steamcmd.exe"), "hostbot", "pw", on_line=lambda _l: None)
         assert not steamcmd_updater.login_expired(Path("steamcmd.exe"), "hostbot")
 
+    # 伪控制台里不换行的验证码提示等不到就被中止，输出里没有：要从实时写的 console_log 补上
+    with tempfile.TemporaryDirectory() as tmp:
+        steamcmd = Path(tmp) / "steamcmd.exe"
+        log = Path(tmp) / "logs" / "console_log.txt"
+        log.parent.mkdir()
+        log.write_text("old session Steam Guard code:\n", encoding="utf-8")  # 之前的会话不算
+
+        def guard_run(command, on_line, cancel_event, **_kwargs):
+            with log.open("a", encoding="utf-8") as file:
+                file.write("Logging in user 'hostbot' [U:1:0] to Steam Public...\npassword: \nSteam Guard code:")
+            return steamcmd_updater.LOGIN_FAILED_EXIT_CODE
+
+        lines = []
+        with patch.object(steamcmd_updater, "_run_once", side_effect=guard_run):
+            steamcmd_updater.login(steamcmd, "hostbot", "pw", on_line=lines.append)
+        assert lines == ["Steam Guard code:"] and steamcmd_updater.needs_guard_code(lines)
+
     # 真机输出：缺验证码时先提示 Steam Guard code，读不到就 Account Logon Denied
     assert steamcmd_updater.needs_guard_code(["Steam Guard code:ERROR (Account Logon Denied)"])
     assert not steamcmd_updater.needs_guard_code(["Logging in user 'x' [U:1:0] to Steam Public...ERROR (Invalid Password)"])

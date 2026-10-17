@@ -412,12 +412,18 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
         self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._guard_edit = QLineEdit()
         self._guard_edit.setPlaceholderText(t("local.steamcmd_login_guard_placeholder"))
+        labels = []
         for row, (key, edit) in enumerate((("local.steamcmd_login_user", self._user_edit),
                                            ("local.steamcmd_login_password", self._password_edit),
                                            ("local.steamcmd_login_guard", self._guard_edit))):
-            grid.addWidget(QLabel(t(key)), row, 0)
+            labels.append(QLabel(t(key)))
+            grid.addWidget(labels[-1], row, 0)
             grid.addWidget(edit, row, 1)
         self.body.addLayout(grid)
+        # 和常见网站一样：平时只要用户名和密码，Steam 确实要求验证码时才显示这一行
+        self._guard_label = labels[-1]
+        self._guard_label.hide()
+        self._guard_edit.hide()
         self._status = self.error_label()
         self._status.hide()
         self.body.addWidget(self._status)
@@ -463,6 +469,8 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
             if steamcmd_updater.needs_guard_code(lines) and not guard:
                 # 实测：SteamCMD 读完密码会提示 "Steam Guard code:"，没读到就 Account Logon Denied，
                 # 同时 Steam 往邮箱发验证码。密码保留，用户只需补填验证码
+                self._guard_label.show()
+                self._guard_edit.show()
                 self._show_status(t("local.steamcmd_login_need_guard"), error=True)
                 self._guard_edit.setFocus()
                 return
@@ -744,6 +752,7 @@ class LocalServicePage(Page):
         # 程序退出时通知 Steam 更新监控立即结束，否则线程池会等它最长 15 分钟，进程退不掉。
         self._steam_monitor_cancel = threading.Event()
         self._steamcmd_preparing = False
+        self._steamcmd_prepare_active = False  # 确实在后台登录准备（约 1 分钟），通道一行显示提示
         self._steamcmd_prepare_tried: set[str] = set()  # 每份 SteamCMD 本次运行只在后台试一次，断网时不反复登录
         QGuiApplication.instance().aboutToQuit.connect(self._steam_monitor_cancel.set)
         # 公网/穿透两行各自独立获取与重试：state 为 loading/ok/failed/unavailable/nomap，
@@ -1134,14 +1143,20 @@ class LocalServicePage(Page):
                     or not steamcmd_updater.steamcmd_needs_prepare(steamcmd)):
                 return
             self._steamcmd_prepare_tried.add(str(steamcmd))
+            post_to_ui(lambda _arg: self._set_steamcmd_prepare_active(True))
             steamcmd_updater.prepare_steamcmd(steamcmd, on_line=lambda _line: None, account=account,
                                               cancel_event=cancel_event)
 
         def finished(_result=None) -> None:
             self._steamcmd_preparing = False
+            self._steamcmd_prepare_active = False
             self._refresh_backend_label()  # 后台准备可能发现账号登录已失效
 
         run_async(work, finished, finished)
+
+    def _set_steamcmd_prepare_active(self, active: bool) -> None:
+        self._steamcmd_prepare_active = active
+        self._refresh_backend_label()
 
     @staticmethod
     def _runtime_mode_text(resolution) -> str:
@@ -1229,6 +1244,8 @@ class LocalServicePage(Page):
                 text = t("local.backend_steamcmd_user", user=account)
             else:
                 text = t("local.backend_steamcmd_anonymous")
+            if self._steamcmd_prepare_active:
+                text += t("local.backend_steamcmd_preparing")
         self._backend_label.setText(text)
         self._backend_label.setStyleSheet(f"color: {theme.hex('ERROR')};" if expired else "")
         # SteamCMD 通道固定用独立专服，「开服程序」一行没有可选的，隐藏
@@ -1275,6 +1292,13 @@ class LocalServicePage(Page):
         if wanted is None:
             set_runtime_mode(RuntimeMode(kind.value))
         self._on_runtime_changed()
+        self._validate_adopted_dir()
+
+    def _validate_adopted_dir(self) -> None:
+        """SteamCMD 通道下选用了已有的专服：立即校验并更新，省得用户再点一次（Steam 库里的等不能用时不做）。"""
+        if (get_backend() is SteamBackend.STEAMCMD and self._runtime is not None and not self._runtime.is_client
+                and update_blocker(get_backend(), self._runtime) is None):
+            self._on_steam_update_clicked()
 
     def _runtime_app_id(self) -> str:
         """当前开服程序对应的 Steam App；未检测到时按模式要求的那种引导安装（自动模式引导装独立专服）。"""
@@ -1432,6 +1456,7 @@ class LocalServicePage(Page):
             # 选到的目录里已经有专服（比如之前装过）：直接使用，不重复下载
             if dialogs.ask_yes_no(self.window(), title, t("local.steamcmd_install_existing", path=str(target))):
                 self._adopt_dedicated_dir(target)
+                self._validate_adopted_dir()
             return
         if steamcmd_updater.is_steam_library_install(target):
             dialogs.show_warning(self.window(), title, t("local.steamcmd_install_library_dir"))

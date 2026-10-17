@@ -508,9 +508,12 @@ def download_workshop_items(
     return {wid: installed.get(int(wid), 0) if has_workshop_files(content_root / wid) else 0 for wid in ids}
 
 
+_GUARD_MARKERS = ("Steam Guard code", "Two-factor code", "Account Logon Denied")
+
+
 def needs_guard_code(lines: list[str]) -> bool:
-    """登录输出里出现 Steam 令牌验证码提示（登录相关输出是英文，真机实测）。"""
-    return any("Steam Guard code" in line or "Account Logon Denied" in line for line in lines)
+    """登录输出里出现 Steam 令牌验证码提示（登录相关输出是英文，真机实测邮箱令牌；手机令牌为 Two-factor code）。"""
+    return any(marker in line for line in lines for marker in _GUARD_MARKERS)
 
 
 @_exclusive_task
@@ -534,10 +537,27 @@ def login(
             on_line(line)
 
     stdin_text = password + "\n" + (guard_code + "\n" if guard_code else "")
+    console_log = Path(steamcmd).parent / "logs" / "console_log.txt"
+    try:
+        log_start = console_log.stat().st_size
+    except OSError:
+        log_start = 0
     returncode = _run_once([str(steamcmd), "+login", username, "+quit"], safe_line, cancel_event,
                            stdin_text=stdin_text)
     if cancel_event is not None and cancel_event.is_set():
         raise InterruptedError("SteamCMD 登录已取消")
+    if returncode == LOGIN_FAILED_EXIT_CODE:
+        # 坑：伪控制台里不换行的验证码提示要等关闭才送出，等不到提示就被中止时输出里没有它；
+        # console_log 是实时写的，从这里补上验证码相关的行，供 needs_guard_code 判断
+        try:
+            with console_log.open("rb") as file:
+                file.seek(log_start)
+                tail = file.read().decode("utf-8", errors="replace")
+        except OSError:
+            tail = ""
+        for line in tail.splitlines():
+            if any(marker in line for marker in _GUARD_MARKERS):
+                safe_line(line.strip())
     if returncode == 0:
         _record_login(steamcmd, username, None)
     return returncode
