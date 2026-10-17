@@ -3,7 +3,8 @@
 真机实测（中文 Windows）：
 - 清单写在 force_install_dir 下的 steamapps/appmanifest_343050.acf，专服文件直接放在 force_install_dir；
 - 输出跟随系统语言（中文系统输出中文），不能按文本判断成败，只看退出码和清单；
-- 刚装好的 SteamCMD 首次 app_update 报 "Missing configuration"（退出码 7），所以失败后自动重试一次。
+- 刚装好的 SteamCMD 首次 app_update 报 "Missing configuration"（退出码 7），所以失败后自动重试一次；
+- 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以运行中改为跟踪它实时写入的 logs/content_log.txt。
 """
 
 from __future__ import annotations
@@ -63,13 +64,61 @@ def update_succeeded(returncode: int, snapshot: SteamAppSnapshot) -> bool:
             and snapshot.download_complete and not snapshot.update_pending)
 
 
+def is_progress_log_line(line: str, app_id: str = DEDICATED_SERVER_APP_ID) -> bool:
+    """content_log 里只转发本 App 的状态变化、下载速率和失败原因，下载源、连接细节不转发。"""
+    return f"AppID {app_id}" in line or "download rate" in line or "Failed" in line
+
+
+def _follow_content_log(log_path: Path, on_line: Callable[[str], None], stop: threading.Event) -> None:
+    """从启动时的末尾开始跟踪新写入的行；文件被轮转变短时从头读。"""
+    try:
+        offset = log_path.stat().st_size
+    except OSError:
+        offset = 0
+    pending = ""
+    while True:
+        stopping = stop.wait(1.0)
+        try:
+            size = log_path.stat().st_size
+            if size < offset:
+                offset = 0
+            if size > offset:
+                with log_path.open("rb") as file:
+                    file.seek(offset)
+                    data = file.read(size - offset)
+                offset = size
+                lines = (pending + data.decode("utf-8", errors="replace")).split("\n")
+                pending = lines.pop()
+                for line in lines:
+                    line = line.strip()
+                    if line and is_progress_log_line(line):
+                        on_line(line)
+        except OSError:
+            pass
+        if stopping:
+            return
+
+
 def _run_once(command: list[str], on_line: Callable[[str], None],
-              cancel_event: threading.Event | None) -> int:
+              cancel_event: threading.Event | None, stdin_text: str | None = None) -> int:
     proc = subprocess.Popen(
-        command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        command, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
+    if stdin_text is not None:
+        # 密码等交互输入预先写入：提示同样被缓冲，没法等看到提示再输入
+        try:
+            proc.stdin.write(stdin_text.encode("utf-8"))
+            proc.stdin.close()
+        except OSError:
+            pass
     finished = threading.Event()
+    log_stop = threading.Event()
+    log_thread = threading.Thread(
+        target=_follow_content_log,
+        args=(Path(command[0]).parent / "logs" / "content_log.txt", on_line, log_stop), daemon=True)
+    log_thread.start()
 
     def watch_cancel() -> None:
         while not finished.is_set():
@@ -79,25 +128,24 @@ def _run_once(command: list[str], on_line: Callable[[str], None],
 
     if cancel_event is not None:
         threading.Thread(target=watch_cancel, daemon=True).start()
-    pending = b""
-    last = None
     try:
+        output = b""
         while chunk := proc.stdout.read1(4096):
-            # 进度行用 \r 覆盖刷新，按 \r/\n 一起切行；连续重复的进度行只报一次
-            parts = _LINE_SPLIT_RE.split(pending + chunk)
-            pending = parts.pop()
-            for raw in parts:
-                text = raw.decode("utf-8", errors="replace").strip()
-                if text and text != last:
-                    last = text
-                    on_line(text)
-        tail = pending.decode("utf-8", errors="replace").strip()
-        if tail and tail != last:
-            on_line(tail)
-        return proc.wait()
+            output += chunk
+        returncode = proc.wait()
     finally:
         finished.set()
+        log_stop.set()
+        log_thread.join(3)
         proc.stdout.close()
+    # 进度行用 \r 覆盖刷新，按 \r/\n 一起切行；连续重复的行只报一次
+    last = None
+    for raw in _LINE_SPLIT_RE.split(output):
+        text = raw.decode("utf-8", errors="replace").strip()
+        if text and text != last:
+            last = text
+            on_line(text)
+    return returncode
 
 
 def run_update(
