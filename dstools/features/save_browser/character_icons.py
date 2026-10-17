@@ -84,7 +84,13 @@ def _convert_and_crop(tex_path: Path, xml_path: Path | None, cache_key: str) -> 
 
 
 def _find_official_install_dir() -> Path | None:
-    """官方客户端/专服中带 data/databundles/ 的安装目录，遍历全部 Steam 库，先找到先用。"""
+    """官方客户端/专服中带 data/databundles/ 的安装目录：先用当前开服程序（SteamCMD 安装的专服不在 Steam 库里），
+    再遍历全部 Steam 库，先找到先用。"""
+    # 延迟导入：开服程序目录只经 server_runtime 获取
+    from dstools.features.local_service.server_runtime import current_runtime
+    runtime = current_runtime()
+    if runtime is not None and (runtime.install_dir / "data" / "databundles").exists():
+        return runtime.install_dir
     for steam in find_all_steam_libraries():
         for folder_name in ("Don't Starve Together", "Don't Starve Together Dedicated Server"):
             candidate = steam / "steamapps" / "common" / folder_name
