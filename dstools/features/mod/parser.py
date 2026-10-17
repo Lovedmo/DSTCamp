@@ -262,6 +262,11 @@ def find_workshop_dir() -> Path | None:
     if steamcmd_workshop is not None:
         content = steamcmd_workshop / "content" / DST_APP_ID
         return content if content.exists() else None
+    return find_client_workshop_dir()
+
+
+def find_client_workshop_dir() -> Path | None:
+    """Steam 客户端的 DST Workshop 内容目录（不看 Steam 通道）：游戏客户端只从这里加载工坊 Mod。"""
     for steam in find_all_steam_libraries():
         workshop = steam / "steamapps" / "workshop" / "content" / DST_APP_ID
         if workshop.exists():

@@ -33,14 +33,32 @@ def sync_available(ctx) -> bool:
 
 
 def _client_only_keys() -> set[str]:
-    """本机已安装的 client_only Mod：它们的全局配置文件不带 _CLIENT 后缀。"""
+    """本机已安装的 client_only Mod：它们的全局配置文件不带 _CLIENT 后缀。
+    除当前通道的 Mod 外还要看 Steam 客户端工坊目录：SteamCMD 通道下游戏仍从那里加载客户端 Mod，
+    SteamCMD 一般不会下载这类 Mod，只看它的目录会把它们的全局配置对应错文件。"""
     from dstools.features.mod.modinfo_cache import parse_modinfo_cached
-    from dstools.features.mod.parser import find_mod_folder, list_installed_mod_ids
+    from dstools.features.mod.parser import (
+        find_client_workshop_dir, find_mod_folder, is_workshop_content_id, list_installed_mod_ids,
+    )
 
-    keys = set()
+    folders = {}
     for wid in list_installed_mod_ids():
         try:
-            folder = find_mod_folder(wid)
+            folders[wid] = find_mod_folder(wid)
+        except Exception:
+            continue
+    client_workshop = find_client_workshop_dir()
+    if client_workshop is not None:
+        try:
+            children = list(client_workshop.iterdir())
+        except OSError:
+            children = []
+        for child in children:
+            if is_workshop_content_id(child.name) and (child / "modinfo.lua").is_file():
+                folders.setdefault("workshop-" + child.name, child)
+    keys = set()
+    for wid, folder in folders.items():
+        try:
             info = parse_modinfo_cached(folder) if folder else None
         except Exception:
             continue
