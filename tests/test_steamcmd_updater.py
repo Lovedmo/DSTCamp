@@ -177,6 +177,29 @@ def test_download_workshop_items_reads_acf() -> None:
                 raise AssertionError("登录失效应抛 SteamcmdLoginError")
 
 
+def test_input_prompt_watch() -> None:
+    import threading
+    import time
+
+    with tempfile.TemporaryDirectory() as tmp:
+        log = Path(tmp) / "console_log.txt"
+        log.write_text("[t] old password: \r\n", encoding="utf-8")  # 启动前的旧内容不算
+        abort, stop = threading.Event(), threading.Event()
+        watcher = threading.Thread(target=steamcmd_updater._watch_input_prompts, args=(log, 1, abort, stop))
+        watcher.start()
+        time.sleep(0.7)
+        with log.open("a", encoding="utf-8") as file:
+            # 真机 console_log 格式：给了密码时第一个提示不中止
+            file.write("[t] Cached credentials not found.\r\n[t] \npassword: \r\n")
+        time.sleep(1.2)
+        assert not abort.is_set()
+        with log.open("a", encoding="utf-8") as file:
+            file.write("[t] Steam Guard code:")  # 第二个提示没有可给的输入
+        watcher.join(3)
+        stop.set()
+        assert abort.is_set()
+
+
 def test_steamcmd_mod_classify() -> None:
     from dstools.features.mod.steamcmd_mod_status import SteamcmdModState, classify
     from dstools.features.mod.workshop_webapi import RemoteWorkshopItem

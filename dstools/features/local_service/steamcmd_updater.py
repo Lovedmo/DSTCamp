@@ -163,6 +163,47 @@ def _follow_log(log_path: Path, accept: Callable[[str], bool], on_line: Callable
             return
 
 
+# SteamCMD 等待输入的提示（实测英文：password: / Steam Guard code:）
+_INPUT_PROMPT_RE = re.compile(r"(?:password|steam guard code|two-factor code)\s*:", re.IGNORECASE)
+
+
+def _watch_input_prompts(log_path: Path, answers: int, abort: threading.Event, stop: threading.Event) -> None:
+    """跟踪 console_log，提示次数超过事先给的输入行数就置 abort。
+
+    坑（实测）：伪控制台里不换行的提示（"password: "）要到伪控制台关闭才送出，从输出里等不到；
+    console_log 却会立刻写入，所以从这里判断 SteamCMD 是否卡在等输入。"""
+    try:
+        offset = log_path.stat().st_size
+    except OSError:
+        offset = 0
+    seen = ""
+    while not stop.wait(0.5):
+        try:
+            size = log_path.stat().st_size
+            if size < offset:
+                offset = 0
+            if size > offset:
+                with log_path.open("rb") as file:
+                    file.seek(offset)
+                    seen += file.read(size - offset).decode("utf-8", errors="replace")
+                offset = size
+        except OSError:
+            continue
+        if len(_INPUT_PROMPT_RE.findall(seen)) > answers:
+            abort.set()
+            return
+
+
+class _EitherEvent:
+    """用户取消或内部中止任一发生即视为取消，供伪控制台轮询。"""
+
+    def __init__(self, *events: threading.Event | None):
+        self._events = [event for event in events if event is not None]
+
+    def is_set(self) -> bool:
+        return any(event.is_set() for event in self._events)
+
+
 def _run_once(command: list[str], on_line: Callable[[str], None],
               cancel_event: threading.Event | None, stdin_text: str | None = None,
               log_name: str = "content_log.txt",
@@ -183,10 +224,24 @@ def _run_once(command: list[str], on_line: Callable[[str], None],
     try:
         if follow_log_with_pty:
             start_log()
+        # 坑：伪控制台的输入一直开着，SteamCMD 要密码/验证码时会无限等待（管道下读到输入结束会立刻失败）。
+        # 提示数超过事先给的输入行数就中止，按登录失败处理
+        answers = len([line for line in (stdin_text or "").splitlines() if line])
+        abort = threading.Event()
+        prompt_stop = threading.Event()
+        prompt_thread = threading.Thread(
+            target=_watch_input_prompts,
+            args=(Path(command[0]).parent / "logs" / "console_log.txt", answers, abort, prompt_stop), daemon=True)
+        prompt_thread.start()
         try:
-            return run_in_pseudo_console(command, on_line, stdin_text=stdin_text, cancel_event=cancel_event)
+            code = run_in_pseudo_console(command, on_line, stdin_text=stdin_text,
+                                         cancel_event=_EitherEvent(cancel_event, abort))
+            return LOGIN_FAILED_EXIT_CODE if abort.is_set() else code
         except OSError:
             pass  # 伪控制台不可用：退回管道
+        finally:
+            prompt_stop.set()
+            prompt_thread.join(2)
         if log_thread is None:
             start_log()
         return _run_piped(command, on_line, cancel_event, stdin_text)
