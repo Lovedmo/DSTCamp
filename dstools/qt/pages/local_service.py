@@ -1437,7 +1437,8 @@ class LocalServicePage(Page):
         def work(emit):
             return steamcmd_updater.run_update(
                 steamcmd, install_dir, on_line=emit, cancel_event=cancel_event, account=account,
-                on_retry=lambda code: emit(t("local.steamcmd_retry", code=code)))
+                on_retry=lambda code: emit(t("local.steamcmd_retry", code=code)),
+                on_suspended=lambda: emit(t("local.steamcmd_suspended")))
 
         def done(snapshot) -> None:
             dialog.append(t("local.steamcmd_done", build=snapshot.build_id or "-"))

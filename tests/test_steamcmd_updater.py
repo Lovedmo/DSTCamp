@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,6 +73,33 @@ def test_run_update_retries_once() -> None:
                 pass
             else:
                 raise AssertionError("两次都失败时应抛 RuntimeError")
+
+
+def test_suspended_update_is_retried() -> None:
+    """实测：全新 SteamCMD 首次校验被挂起，空等后仍打印 Success! 且退出码 0，必须按失败重试。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "dstserver"
+        _make_steamcmd_install(root)  # 已装好的专服：清单本身看不出这次什么也没做
+        steamcmd = Path(tmp) / "steamcmd" / "steamcmd.exe"
+        log = steamcmd.parent / "logs" / "content_log.txt"
+        log.parent.mkdir(parents=True)
+        log.write_text("", encoding="utf-8")
+        attempts, events = [], []
+
+        def fake_run(command, on_line, cancel_event):
+            attempts.append(command)
+            if len(attempts) == 1:
+                with log.open("a", encoding="utf-8") as file:
+                    file.write("[2026-10-17 23:44:10] AppID 343050 scheduler finished : "
+                               "removed from schedule (result Suspended, state 0xc) \n")
+                time.sleep(1.5)  # 等日志跟踪读到
+            return 0
+
+        with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+            steamcmd_updater.run_update(steamcmd, root, on_line=lambda _l: None,
+                                        on_retry=lambda c: events.append(("retry", c)),
+                                        on_suspended=lambda: events.append("suspended"))
+        assert len(attempts) == 2 and events == ["suspended"]
 
 
 def test_account_login_failure_not_retried() -> None:

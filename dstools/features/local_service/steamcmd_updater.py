@@ -4,6 +4,9 @@
 - 清单写在 force_install_dir 下的 steamapps/appmanifest_343050.acf，专服文件直接放在 force_install_dir；
 - 输出跟随系统语言（中文系统输出中文），不能按文本判断成败，只看退出码和清单；
 - 刚装好的 SteamCMD 首次 app_update 报 "Missing configuration"（退出码 7），所以失败后自动重试一次；
+- 刚释放的 SteamCMD 首次 app_update 会被立即挂起（应用信息还没取到）：空等约 2 分钟后照样打印 Success!，
+  退出码有时是 0，实际什么也没做；content_log 里当场就有 "result Suspended"。这 2 分钟里它在下载并保存
+  应用信息，提前结束的话重试照样被挂起（已实测），所以等它自己结束，再按失败重试；
 - 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以优先放进伪控制台运行（输出实时）；
   不支持伪控制台时退回管道，改为跟踪它实时写入的 logs/content_log.txt；
 - 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5。
@@ -125,6 +128,12 @@ def update_succeeded(returncode: int, snapshot: SteamAppSnapshot) -> bool:
 def is_progress_log_line(line: str, app_id: str = DEDICATED_SERVER_APP_ID) -> bool:
     """content_log 里只转发本 App 的状态变化、下载速率和失败原因，下载源、连接细节不转发。"""
     return f"AppID {app_id}" in line or "download rate" in line or "Failed" in line
+
+
+def is_suspended_log_line(line: str, app_id: str = DEDICATED_SERVER_APP_ID) -> bool:
+    """更新任务被挂起（实测 content_log：AppID 343050 scheduler finished : removed from schedule (result Suspended, ...)）。
+    content_log 固定英文，不随系统语言变化。"""
+    return f"AppID {app_id} scheduler finished" in line and "result Suspended" in line
 
 
 def is_workshop_log_line(line: str) -> bool:
@@ -299,26 +308,49 @@ def run_update(
     *,
     on_line: Callable[[str], None],
     on_retry: Callable[[int], None] | None = None,
+    on_suspended: Callable[[], None] | None = None,
     cancel_event: threading.Event | None = None,
     validate: bool = True,
     attempts: int = 2,
     account: str = "",
 ) -> SteamAppSnapshot:
     """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，账号登录失败抛 SteamcmdLoginError，
-    取消抛 InterruptedError。"""
+    取消抛 InterruptedError。任务被挂起时先回调 on_suspended（之后约 2 分钟没有输出），本次按失败处理。"""
     command = build_command(steamcmd, install_dir, validate=validate, account=account)
+    content_log = Path(steamcmd).parent / "logs" / "content_log.txt"
     returncode = None
+    suspended = threading.Event()
     for attempt in range(1, max(1, attempts) + 1):
-        if attempt > 1 and on_retry is not None:
+        # 被挂起时 on_suspended 已说明会自动重试，不再报"未完成（退出码 0）"这种自相矛盾的提示
+        if attempt > 1 and on_retry is not None and not suspended.is_set():
             on_retry(returncode)
-        returncode = _run_once(command, on_line, cancel_event)
+        # 任务被挂起时 SteamCMD 会空等约 2 分钟再假报成功：记下来，结束后按失败重试
+        suspended = threading.Event()
+        watch_stop = threading.Event()
+
+        def mark_suspended(_line: str) -> None:
+            if not suspended.is_set():
+                suspended.set()
+                if on_suspended is not None:
+                    on_suspended()
+
+        watcher = threading.Thread(
+            target=_follow_log, args=(content_log, is_suspended_log_line, mark_suspended, watch_stop), daemon=True)
+        watcher.start()
+        try:
+            returncode = _run_once(command, on_line, cancel_event)
+        finally:
+            watch_stop.set()
+            watcher.join(3)
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("SteamCMD 更新已取消")
         snapshot = snapshot_install(install_dir)
-        if update_succeeded(returncode, snapshot):
+        if not suspended.is_set() and update_succeeded(returncode, snapshot):
             return snapshot
         if account and returncode == LOGIN_FAILED_EXIT_CODE:
             raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
+    if suspended.is_set():
+        raise RuntimeError("更新任务被 Steam 挂起")
     raise RuntimeError(f"SteamCMD 退出码 {returncode}")
 
 
