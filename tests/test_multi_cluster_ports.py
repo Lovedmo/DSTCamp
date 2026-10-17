@@ -12,6 +12,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _harness import run  # noqa: E402
 
+# 设置放进临时目录，绝不读写真实 %APPDATA%/DSTCamp（否则启动预检会随本机的 Steam 通道等设置变化）。
+import os  # noqa: E402
+_SETTINGS_TMP = tempfile.TemporaryDirectory()
+os.environ["APPDATA"] = _SETTINGS_TMP.name
+
 from dstools.models import Cluster, Shard
 from dstools.shared.server_ports import (
     DEFAULT_MASTER_PORT,
