@@ -4,7 +4,8 @@
 - 清单写在 force_install_dir 下的 steamapps/appmanifest_343050.acf，专服文件直接放在 force_install_dir；
 - 输出跟随系统语言（中文系统输出中文），不能按文本判断成败，只看退出码和清单；
 - 刚装好的 SteamCMD 首次 app_update 报 "Missing configuration"（退出码 7），所以失败后自动重试一次；
-- 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以运行中改为跟踪它实时写入的 logs/content_log.txt。
+- 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以运行中改为跟踪它实时写入的 logs/content_log.txt；
+- 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5。
 """
 
 from __future__ import annotations
@@ -21,6 +22,12 @@ from dstools.features.local_service.steam_client_updater import (
 from dstools.shared import app_settings
 
 _LINE_SPLIT_RE = re.compile(rb"[\r\n]+")
+# 实测：密码错误、缓存凭据失效都是退出码 5。登录失败不自动重试，避免连续失败触发 Steam 的登录限制
+LOGIN_FAILED_EXIT_CODE = 5
+
+
+class SteamcmdLoginError(RuntimeError):
+    """账号登录失败或缓存的登录凭据已失效，需要重新登录。"""
 
 
 def is_steamcmd_exe(path: Path | None) -> bool:
@@ -49,10 +56,11 @@ def snapshot_install(install_dir: Path, app_id: str = DEDICATED_SERVER_APP_ID) -
     return snapshot_from_manifest(app_id, manifest, existing)
 
 
-def build_command(steamcmd: Path, install_dir: Path, *, validate: bool = True) -> list[str]:
+def build_command(steamcmd: Path, install_dir: Path, *, validate: bool = True, account: str = "") -> list[str]:
+    """account 为空时匿名登录；有账号时只传用户名，靠 SteamCMD 缓存的凭据登录。"""
     # force_install_dir 必须写在 login 之前，否则 SteamCMD 会提示并忽略
     command = [str(steamcmd), "+force_install_dir", str(install_dir),
-               "+login", "anonymous", "+app_update", DEDICATED_SERVER_APP_ID]
+               "+login", account or "anonymous", "+app_update", DEDICATED_SERVER_APP_ID]
     if validate:
         command.append("validate")
     command.append("+quit")
@@ -157,9 +165,11 @@ def run_update(
     cancel_event: threading.Event | None = None,
     validate: bool = True,
     attempts: int = 2,
+    account: str = "",
 ) -> SteamAppSnapshot:
-    """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，取消抛 InterruptedError。"""
-    command = build_command(steamcmd, install_dir, validate=validate)
+    """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，账号登录失败抛 SteamcmdLoginError，
+    取消抛 InterruptedError。"""
+    command = build_command(steamcmd, install_dir, validate=validate, account=account)
     returncode = None
     for attempt in range(1, max(1, attempts) + 1):
         if attempt > 1 and on_retry is not None:
@@ -170,4 +180,33 @@ def run_update(
         snapshot = snapshot_install(install_dir)
         if update_succeeded(returncode, snapshot):
             return snapshot
+        if account and returncode == LOGIN_FAILED_EXIT_CODE:
+            raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
     raise RuntimeError(f"SteamCMD 退出码 {returncode}")
+
+
+def login(
+    steamcmd: Path,
+    username: str,
+    password: str,
+    guard_code: str = "",
+    *,
+    on_line: Callable[[str], None],
+    cancel_event: threading.Event | None = None,
+) -> int:
+    """用账号密码登录一次，成功后 SteamCMD 会缓存凭据，之后只传用户名即可；返回退出码（0 为成功）。
+
+    密码和令牌验证码经标准输入传入，不出现在命令行里，也不转发到输出。
+    """
+    secrets = [value for value in (password, guard_code) if value]
+
+    def safe_line(line: str) -> None:
+        if not any(secret in line for secret in secrets):
+            on_line(line)
+
+    stdin_text = password + "\n" + (guard_code + "\n" if guard_code else "")
+    returncode = _run_once([str(steamcmd), "+login", username, "+quit"], safe_line, cancel_event,
+                           stdin_text=stdin_text)
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("SteamCMD 登录已取消")
+    return returncode

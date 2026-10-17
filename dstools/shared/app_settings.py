@@ -12,6 +12,7 @@ _KEY_WEGAME_ROOT_PATH = "wegame_root_path"
 _KEY_STEAM_MODS_PATH = "steam_mods_path"
 _KEY_STEAMCMD_PATH = "steamcmd_path"
 _KEY_STEAM_BACKEND = "steam_backend"
+_KEY_STEAMCMD_ACCOUNT = "steamcmd_account"
 _KEY_THEME_NAME = "theme_name"
 _DEFAULT_THEME_NAME = "gray"
 _KEY_FONT_STYLE_CHOICE = "font_style_choice"
@@ -187,6 +188,20 @@ def set_steamcmd_path(path: Path | None) -> None:
         data[_KEY_STEAMCMD_PATH] = str(path)
     else:
         data.pop(_KEY_STEAMCMD_PATH, None)
+    save_settings(data)
+
+
+def get_steamcmd_account() -> str:
+    """SteamCMD 登录用的 Steam 用户名，空字符串表示匿名；密码从不保存。"""
+    return load_settings().get(_KEY_STEAMCMD_ACCOUNT) or ""
+
+
+def set_steamcmd_account(username: str) -> None:
+    data = load_settings()
+    if username:
+        data[_KEY_STEAMCMD_ACCOUNT] = username
+    else:
+        data.pop(_KEY_STEAMCMD_ACCOUNT, None)
     save_settings(data)
 
 

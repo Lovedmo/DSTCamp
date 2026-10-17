@@ -71,6 +71,28 @@ def test_run_update_retries_once() -> None:
                 raise AssertionError("两次都失败时应抛 RuntimeError")
 
 
+def test_account_login_failure_not_retried() -> None:
+    command = steamcmd_updater.build_command(Path("steamcmd.exe"), Path("C:/dst"), account="hostbot")
+    assert command[command.index("+login") + 1] == "hostbot"  # 只传用户名，密码靠 SteamCMD 缓存
+    with tempfile.TemporaryDirectory() as tmp:
+        calls = []
+
+        def fake_run(command, on_line, cancel_event):
+            calls.append(command)
+            return steamcmd_updater.LOGIN_FAILED_EXIT_CODE
+
+        with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+            try:
+                steamcmd_updater.run_update(Path("steamcmd.exe"), Path(tmp), on_line=lambda _l: None,
+                                            account="hostbot")
+            except steamcmd_updater.SteamcmdLoginError:
+                pass
+            else:
+                raise AssertionError("登录失败应抛 SteamcmdLoginError")
+        # 连续登录失败会触发 Steam 限制，只试一次
+        assert len(calls) == 1
+
+
 def test_backend_update_blocker() -> None:
     from dstools.features.local_service.server_runtime import RuntimeKind, ServerRuntime
     from dstools.features.local_service.steam_backend import SteamBackend, update_blocker

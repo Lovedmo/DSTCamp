@@ -56,9 +56,9 @@ from dstools.qt.widgets import Banner, Card, ToggleSwitch, VScrollArea
 from dstools.shared.app_settings import (
     blocking_token_holds, get_auto_restart_enabled, get_backup_auto_enabled, get_backup_interval_minutes,
     get_dedicated_server_extra_args, get_global_tokens, get_lolia_mapping, get_sakura_token, get_selfhost_frp_mapping,
-    get_selfhost_frp_server, get_token_holds, get_token_switch_on_timeout, clear_token_hold, prune_token_holds,
+    get_selfhost_frp_server, get_steamcmd_account, get_token_holds, get_token_switch_on_timeout, clear_token_hold, prune_token_holds,
     set_auto_restart_enabled,
-    set_dedicated_server_extra_args, set_steamcmd_path, set_token_hold,
+    set_dedicated_server_extra_args, set_steamcmd_account, set_steamcmd_path, set_token_hold,
 )
 from dstools.shared.clipboard import copy_file_to_clipboard
 from dstools.shared.server_ports import (
@@ -385,13 +385,96 @@ class _RuntimeModeDialog(dialogs.Dialog):
         self.accept()
 
 
-class _SteamBackendDialog(dialogs.Dialog):
-    """"切换通道"窗口：Steam 客户端 / SteamCMD 单选，选 SteamCMD 时在这里指定 steamcmd.exe，点"保存"才生效。"""
+class _SteamcmdLoginDialog(dialogs.Dialog):
+    """SteamCMD 账号登录：密码和令牌验证码只交给 SteamCMD，DSTCamp 只记用户名；登录成功才关闭。"""
 
-    def __init__(self, parent, current: SteamBackend, steamcmd: Path | None):
+    def __init__(self, parent, steamcmd: Path, username: str):
+        super().__init__(parent, t("local.steamcmd_login_title"), "md", confirm_text=t("local.steamcmd_login_btn"))
+        self._steamcmd = steamcmd
+        self._cancel = threading.Event()
+        self._busy = False
+        self.result_username = ""
+        self.body.addWidget(self.text_label(t("local.steamcmd_login_note"), muted=True))
+        grid = QGridLayout()
+        self._user_edit = QLineEdit(username)
+        self._password_edit = QLineEdit()
+        self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._guard_edit = QLineEdit()
+        self._guard_edit.setPlaceholderText(t("local.steamcmd_login_guard_placeholder"))
+        for row, (key, edit) in enumerate((("local.steamcmd_login_user", self._user_edit),
+                                           ("local.steamcmd_login_password", self._password_edit),
+                                           ("local.steamcmd_login_guard", self._guard_edit))):
+            grid.addWidget(QLabel(t(key)), row, 0)
+            grid.addWidget(edit, row, 1)
+        self.body.addLayout(grid)
+        self._status = self.error_label()
+        self._status.hide()
+        self.body.addWidget(self._status)
+        self._confirm = self.add_buttons()
+
+    def _set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        for widget in (self._user_edit, self._password_edit, self._guard_edit, self._confirm):
+            widget.setEnabled(not busy)
+
+    def _show_status(self, text: str, error: bool) -> None:
+        self._status.setStyleSheet(f"color: {theme.hex('ERROR' if error else 'TEXT_MUTED')};")
+        self._status.setText(text)
+        self._status.show()
+
+    def accept_if_valid(self) -> None:
+        if self._busy:
+            return
+        username = self._user_edit.text().strip()
+        password = self._password_edit.text()
+        guard = self._guard_edit.text().strip()
+        if not username or not password:
+            self._show_status(t("local.steamcmd_login_empty"), error=True)
+            return
+        self._set_busy(True)
+        self._show_status(t("local.steamcmd_login_running"), error=False)
+        lines: list[str] = []
+        cancel = self._cancel
+
+        def done(code: int) -> None:
+            if cancel.is_set():
+                return  # 已取消，窗口已关闭
+            if code == 0:
+                self.result_username = username
+                self.accept()
+                return
+            self._set_busy(False)
+            self._password_edit.clear()
+            # 失败原因是 SteamCMD 的英文原文，附上最后几行便于判断（密码不会出现在里面）
+            tail = "\n".join(line for line in lines if "Logging in" in line or "ERROR" in line or "FAILED" in line)
+            key = ("local.steamcmd_login_failed_password" if code == steamcmd_updater.LOGIN_FAILED_EXIT_CODE
+                   else "local.steamcmd_login_failed")
+            self._show_status(t(key, code=code) + (f"\n{tail}" if tail else ""), error=True)
+
+        def error(exc: Exception) -> None:
+            if isinstance(exc, InterruptedError) or cancel.is_set():
+                return
+            self._set_busy(False)
+            self._show_status(t("local.steamcmd_login_failed", code=f"{type(exc).__name__}: {exc}"), error=True)
+
+        run_async(lambda: steamcmd_updater.login(self._steamcmd, username, password, guard,
+                                                 on_line=lines.append, cancel_event=cancel), done, error)
+
+    def reject(self) -> None:
+        # 关闭窗口即取消：结束正在等待（如手机令牌确认）的 SteamCMD
+        self._cancel.set()
+        super().reject()
+
+
+class _SteamBackendDialog(dialogs.Dialog):
+    """"切换通道"窗口：Steam 客户端 / SteamCMD 单选，选 SteamCMD 时在这里指定 steamcmd.exe 和登录账号，
+    点"保存"才生效。"""
+
+    def __init__(self, parent, current: SteamBackend, steamcmd: Path | None, account: str):
         super().__init__(parent, t("local.backend_title"), "md", confirm_text=t("local.runtime_mode_save_btn"))
         self.result_backend = current
         self.result_steamcmd = steamcmd
+        self.result_account = account
         group = QButtonGroup(self)
         self._radios: dict[SteamBackend, QRadioButton] = {}
         for backend, name_key, desc_key in (
@@ -415,17 +498,52 @@ class _SteamBackendDialog(dialogs.Dialog):
         path_row.addWidget(self._path_edit, 1)
         path_row.addWidget(self._browse_btn)
         self.body.addLayout(path_row)
+
+        account_row = QHBoxLayout()
+        account_row.setContentsMargins(24, 0, 0, 0)
+        self._account_label = QLabel()
+        self._login_btn = QPushButton(t("local.steamcmd_login_open_btn"))
+        self._login_btn.clicked.connect(self._open_login)
+        self._anonymous_btn = QPushButton(t("local.steamcmd_use_anonymous_btn"))
+        self._anonymous_btn.clicked.connect(lambda: self._set_account(""))
+        account_row.addWidget(QLabel(t("local.steamcmd_account_label")))
+        account_row.addWidget(self._account_label, 1)
+        account_row.addWidget(self._login_btn)
+        account_row.addWidget(self._anonymous_btn)
+        self.body.addLayout(account_row)
         self.body.addWidget(self.text_label(t("local.backend_note"), muted=True))
 
         self._radios[SteamBackend.STEAMCMD].toggled.connect(self._sync_path_enabled)
         self._radios[current].setChecked(True)
-        self._sync_path_enabled()
+        self._set_account(account)
         self.add_buttons()
 
     def _sync_path_enabled(self) -> None:
         enabled = self._radios[SteamBackend.STEAMCMD].isChecked()
-        self._path_edit.setEnabled(enabled)
-        self._browse_btn.setEnabled(enabled)
+        for widget in (self._path_edit, self._browse_btn, self._login_btn):
+            widget.setEnabled(enabled)
+        self._anonymous_btn.setEnabled(enabled and bool(self.result_account))
+
+    def _set_account(self, account: str) -> None:
+        self.result_account = account
+        self._account_label.setText(t("local.steamcmd_account_user", user=account) if account
+                                    else t("local.steamcmd_account_anonymous"))
+        self._sync_path_enabled()
+
+    def _steamcmd_from_edit(self) -> Path | None:
+        path = Path(self._path_edit.text().strip().strip('"'))
+        if not steamcmd_updater.is_steamcmd_exe(path):
+            dialogs.show_warning(self, t("local.backend_title"), t("local.steamcmd_invalid"))
+            return None
+        return path
+
+    def _open_login(self) -> None:
+        steamcmd = self._steamcmd_from_edit()
+        if steamcmd is None:
+            return
+        dialog = _SteamcmdLoginDialog(self, steamcmd, self.result_account)
+        if dialog.exec():
+            self._set_account(dialog.result_username)
 
     def _browse(self) -> None:
         picked, _ = QFileDialog.getOpenFileName(
@@ -436,9 +554,8 @@ class _SteamBackendDialog(dialogs.Dialog):
     def accept_if_valid(self) -> None:
         backend = next(b for b, radio in self._radios.items() if radio.isChecked())
         if backend is SteamBackend.STEAMCMD:
-            path = Path(self._path_edit.text().strip().strip('"'))
-            if not steamcmd_updater.is_steamcmd_exe(path):
-                dialogs.show_warning(self, t("local.backend_title"), t("local.steamcmd_invalid"))
+            path = self._steamcmd_from_edit()
+            if path is None:
                 return
             self.result_steamcmd = path
         self.result_backend = backend
@@ -940,11 +1057,13 @@ class LocalServicePage(Page):
         self.ctx.server_runtime_changed.emit()
 
     def _choose_backend(self) -> None:
-        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.find_steamcmd())
+        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.find_steamcmd(),
+                                     get_steamcmd_account())
         if not dialog.exec():
             return
         if dialog.result_backend is SteamBackend.STEAMCMD:
             set_steamcmd_path(dialog.result_steamcmd)
+            set_steamcmd_account(dialog.result_account)
         set_backend(dialog.result_backend)
         self._refresh_backend_label()
         self._refresh_steam_update_button()
@@ -1133,6 +1252,7 @@ class LocalServicePage(Page):
 
     def _start_steamcmd_update(self) -> None:
         steamcmd = steamcmd_updater.find_steamcmd()
+        account = get_steamcmd_account()
         install_dir = self._runtime.install_dir
         remote_build_id = self._remote_build_for_runtime()
         before = steamcmd_updater.snapshot_install(install_dir)
@@ -1140,7 +1260,8 @@ class LocalServicePage(Page):
         self._steam_update_dialog = dialog
         if remote_build_id:
             dialog.append(t("local.steam_remote_build", remote=remote_build_id, local=before.build_id or "-"))
-        dialog.append(t("local.steamcmd_using", path=str(steamcmd)))
+        dialog.append(t("local.steamcmd_using", path=str(steamcmd),
+                        account=account or t("local.steamcmd_account_anonymous")))
         dialog.show()
         self._steam_update_running = True
         self._steam_update_btn.setText(t("local.steam_view_log_btn"))
@@ -1149,7 +1270,7 @@ class LocalServicePage(Page):
 
         def work(emit):
             return steamcmd_updater.run_update(
-                steamcmd, install_dir, on_line=emit, cancel_event=cancel_event,
+                steamcmd, install_dir, on_line=emit, cancel_event=cancel_event, account=account,
                 on_retry=lambda code: emit(t("local.steamcmd_retry", code=code)))
 
         def done(snapshot) -> None:
@@ -1159,7 +1280,10 @@ class LocalServicePage(Page):
         def error(exc: Exception) -> None:
             if isinstance(exc, InterruptedError):
                 return  # 程序正在退出
-            dialog.append(t("local.steamcmd_failed", detail=str(exc)))
+            if isinstance(exc, steamcmd_updater.SteamcmdLoginError):
+                dialog.append(t("local.steamcmd_login_expired", user=account))
+            else:
+                dialog.append(t("local.steamcmd_failed", detail=str(exc)))
             self._finish_steam_update(dialog)
 
         run_async_with_log(work, dialog.append, done, error)
