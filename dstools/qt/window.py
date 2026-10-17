@@ -301,6 +301,14 @@ class MenuStrip(QWidget):
             menu, t("theme.font_settings"), self._window.show_font_settings_dialog))
         return menu
 
+    def _refresh_mod_sync_action(self) -> None:
+        """SteamCMD 通道没有游戏客户端可同步：菜单项置灰，悬停说明原因。"""
+        from dstools.qt.mod_config_sync import steamcmd_channel
+        steamcmd = steamcmd_channel()
+        self._mod_sync_action.setEnabled(not steamcmd)
+        self._mod_sync_action.setToolTip(t("mod.default_config_sync_steamcmd" if steamcmd
+                                           else "settings.mod_config_sync_hint"))
+
     def _on_settings_menu_hovered(self, action) -> None:
         if action is self._mod_sync_action:
             menu = self.sender()
@@ -335,6 +343,7 @@ class MenuStrip(QWidget):
         mod_sync.triggered.connect(lambda checked: set_mod_config_sync_enabled(bool(checked)))
         menu.addAction(mod_sync)
         self._mod_sync_action = mod_sync
+        menu.aboutToShow.connect(self._refresh_mod_sync_action)
         menu.hovered.connect(self._on_settings_menu_hovered)
         defender = QAction(t("settings.defender_label"), self)
         defender.triggered.connect(self._window.show_defender_dialog)

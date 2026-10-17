@@ -1227,8 +1227,11 @@ class LocalServicePage(Page):
         if dialog.result_backend is SteamBackend.STEAMCMD:
             set_steamcmd_path(dialog.result_steamcmd)
             set_steamcmd_account(dialog.result_account)
+        changed = dialog.result_backend is not get_backend()
         set_backend(dialog.result_backend)
         self._on_runtime_changed()
+        if changed:
+            self.ctx.steam_backend_changed()  # SteamCMD 通道不显示本地存档，存档列表随之变化
 
     def _refresh_backend_label(self) -> None:
         steamcmd = get_backend() is SteamBackend.STEAMCMD

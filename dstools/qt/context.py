@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from dstools.features.local_service.dedicated_server import ServerManager, ServerStatus
+from dstools.features.local_service.steam_backend import SteamBackend, get_backend
 from dstools.features.mod.catalog import ModCatalogStore
 from dstools.i18n import t
 from dstools.models import Account, Cluster, Platform, SaveSource
@@ -72,8 +73,21 @@ class AppContext(QObject):
         self.cluster_changed.emit(self._selected)
 
     # ── 存档 ────────────────────────────────────────────────────────────
+    def steamcmd_only(self) -> bool:
+        """Steam 平台且 Steam 通道为 SteamCMD：只管服务器存档，不显示本地存档和游戏账号
+        （这种组合一般只装了 SteamCMD 与独立专服，没有游戏客户端）。WeGame 平台不受 Steam 通道影响。"""
+        return self._platform == Platform.STEAM and get_backend() is SteamBackend.STEAMCMD
+
+    def steam_backend_changed(self) -> None:
+        """Steam 通道切换后：本地存档和游戏账号随之显隐，重新选定存档并广播。"""
+        self._restore_selection(self._selected.path if self._selected else None)
+        self.env_changed.emit()
+        self.cluster_changed.emit(self._selected)
+
     def clusters(self) -> list[Cluster]:
         """当前平台的服务器存档 + 当前账号的本地存档（其他账号的本地存档切换账号后才显示）。"""
+        if self.steamcmd_only():
+            return [c for c in self.env.clusters if c.platform == self._platform and c.source == SaveSource.SERVER]
         current = self.current_account()
         current_id = current.id if current else ""
         return [c for c in self.env.clusters if c.platform == self._platform
@@ -81,10 +95,10 @@ class AppContext(QObject):
 
     # ── 游戏账号 ────────────────────────────────────────────────────────
     def accounts(self) -> list[Account]:
-        return self.env.accounts_for(self._platform)
+        return [] if self.steamcmd_only() else self.env.accounts_for(self._platform)
 
     def current_account(self) -> Account | None:
-        return self.env.current_account(self._platform)
+        return None if self.steamcmd_only() else self.env.current_account(self._platform)
 
     def select_account(self, account_id: str) -> None:
         """切换当前平台的游戏账号：记住手动选择并重新扫描（本地存档、Mod 配置同步都跟随当前账号）。
@@ -162,5 +176,8 @@ class AppContext(QObject):
         servers = sum(1 for c in clusters if c.source == SaveSource.SERVER)
         local = sum(1 for c in clusters if c.source == SaveSource.LOCAL)
         klei = str(klei_root) if klei_root else t("env.not_found")
+        if self.steamcmd_only():
+            # 没有游戏客户端：不显示游戏账号和本地存档数
+            return f"{t('status.klei')}: {klei}  |  {t('status.clusters')}: {servers}"
         return (f"{t('status.klei')}: {klei}  |  {t('status.user')}: {user_id or '?'}"
                 f"  |  {t('status.clusters')}: {servers}  |  {t('status.local_saves')}: {local}")

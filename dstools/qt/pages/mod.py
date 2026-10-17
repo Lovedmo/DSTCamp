@@ -262,6 +262,7 @@ class ModPage(Page):
     def on_cluster_changed(self, cluster) -> None:
         c = cluster if cluster is not None else self.get_cluster()
         is_server = bool(c and c.source == SaveSource.SERVER)
+        self._refresh_steamcmd_cleanup_btn()  # 切换 Steam/WeGame 平台也走这里，按钮显隐随平台变化
         self._mods_loaded = False
         self._update_hint_label.setVisible(False)
         self._refresh_workshop_update_button_state()
@@ -1358,6 +1359,9 @@ class ModPage(Page):
     def _refresh_steamcmd_cleanup_btn(self) -> None:
         steamcmd = self._uses_steamcmd()
         self._steamcmd_cleanup_btn.setVisible(steamcmd)
+        # 这两个按钮操作的是游戏客户端的 mods 目录，SteamCMD 通道一般没有客户端，专服直接读 SteamCMD 工坊目录
+        self._location_change_btn.setVisible(not steamcmd)
+        self._sync_btn.setVisible(not steamcmd)
         self._workshop_update_btn.setText(t("mod.steamcmd_update_btn" if steamcmd else "mod.workshop_update_btn"))
 
     def _open_steamcmd_cleanup_dialog(self) -> None:

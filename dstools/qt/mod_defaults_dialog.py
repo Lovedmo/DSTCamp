@@ -21,7 +21,7 @@ from dstools.features.mod.list_model import localize_mod_name
 from dstools.i18n import t
 from dstools.qt import dialogs
 from dstools.qt.imaging import pil_to_pixmap
-from dstools.qt.mod_config_sync import last_states, sync_available
+from dstools.qt.mod_config_sync import last_states, sync_available, sync_off_text
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
 from dstools.qt.widgets import Card, PillTabBar
@@ -319,7 +319,7 @@ class GlobalDefaultsDialog(dialogs.Dialog):
 
     def _refresh_sync_line(self) -> None:
         enabled = sync_available(self.page.ctx)
-        self._sync_line.setText(t("mod.global_defaults_sync_on") if enabled else t("mod.default_config_sync_off"))
+        self._sync_line.setText(t("mod.global_defaults_sync_on") if enabled else sync_off_text())
         self._sync_line.setStyleSheet(f"color: {theme.hex('SUCCESS' if enabled else 'TEXT_MUTED')};")
         self._sync_btn.setEnabled(enabled and not self._syncing)
 
@@ -327,7 +327,7 @@ class GlobalDefaultsDialog(dialogs.Dialog):
     def _sync_now(self) -> None:
         if not self.page._start_config_sync(notify=False):
             self._refresh_sync_line()
-            dialogs.show_warning(self, t("mod.default_config_sync_now"), t("mod.default_config_sync_off"))
+            dialogs.show_warning(self, t("mod.default_config_sync_now"), sync_off_text())
 
     def _set_result(self, text: str, color_key: str) -> None:
         self._result_line.setText(text)

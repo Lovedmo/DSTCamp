@@ -28,8 +28,20 @@ def game_account(ctx) -> tuple[Path, str] | None:
     return (path, env.user_id) if path.is_dir() else None
 
 
+def steamcmd_channel() -> bool:
+    """Steam 通道为 SteamCMD：这种组合一般没有游戏客户端，不与游戏同步全局配置。"""
+    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+    return get_backend() is SteamBackend.STEAMCMD
+
+
 def sync_available(ctx) -> bool:
-    return app_settings.get_mod_config_sync_enabled() and game_account(ctx) is not None
+    return (app_settings.get_mod_config_sync_enabled() and not steamcmd_channel()
+            and game_account(ctx) is not None)
+
+
+def sync_off_text() -> str:
+    """同步不可用时的说明：SteamCMD 通道单独说明原因。"""
+    return t("mod.default_config_sync_steamcmd" if steamcmd_channel() else "mod.default_config_sync_off")
 
 
 def _client_only_keys() -> set[str]:
