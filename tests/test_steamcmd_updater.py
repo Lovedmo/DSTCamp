@@ -92,6 +92,10 @@ def test_account_login_failure_not_retried() -> None:
         # 连续登录失败会触发 Steam 限制，只试一次
         assert len(calls) == 1
 
+    # 真机输出：缺验证码时先提示 Steam Guard code，读不到就 Account Logon Denied
+    assert steamcmd_updater.needs_guard_code(["Steam Guard code:ERROR (Account Logon Denied)"])
+    assert not steamcmd_updater.needs_guard_code(["Logging in user 'x' [U:1:0] to Steam Public...ERROR (Invalid Password)"])
+
 
 def test_backend_update_blocker() -> None:
     from dstools.features.local_service.server_runtime import RuntimeKind, ServerRuntime

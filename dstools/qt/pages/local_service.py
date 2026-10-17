@@ -421,6 +421,11 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
         self._status.setStyleSheet(f"color: {theme.hex('ERROR' if error else 'TEXT_MUTED')};")
         self._status.setText(text)
         self._status.show()
+        # 自动换行的标签高度随宽度变化，布局算最小高度时不够，提示变长会把输入框压扁：按当前宽度定下最小高度再加高窗口
+        margins = self.body.contentsMargins()
+        # 标签刚显示时自身宽度还没更新，按窗口内容区宽度算
+        self._status.setMinimumHeight(self._status.heightForWidth(self.width() - margins.left() - margins.right()))
+        self.adjustSize()
 
     def accept_if_valid(self) -> None:
         if self._busy:
@@ -444,6 +449,12 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
                 self.accept()
                 return
             self._set_busy(False)
+            if steamcmd_updater.needs_guard_code(lines) and not guard:
+                # 实测：SteamCMD 读完密码会提示 "Steam Guard code:"，没读到就 Account Logon Denied，
+                # 同时 Steam 往邮箱发验证码。密码保留，用户只需补填验证码
+                self._show_status(t("local.steamcmd_login_need_guard"), error=True)
+                self._guard_edit.setFocus()
+                return
             self._password_edit.clear()
             # 失败原因是 SteamCMD 的英文原文，附上最后几行便于判断（密码不会出现在里面）
             tail = "\n".join(line for line in lines if "Logging in" in line or "ERROR" in line or "FAILED" in line)

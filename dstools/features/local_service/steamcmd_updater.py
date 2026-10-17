@@ -185,6 +185,11 @@ def run_update(
     raise RuntimeError(f"SteamCMD 退出码 {returncode}")
 
 
+def needs_guard_code(lines: list[str]) -> bool:
+    """登录输出里出现 Steam 令牌验证码提示（登录相关输出是英文，真机实测）。"""
+    return any("Steam Guard code" in line or "Account Logon Denied" in line for line in lines)
+
+
 def login(
     steamcmd: Path,
     username: str,
