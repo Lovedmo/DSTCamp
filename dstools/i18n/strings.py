@@ -875,6 +875,7 @@ STRINGS = {
         "selector.archive": "存档:",
         "selector.account": "账号:",
         "selector.account_current_tag": "当前登录",
+        "selector.account_tip": "饥荒游戏客户端在本机登录过的账号：决定显示哪个账号的本地存档、Mod 全局配置与哪个账号同步。\n服务器存档、专服和「Steam 通道」里 SteamCMD 的登录账号都不受它影响。",
         "selector.save_type": "存档类型:",
         "selector.running_suffix": "  [运行中]",
         # 世界设置改进
@@ -2413,6 +2414,7 @@ STRINGS = {
         "selector.archive": "Archive:",
         "selector.account": "Account:",
         "selector.account_current_tag": "Signed in",
+        "selector.account_tip": "Game client accounts used on this PC: picks whose local saves are listed and which account the global Mod settings sync with.\nServer saves, the dedicated server and the SteamCMD login under \"Steam channel\" are not affected.",
         "selector.save_type": "Save Type:",
         "selector.running_suffix": "  [Running]",
         # 世界设置改进

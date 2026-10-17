@@ -616,6 +616,8 @@ class ClusterBar(QWidget):
     def retranslate(self) -> None:
         self._platform_label.setText(t("selector.save_type"))
         self._account_label.setText(t("selector.account"))
+        self._account_label.setToolTip(t("selector.account_tip"))
+        self._account.setToolTip(t("selector.account_tip"))
         self._archive_label.setText(t("selector.archive"))
         self._open_location.setText(t("env.open_location"))
         self._create_save.setText(t("save.create_server_save"))
