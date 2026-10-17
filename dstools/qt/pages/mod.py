@@ -205,6 +205,10 @@ class ModPage(Page):
         self._update_hint_label.setVisible(False)
         self._update_hint_label.clicked.connect(self._on_mod_update_hint_click)
         bottom_row.addWidget(self._update_hint_label)
+        # SteamCMD 通道才有：它的工坊目录只增不减，Steam 客户端那边靠取消订阅
+        self._steamcmd_cleanup_btn = QPushButton(t("mod.steamcmd_cleanup_btn"))
+        self._steamcmd_cleanup_btn.clicked.connect(self._open_steamcmd_cleanup_dialog)
+        bottom_row.addWidget(self._steamcmd_cleanup_btn)
         self._workshop_update_btn = QPushButton(t("mod.workshop_update_btn"))
         self._workshop_update_btn.setEnabled(False)
         self._workshop_update_btn.clicked.connect(self._open_workshop_update_dialog)
@@ -212,9 +216,10 @@ class ModPage(Page):
         # 跟本地服务器页"全部启动/全部停止/..."一排操作按钮统一字号（方角已经是
         # 全局默认样式，这里只需要再调小字号）。
         for button in (self._preset_save_btn, self._preset_apply_btn, self._save_btn,
-                      self._apply_current_btn, self._workshop_update_btn):
+                      self._apply_current_btn, self._steamcmd_cleanup_btn, self._workshop_update_btn):
             button.setFont(theme.font("FONT_SIZE_SM"))
         root.addLayout(bottom_row)
+        self._refresh_steamcmd_cleanup_btn()
 
         ctx.pending_enabled_mod_ids = self.get_pending_enabled_mod_ids
         ctx.workshop_mods_changed.connect(self._on_workshop_mods_changed)
@@ -236,6 +241,7 @@ class ModPage(Page):
         """开服程序选项/程序位置变了：服务器读取的 mods 和 LuaJIT 副本跟着换，按新目录重新扫描。"""
         self._update_mod_location_display()
         self.refresh_sync_button_state()
+        self._refresh_steamcmd_cleanup_btn()
         self._on_workshop_mods_changed()
 
     # ── Cluster/世界选择 ────────────────────────────────────────────────
@@ -296,6 +302,7 @@ class ModPage(Page):
 
     def load(self) -> None:
         super().load()
+        self._refresh_steamcmd_cleanup_btn()
         self._start_config_sync(notify=True)
 
     def _wegame_root_missing(self, cluster) -> bool:
@@ -1338,6 +1345,14 @@ class ModPage(Page):
         """Steam 平台且 Steam 通道为 SteamCMD；WeGame 平台不受 Steam 通道影响。"""
         from dstools.features.local_service.steam_backend import SteamBackend, get_backend
         return self.ctx.platform == Platform.STEAM and get_backend() is SteamBackend.STEAMCMD
+
+    def _refresh_steamcmd_cleanup_btn(self) -> None:
+        self._steamcmd_cleanup_btn.setVisible(self._uses_steamcmd())
+
+    def _open_steamcmd_cleanup_dialog(self) -> None:
+        from dstools.qt.steamcmd_mod_cleanup_dialog import SteamcmdModCleanupDialog
+        if SteamcmdModCleanupDialog(self.window(), self.ctx.clusters()).exec():
+            self.ctx.workshop_mods_changed.emit()
 
     def _open_workshop_update_dialog(self) -> None:
         if self._uses_steamcmd():

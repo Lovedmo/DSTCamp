@@ -51,6 +51,20 @@ _TASK_LOCK = threading.Lock()
 _expired_logins: set[tuple[str, str]] = set()
 
 
+class SteamcmdBusyError(RuntimeError):
+    """已有 SteamCMD 任务在运行，本操作不能同时进行。"""
+
+
+def run_when_idle(func, *args, **kwargs):
+    """SteamCMD 空闲时独占执行 func（如删除工坊 Mod，不能边下边删）；有任务在跑立即抛 SteamcmdBusyError，不排队。"""
+    if not _TASK_LOCK.acquire(blocking=False):
+        raise SteamcmdBusyError("另一个 SteamCMD 任务正在运行")
+    try:
+        return func(*args, **kwargs)
+    finally:
+        _TASK_LOCK.release()
+
+
 def _login_key(steamcmd: Path, account: str) -> tuple[str, str]:
     return str(Path(steamcmd)), account.casefold()
 

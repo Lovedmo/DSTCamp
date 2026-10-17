@@ -310,6 +310,40 @@ def test_log_bundle_redacts_steamcmd_account() -> None:
     assert log_bundle._steamcmd_log_entries() == []
 
 
+def test_steamcmd_mod_cleanup() -> None:
+    """只列出没有任何 Steam 服务器存档列着的 Mod（停用也算在用），只删 SteamCMD 工坊目录里的 Mod 位置。"""
+    from types import SimpleNamespace
+
+    from dstools.features.mod import steamcmd_mod_cleanup as cleanup
+    from dstools.models import Platform, SaveSource
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        overrides = tmp / "modoverrides.lua"
+        overrides.write_text('return { ["workshop-100"]={ enabled=true }, ["workshop-200"]={ enabled=false } }',
+                             encoding="utf-8")
+        shard = SimpleNamespace(mod_overrides_path=overrides)
+        clusters = [SimpleNamespace(source=SaveSource.SERVER, platform=Platform.STEAM, shards=[shard]),
+                    # 本地存档、WeGame 存档不用 SteamCMD 的 Mod
+                    SimpleNamespace(source=SaveSource.LOCAL, platform=Platform.STEAM, shards=[shard])]
+        assert cleanup.used_workshop_ids(clusters) == {"100", "200"}
+
+        root = tmp / "workshop"
+        for wid in ("100", "200", "300"):
+            (root / "content" / "322330" / wid).mkdir(parents=True)
+            (root / "content" / "322330" / wid / "modinfo.lua").write_text("name = 'm'", encoding="utf-8")
+        (root / "downloads" / "322330" / "400").mkdir(parents=True)
+        unused = cleanup.find_unused_mods(root, {"100", "200"})
+        leftovers = cleanup.find_leftover_downloads(root)
+        assert [e.workshop_id for e in unused] == ["300"] and [e.workshop_id for e in leftovers] == ["400"]
+
+        outside = tmp / "content" / "322330" / "500"  # 名字像但不在这个工坊目录下
+        outside.mkdir(parents=True)
+        failures = cleanup.delete_mod_dirs([unused[0].path, leftovers[0].path, outside], root)
+        assert [path for path, _reason in failures] == [outside] and outside.is_dir()
+        assert not unused[0].path.exists() and (root / "content" / "322330" / "100").is_dir()
+
+
 def test_steamcmd_mod_classify() -> None:
     from dstools.features.mod.steamcmd_mod_status import SteamcmdModState, classify
     from dstools.features.mod.workshop_webapi import RemoteWorkshopItem
