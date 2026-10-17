@@ -496,6 +496,9 @@ class _SteamBackendDialog(dialogs.Dialog):
         self.result_backend = current
         self.result_steamcmd = steamcmd
         self.result_account = account
+        # 登录缓存存在每份 SteamCMD 自己的 config 里：保存时实际用的 SteamCMD 变了就要重新登录
+        self._initial_steamcmd = steamcmd or steamcmd_updater.bundled_steamcmd_path()
+        self._logged_in_with: Path | None = None
         group = QButtonGroup(self)
         self._radios: dict[SteamBackend, QRadioButton] = {}
         for backend, name_key, desc_key in (
@@ -623,6 +626,33 @@ class _SteamBackendDialog(dialogs.Dialog):
         dialog = _SteamcmdLoginDialog(self, picked[0], self.result_account)
         if dialog.exec():
             self._set_account(dialog.result_username)
+            self._logged_in_with = picked[0]
+
+    @staticmethod
+    def _same_path(a: Path | None, b: Path | None) -> bool:
+        return a is not None and b is not None and str(a).casefold() == str(b).casefold()
+
+    def _confirm_relogin(self, steamcmd: Path) -> bool:
+        """换了 SteamCMD 且设置了账号：要求在新的上重新登录或改用匿名。返回 True 表示可以保存。"""
+        if (not self.result_account or self._same_path(steamcmd, self._initial_steamcmd)
+                or self._same_path(steamcmd, self._logged_in_with)):
+            return True
+        choice = dialogs.ask_choice(
+            self, t("local.backend_title"),
+            t("local.steamcmd_relogin_msg", path=str(steamcmd), user=self.result_account),
+            [(t("dlg.cancel_btn"), "cancel"), (t("local.steamcmd_use_anonymous_btn"), "anonymous"),
+             (t("local.steamcmd_relogin_btn"), "login")],
+            default="login")
+        if choice == "anonymous":
+            self._set_account("")
+            return True
+        if choice == "login":
+            dialog = _SteamcmdLoginDialog(self, steamcmd, self.result_account)
+            if dialog.exec():
+                self._set_account(dialog.result_username)
+                self._logged_in_with = steamcmd
+                return True
+        return False
 
     def _browse(self) -> None:
         picked, _ = QFileDialog.getOpenFileName(
@@ -634,7 +664,7 @@ class _SteamBackendDialog(dialogs.Dialog):
         backend = next(b for b, radio in self._radios.items() if radio.isChecked())
         if backend is SteamBackend.STEAMCMD:
             picked = self._steamcmd_from_edit()
-            if picked is None:
+            if picked is None or not self._confirm_relogin(picked[0]):
                 return
             self.result_steamcmd = picked[1]
         self.result_backend = backend
