@@ -124,9 +124,19 @@ def find_runtime_of_kind(kind: RuntimeKind) -> ServerRuntime | None:
     return ServerRuntime(kind, install_dir) if install_dir is not None else None
 
 
+def effective_runtime_mode() -> RuntimeMode:
+    """实际生效的开服程序选项：Steam 通道为 SteamCMD 时固定用独立专服（SteamCMD 只能匿名安装更新独立专服），
+    用户存的选项不改，切回 Steam 客户端通道后照旧生效。"""
+    # 延迟导入：steam_backend 依赖本模块
+    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+    if get_backend() is SteamBackend.STEAMCMD:
+        return RuntimeMode.DEDICATED
+    return get_runtime_mode()
+
+
 def resolve_runtime(mode: RuntimeMode | None = None) -> RuntimeResolution:
     """按开服程序选项选出实际开服程序。"""
-    mode = get_runtime_mode() if mode is None else RuntimeMode(mode)
+    mode = effective_runtime_mode() if mode is None else RuntimeMode(mode)
     if mode is RuntimeMode.AUTO:
         runtime = (find_runtime_of_kind(RuntimeKind.DEDICATED)
                    or find_runtime_of_kind(RuntimeKind.CLIENT))

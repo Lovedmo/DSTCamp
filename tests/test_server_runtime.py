@@ -73,6 +73,15 @@ def test_mode_resolution_and_migration() -> None:
             app_settings.set_dedicated_server_path(custom)
             assert resolve_runtime().runtime.install_dir == custom
 
+            # SteamCMD 通道固定用独立专服；用户存的「游戏专服」不改，切回 Steam 客户端通道后照旧
+            from dstools.features.local_service.steam_backend import SteamBackend, set_backend
+            set_runtime_mode(RuntimeMode.CLIENT)
+            set_backend(SteamBackend.STEAMCMD)
+            assert resolve_runtime().runtime.install_dir == custom
+            assert app_settings.get_server_runtime_mode() == RuntimeMode.CLIENT.value
+            set_backend(SteamBackend.CLIENT)
+            assert resolve_runtime().runtime.install_dir == client
+
 
 # 业务代码只能经 server_runtime 取开服程序目录。白名单：探测函数自身（dedicated_server/server_runtime）、
 # 清理 V1 残留需扫遍所有目录的 legacy_v1、只做路径比较的 parser.is_dedicated_server_mods_dir

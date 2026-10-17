@@ -21,7 +21,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFontMetrics, QGuiApplication
 from PySide6.QtWidgets import (
-    QButtonGroup, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QRadioButton, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -509,16 +509,28 @@ class _SteamBackendDialog(dialogs.Dialog):
             desc.setContentsMargins(24, 0, 0, 0)
             self.body.addWidget(desc)
 
-        path_row = QHBoxLayout()
-        path_row.setContentsMargins(24, 0, 0, 0)
+        # 默认用内置版本，只显示位置；自选 steamcmd.exe 收在勾选项里，大多数用户用不到
+        self._bundled_label = self.text_label(
+            t("local.backend_steamcmd_bundled", path=str(steamcmd_updater.bundled_steamcmd_path())), muted=True)
+        self._bundled_label.setContentsMargins(24, 0, 0, 0)
+        self.body.addWidget(self._bundled_label)
+        self._custom_check = QCheckBox(t("local.backend_steamcmd_custom"))
+        self._custom_check.setChecked(steamcmd is not None)
+        self._custom_check.toggled.connect(self._sync_path_enabled)
+        custom_row = QHBoxLayout()
+        custom_row.setContentsMargins(24, 0, 0, 0)
+        custom_row.addWidget(self._custom_check)
+        self.body.addLayout(custom_row)
+        self._path_box = QWidget()
+        path_row = QHBoxLayout(self._path_box)
+        path_row.setContentsMargins(48, 0, 0, 0)
         self._path_edit = QLineEdit(str(steamcmd) if steamcmd else "")
-        self._path_edit.setPlaceholderText(
-            t("local.backend_steamcmd_placeholder", path=str(steamcmd_updater.bundled_steamcmd_path())))
+        self._path_edit.setPlaceholderText(t("local.backend_steamcmd_placeholder"))
         self._browse_btn = QPushButton(t("local.backend_browse_btn"))
         self._browse_btn.clicked.connect(self._browse)
         path_row.addWidget(self._path_edit, 1)
         path_row.addWidget(self._browse_btn)
-        self.body.addLayout(path_row)
+        self.body.addWidget(self._path_box)
 
         account_row = QHBoxLayout()
         account_row.setContentsMargins(24, 0, 0, 0)
@@ -541,9 +553,15 @@ class _SteamBackendDialog(dialogs.Dialog):
 
     def _sync_path_enabled(self) -> None:
         enabled = self._radios[SteamBackend.STEAMCMD].isChecked()
-        for widget in (self._path_edit, self._browse_btn, self._login_btn):
+        custom = self._custom_check.isChecked()
+        for widget in (self._bundled_label, self._custom_check, self._path_box, self._login_btn):
             widget.setEnabled(enabled)
         self._anonymous_btn.setEnabled(enabled and bool(self.result_account))
+        # 勾选自选时才出现路径框，内置版本的位置说明随之隐藏
+        self._path_box.setVisible(custom)
+        self._bundled_label.setVisible(not custom)
+        # 等布局按新的可见性和实际宽度排好再调整，否则自动换行的说明文字按窄宽度估高，窗口多出一截空白
+        QTimer.singleShot(0, self.adjustSize)
 
     def _set_account(self, account: str) -> None:
         self.result_account = account
@@ -552,9 +570,9 @@ class _SteamBackendDialog(dialogs.Dialog):
         self._sync_path_enabled()
 
     def _steamcmd_from_edit(self) -> tuple[Path, Path | None] | None:
-        """返回 (实际使用的 steamcmd.exe, 自选路径)；路径框留空表示用内置的（自选路径为 None）。不可用时提示并返回 None。"""
+        """返回 (实际使用的 steamcmd.exe, 自选路径)；没勾选自选时用内置的（自选路径为 None）。不可用时提示并返回 None。"""
         text = self._path_edit.text().strip().strip('"')
-        if not text:
+        if not self._custom_check.isChecked():
             bundled = steamcmd_updater.ensure_bundled_steamcmd()
             if bundled is None:
                 key = ("local.backend_steamcmd_cache_non_ascii"
@@ -1100,6 +1118,9 @@ class LocalServicePage(Page):
         self.ctx.server_runtime_changed.emit()
 
     def _choose_backend(self) -> None:
+        # 换通道会换开服程序（SteamCMD 固定用独立专服），和「切换程序」一样运行中不允许
+        if self._runtime_switch_blocked():
+            return
         dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.custom_steamcmd_path(),
                                      get_steamcmd_account())
         if not dialog.exec():
@@ -1108,13 +1129,13 @@ class LocalServicePage(Page):
             set_steamcmd_path(dialog.result_steamcmd)
             set_steamcmd_account(dialog.result_account)
         set_backend(dialog.result_backend)
-        self._refresh_backend_label()
-        self._refresh_steam_update_button()
-        self._update_runtime_btns_state(self.get_cluster())
+        self._on_runtime_changed()
 
     def _refresh_backend_label(self) -> None:
-        self._backend_label.setText(t("local.backend_steamcmd" if get_backend() is SteamBackend.STEAMCMD
-                                      else "local.backend_client"))
+        steamcmd = get_backend() is SteamBackend.STEAMCMD
+        self._backend_label.setText(t("local.backend_steamcmd" if steamcmd else "local.backend_client"))
+        # SteamCMD 通道固定用独立专服，「开服程序」一行没有可选的，隐藏
+        self._mode_row.setVisible(not steamcmd)
 
     def _choose_runtime_mode(self) -> None:
         if self._runtime_switch_blocked():
@@ -1335,9 +1356,6 @@ class LocalServicePage(Page):
 
     def _adopt_dedicated_dir(self, path: Path) -> None:
         remember_install_dir(RuntimeKind.DEDICATED, path)
-        if self._wanted_runtime_kind() is RuntimeKind.CLIENT:
-            # 用户刚明确选择安装独立专服，开服程序跟着改过来
-            set_runtime_mode(RuntimeMode.DEDICATED)
         self._on_runtime_changed()
 
     def _run_steamcmd_app_update(self, install_dir: Path, title: str, on_success=None) -> None:
