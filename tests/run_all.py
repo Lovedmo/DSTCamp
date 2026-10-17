@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -21,12 +22,14 @@ def main() -> int:
         environment["PYTHONPATH"] += os.pathsep + current_pythonpath
     for name in TEST_SCRIPTS:
         print(f"\n===== {name} =====", flush=True)
-        result = subprocess.run(
-            [sys.executable, str(TESTS_DIR / name)],
-            cwd=PROJECT_ROOT,
-            env=environment,
-            check=False,
-        )
+        # 每个测试文件用独立的临时设置目录，在导入任何模块之前就生效，绝不碰真实 %APPDATA%/DSTCamp
+        with tempfile.TemporaryDirectory(prefix="dstcamp_test_") as settings_tmp:
+            result = subprocess.run(
+                [sys.executable, str(TESTS_DIR / name)],
+                cwd=PROJECT_ROOT,
+                env={**environment, "APPDATA": settings_tmp, "DSTCAMP_TEST_APPDATA": settings_tmp},
+                check=False,
+            )
         if result.returncode:
             failed.append(name)
     if failed:

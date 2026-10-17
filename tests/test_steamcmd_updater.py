@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -12,10 +11,6 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from _harness import run  # noqa: E402
-
-# 设置与缓存放进临时目录，绝不读写真实 %APPDATA%/DSTCamp。
-_SETTINGS_TMP = tempfile.TemporaryDirectory()
-os.environ["APPDATA"] = _SETTINGS_TMP.name
 
 from dstools.features.local_service import steamcmd_updater  # noqa: E402
 from dstools.shared import app_settings  # noqa: E402
