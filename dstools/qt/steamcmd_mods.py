@@ -18,6 +18,8 @@ from dstools.shared.app_settings import get_steamcmd_account
 
 # workshop_log 的结果行（实测）：Download item <ID> result : OK / File Not Found
 _RESULT_RE = re.compile(r"Download item (\d+) result : (.+)$")
+# 复查后仍未装好/不是最新的再整体重下几轮（大 Mod 超时、断线等原因不看输出文字，只看复查结果）
+_DOWNLOAD_ROUNDS = 2
 _STATE_KEYS = {
     SteamcmdModState.MISSING: "steamcmd_mods.state_missing",
     SteamcmdModState.OUTDATED: "steamcmd_mods.state_outdated",
@@ -69,19 +71,26 @@ def run_steamcmd_mod_update(parent, workshop_ids, *, on_finished=None) -> None:
                 wid, result = match.groups()
                 emit(t("steamcmd_mods.item_result", mod=_label(wid, titles.get(wid, "")), result=result.strip()))
 
-        try:
-            steamcmd_updater.download_workshop_items(steamcmd, targets, on_line=on_line, account=account,
-                                                     cancel_event=cancel_event)
-        except steamcmd_updater.SteamcmdLoginError:
-            emit(t("local.steamcmd_login_expired", user=account))
-            return None
-        # 以复查结果为准：下载"成功"但仍不是最新的也算失败
-        try:
-            after = inspect_steamcmd_mods(targets)
-        except OSError as exc:
-            emit(t("steamcmd_mods.check_failed", detail=str(exc)))
-            return None
-        failed = [wid for wid in targets if after[wid].state is not SteamcmdModState.CURRENT]
+        failed = targets
+        for round_no in range(_DOWNLOAD_ROUNDS):
+            if round_no:
+                emit(t("steamcmd_mods.retrying", count=len(failed),
+                       mods="、".join(_label(w, titles.get(w, "")) for w in failed)))
+            try:
+                steamcmd_updater.download_workshop_items(steamcmd, failed, on_line=on_line, account=account,
+                                                         cancel_event=cancel_event)
+            except steamcmd_updater.SteamcmdLoginError:
+                emit(t("local.steamcmd_login_expired", user=account))
+                return None
+            # 以复查结果为准：下载"成功"但仍不是最新的也算失败
+            try:
+                after = inspect_steamcmd_mods(failed)
+            except OSError as exc:
+                emit(t("steamcmd_mods.check_failed", detail=str(exc)))
+                return None
+            failed = [wid for wid in failed if after[wid].state is not SteamcmdModState.CURRENT]
+            if not failed:
+                break
         if failed:
             emit(t("steamcmd_mods.failed_list", mods="、".join(_label(w, titles.get(w, "")) for w in failed)))
         return len(targets) - len(failed), len(failed)
