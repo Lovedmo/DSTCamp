@@ -4,7 +4,8 @@
 - 清单写在 force_install_dir 下的 steamapps/appmanifest_343050.acf，专服文件直接放在 force_install_dir；
 - 输出跟随系统语言（中文系统输出中文），不能按文本判断成败，只看退出码和清单；
 - 刚装好的 SteamCMD 首次 app_update 报 "Missing configuration"（退出码 7），所以失败后自动重试一次；
-- 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以运行中改为跟踪它实时写入的 logs/content_log.txt；
+- 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以优先放进伪控制台运行（输出实时）；
+  不支持伪控制台时退回管道，改为跟踪它实时写入的 logs/content_log.txt；
 - 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5。
 """
 
@@ -19,6 +20,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from dstools.features.local_service.conpty import run_in_pseudo_console
 from dstools.features.local_service.steam_client_updater import (
     DEDICATED_SERVER_APP_ID, SteamAppSnapshot, snapshot_from_manifest,
 )
@@ -164,7 +166,38 @@ def _follow_log(log_path: Path, accept: Callable[[str], bool], on_line: Callable
 def _run_once(command: list[str], on_line: Callable[[str], None],
               cancel_event: threading.Event | None, stdin_text: str | None = None,
               log_name: str = "content_log.txt",
-              log_filter: Callable[[str], bool] = is_progress_log_line) -> int:
+              log_filter: Callable[[str], bool] = is_progress_log_line,
+              follow_log_with_pty: bool = False) -> int:
+    """优先在伪控制台里运行，输出（含每 2 秒一行的下载进度）实时到达；系统不支持时退回管道，
+    管道下输出要到结束才有，改为跟踪 SteamCMD 实时写的日志。follow_log_with_pty 为 True 时伪控制台下也跟踪日志。"""
+    log_stop = threading.Event()
+    log_thread: threading.Thread | None = None
+
+    def start_log() -> None:
+        nonlocal log_thread
+        log_thread = threading.Thread(
+            target=_follow_log,
+            args=(Path(command[0]).parent / "logs" / log_name, log_filter, on_line, log_stop), daemon=True)
+        log_thread.start()
+
+    try:
+        if follow_log_with_pty:
+            start_log()
+        try:
+            return run_in_pseudo_console(command, on_line, stdin_text=stdin_text, cancel_event=cancel_event)
+        except OSError:
+            pass  # 伪控制台不可用：退回管道
+        if log_thread is None:
+            start_log()
+        return _run_piped(command, on_line, cancel_event, stdin_text)
+    finally:
+        log_stop.set()
+        if log_thread is not None:
+            log_thread.join(3)
+
+
+def _run_piped(command: list[str], on_line: Callable[[str], None],
+               cancel_event: threading.Event | None, stdin_text: str | None = None) -> int:
     proc = subprocess.Popen(
         command, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -178,11 +211,6 @@ def _run_once(command: list[str], on_line: Callable[[str], None],
         except OSError:
             pass
     finished = threading.Event()
-    log_stop = threading.Event()
-    log_thread = threading.Thread(
-        target=_follow_log,
-        args=(Path(command[0]).parent / "logs" / log_name, log_filter, on_line, log_stop), daemon=True)
-    log_thread.start()
 
     def watch_cancel() -> None:
         while not finished.is_set():
@@ -199,8 +227,6 @@ def _run_once(command: list[str], on_line: Callable[[str], None],
         returncode = proc.wait()
     finally:
         finished.set()
-        log_stop.set()
-        log_thread.join(3)
         proc.stdout.close()
     # 进度行用 \r 覆盖刷新，按 \r/\n 一起切行；连续重复的行只报一次
     last = None
@@ -276,8 +302,8 @@ def download_workshop_items(
         for wid in ids[start:start + _WORKSHOP_BATCH]:
             command += ["+workshop_download_item", WORKSHOP_APP_ID, wid]
         command.append("+quit")
-        returncode = _run_once(command, on_line, cancel_event,
-                               log_name="workshop_log.txt", log_filter=is_workshop_log_line)
+        returncode = _run_once(command, on_line, cancel_event, log_name="workshop_log.txt",
+                               log_filter=is_workshop_log_line, follow_log_with_pty=True)
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("SteamCMD 下载已取消")
         if account and returncode == LOGIN_FAILED_EXIT_CODE:

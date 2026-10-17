@@ -39,6 +39,7 @@ def run_steamcmd_mod_update(parent, workshop_ids, *, on_finished=None) -> None:
     account = get_steamcmd_account()
     cancel_event = threading.Event()
     dialog = dialogs.LogDialog(parent, title, on_cancel=cancel_event.set)
+    dialogs.fit_to_screen(dialog, dialogs.DIALOG_WIDTHS["lg"], 620)
     dialog.show()
 
     def work(emit):

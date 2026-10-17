@@ -80,6 +80,7 @@ _STEAMCMD_MOD_CHECK_INTERVAL_MS = 15 * 60 * 1000
 _STEAMCMD_MOD_CHECK_TTL = 30 * 60
 # 实测专服安装后约 4.5 GB，下载期间还要暂存，低于这个剩余空间不开始安装
 _DEDICATED_SERVER_MIN_FREE = 6 * 1024 ** 3
+_STEAMCMD_LOG_HEIGHT = 620  # SteamCMD 日志窗口高度（逻辑像素），超出屏幕时由 fit_to_screen 压缩
 _STEAM_REMOTE_BUILD_TTL = 300.0
 _PUBLIC_CONNECT_TIMEOUT_S = 18.0
 _NAT_CONNECT_TIMEOUT_S = 28.0
@@ -1420,6 +1421,8 @@ class LocalServicePage(Page):
         remote_build_id = self._remote_build_for_runtime()
         before = steamcmd_updater.snapshot_install(install_dir)
         dialog = dialogs.LogDialog(self.window(), title, closable=True)
+        # 安装要持续十几分钟、每 2 秒一行进度，默认的日志窗口太小
+        dialogs.fit_to_screen(dialog, dialogs.DIALOG_WIDTHS["lg"], _STEAMCMD_LOG_HEIGHT)
         self._steam_update_dialog = dialog
         if remote_build_id:
             dialog.append(t("local.steam_remote_build", remote=remote_build_id, local=before.build_id or "-"))
