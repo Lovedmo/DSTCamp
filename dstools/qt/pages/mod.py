@@ -1232,8 +1232,7 @@ class ModPage(Page):
         if self._workshop_status_refreshing:
             return
         local_ids = self._workshop_mod_ids()
-        from dstools.features.local_service.steam_backend import SteamBackend, get_backend
-        if get_backend() is SteamBackend.STEAMCMD:
+        if self._uses_steamcmd():
             self._refresh_steamcmd_mod_status(gen, local_ids)
             return
         self._steamcmd_pending_count = None
@@ -1335,9 +1334,13 @@ class ModPage(Page):
                 return
         self._update_hint_label.setVisible(True)
 
-    def _open_workshop_update_dialog(self) -> None:
+    def _uses_steamcmd(self) -> bool:
+        """Steam 平台且 Steam 通道为 SteamCMD；WeGame 平台不受 Steam 通道影响。"""
         from dstools.features.local_service.steam_backend import SteamBackend, get_backend
-        if get_backend() is SteamBackend.STEAMCMD:
+        return self.ctx.platform == Platform.STEAM and get_backend() is SteamBackend.STEAMCMD
+
+    def _open_workshop_update_dialog(self) -> None:
+        if self._uses_steamcmd():
             # SteamCMD 通道没有 Steam 客户端可用：检查列表里和当前存档启用的工坊 Mod，下载缺失与有更新的
             from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
             ids = [str(wid) for wid in self._workshop_mod_ids()] + sorted(self._current_cluster_workshop_ids())

@@ -4,8 +4,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
+from dstools.features.local_service.steam_backend import SteamBackend, get_backend
 from dstools.features.mod.parser import is_mod_subscribed
 from dstools.i18n import t
+from dstools.models import Platform
 from dstools.qt import dialogs
 from dstools.qt.mod_panel import _DEFAULT_ICON_PATH
 from dstools.qt.theme import theme
@@ -23,7 +25,9 @@ _ICON = 56  # 图标边长（逻辑像素）
 
 
 class RecommendModsDialog(dialogs.Dialog):
-    """每个推荐 Mod 一张圆角卡片：图标、名称、简介，右侧为订阅按钮或"已订阅"标记。"""
+    """每个推荐 Mod 一张圆角卡片：图标、名称、简介，右侧为订阅按钮或"已订阅"标记。
+
+    SteamCMD 通道没有订阅：按钮改为直接用 SteamCMD 下载，标记为"已下载"。"""
 
     def __init__(self, page):
         super().__init__(page.window(), t("mod.recommend_title"), width="lg")
@@ -81,16 +85,33 @@ class RecommendModsDialog(dialogs.Dialog):
         text.addWidget(desc_label)
         row.addLayout(text, 1)
 
+        # Steam 通道只管 Steam 平台；WeGame 平台仍按原方式打开 WeGame 页面
+        steamcmd = self.page.ctx.platform == Platform.STEAM and get_backend() is SteamBackend.STEAMCMD
+        done_label = QLabel("✓ " + t("mod.recommend_downloaded" if steamcmd else "mod.recommend_subscribed"))
+        done_label.setFont(theme.font("FONT_SIZE_SM", bold=True))
+        done_label.setStyleSheet(f"color: {theme.hex('SUCCESS')};")
+        row.addWidget(done_label, 0, Qt.AlignmentFlag.AlignVCenter)
         if is_mod_subscribed(wid):
-            subscribed = QLabel("✓ " + t("mod.recommend_subscribed"))
-            subscribed.setFont(theme.font("FONT_SIZE_SM", bold=True))
-            subscribed.setStyleSheet(f"color: {theme.hex('SUCCESS')};")
-            row.addWidget(subscribed, 0, Qt.AlignmentFlag.AlignVCenter)
+            return card
+        done_label.hide()
+        sub_btn = QPushButton(t("mod.recommend_download" if steamcmd else "mod.recommend_subscribe"))
+        if steamcmd:
+            sub_btn.clicked.connect(lambda _c=False, w=wid, b=sub_btn, d=done_label: self._download(w, b, d))
         else:
-            sub_btn = QPushButton(t("mod.recommend_subscribe"))
             sub_btn.clicked.connect(lambda _c=False, w=wid: self.page._on_link(f"workshop-{w}"))
-            row.addWidget(sub_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(sub_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         return card
+
+    def _download(self, wid: str, button: QPushButton, done_label: QLabel) -> None:
+        from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+
+        def finished() -> None:
+            if is_mod_subscribed(wid):
+                button.hide()
+                done_label.show()
+            self.page.ctx.workshop_mods_changed.emit()
+
+        run_steamcmd_mod_update(self, [wid], on_finished=finished)
 
     def _icon_pixmap(self, path) -> QPixmap | None:
         source = QPixmap(str(path))

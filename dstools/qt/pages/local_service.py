@@ -1395,8 +1395,15 @@ class LocalServicePage(Page):
             dialogs.show_warning(self.window(), t("local.luajit_confirm_install_title"), t("local.luajit_blocked_game_running"))
             return
         if plan.blocked_reason == "workshop_not_subscribed":
-            if dialogs.ask_yes_no(self.window(), t("local.luajit_confirm_install_title"),
-                                   t("local.luajit_workshop_not_subscribed_msg")):
+            if get_backend() is SteamBackend.STEAMCMD:
+                # SteamCMD 没有订阅：直接下载配套 Mod 到它的工坊目录
+                if dialogs.ask_yes_no(self.window(), t("local.luajit_confirm_install_title"),
+                                       t("local.luajit_workshop_steamcmd_msg")):
+                    from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+                    run_steamcmd_mod_update(self.window(), [luajit_injector.WORKSHOP_ID],
+                                            on_finished=self.ctx.workshop_mods_changed.emit)
+            elif dialogs.ask_yes_no(self.window(), t("local.luajit_confirm_install_title"),
+                                     t("local.luajit_workshop_not_subscribed_msg")):
                 webbrowser.open(luajit_injector.WORKSHOP_PAGE_URL)
             return
         cluster = self.get_cluster()
