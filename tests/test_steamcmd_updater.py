@@ -102,6 +102,48 @@ def test_suspended_update_is_retried() -> None:
         assert len(attempts) == 2 and events == ["suspended"]
 
 
+def test_steamcmd_tasks_run_one_at_a_time() -> None:
+    """同时跑两个 SteamCMD 会共写日志（实测），后来的任务须排队，等待中可取消。"""
+    import threading
+
+    release = threading.Event()
+    running = threading.Event()
+    order = []
+
+    def fake_run(command, on_line, cancel_event, **_kwargs):
+        order.append(command[2])
+        if command[2] == "first":
+            running.set()
+            release.wait(5)
+        return 0
+
+    with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+        first = threading.Thread(target=steamcmd_updater.login, args=(Path("steamcmd.exe"), "first", "pw"),
+                                 kwargs={"on_line": lambda _l: None})
+        first.start()
+        assert running.wait(5)
+
+        cancel, lines = threading.Event(), []
+        cancel.set()
+        try:
+            steamcmd_updater.login(Path("steamcmd.exe"), "cancelled", "pw", on_line=lines.append, cancel_event=cancel)
+        except InterruptedError:
+            pass
+        else:
+            raise AssertionError("排队等待中取消应抛 InterruptedError")
+        assert len(lines) == 1 and "cancelled" not in order
+
+        second = threading.Thread(target=steamcmd_updater.login, args=(Path("steamcmd.exe"), "second", "pw"),
+                                  kwargs={"on_line": lines.append})
+        second.start()
+        time.sleep(0.3)
+        assert order == ["first"]  # 第一个没结束，第二个还在排队
+        release.set()
+        first.join(5)
+        second.join(5)
+        assert order == ["first", "second"] and len(lines) == 2
+
+
 def test_account_login_failure_not_retried() -> None:
     command = steamcmd_updater.build_command(Path("steamcmd.exe"), Path("C:/dst"), account="hostbot")
     assert command[command.index("+login") + 1] == "hostbot"  # 只传用户名，密码靠 SteamCMD 缓存

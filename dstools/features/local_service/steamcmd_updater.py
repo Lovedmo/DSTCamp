@@ -9,7 +9,9 @@
   应用信息，提前结束的话重试照样被挂起（已实测），所以等它自己结束，再按失败重试；
 - 标准输出接管道时是块缓冲，进程结束才一次性吐出，所以优先放进伪控制台运行（输出实时）；
   不支持伪控制台时退回管道，改为跟踪它实时写入的 logs/content_log.txt；
-- 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5。
+- 账号登录时密码从标准输入读取（不回显）；没有缓存凭据又不给输入时 2 秒内失败，密码错误同样退出码 5；
+- 同时跑两个 SteamCMD 时后启动的会报 "steam didn't shutdown cleanly"，且两者共写同一批 logs/*.txt，
+  这里按日志判断的挂起、等密码会串到别的任务上，所以更新、下载 Mod、登录一律排队，同一时间只跑一个。
 """
 
 from __future__ import annotations
@@ -19,11 +21,13 @@ import os
 import re
 import shutil
 import subprocess
+import functools
 import threading
 from pathlib import Path
 from typing import Callable
 
 from dstools.features.local_service.conpty import run_in_pseudo_console
+from dstools.i18n import t
 from dstools.features.local_service.steam_client_updater import (
     DEDICATED_SERVER_APP_ID, SteamAppSnapshot, snapshot_from_manifest,
 )
@@ -37,6 +41,29 @@ LOGIN_FAILED_EXIT_CODE = 5
 
 class SteamcmdLoginError(RuntimeError):
     """账号登录失败或缓存的登录凭据已失效，需要重新登录。"""
+
+
+_TASK_LOCK = threading.Lock()
+
+
+def _exclusive_task(func):
+    """整个任务（含重试、分批）期间独占 SteamCMD；已有任务在跑时在日志里说明并排队，等待中可取消。
+    被包装的函数须以关键字参数接收 on_line 与 cancel_event。"""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        cancel_event = kwargs.get("cancel_event")
+        if not _TASK_LOCK.acquire(blocking=False):
+            kwargs["on_line"](t("steamcmd.waiting_other_task"))
+            while not _TASK_LOCK.acquire(timeout=0.5):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise InterruptedError("等待其他 SteamCMD 任务时已取消")
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _TASK_LOCK.release()
+
+    return wrapper
 
 
 def is_steamcmd_exe(path: Path | None) -> bool:
@@ -302,6 +329,7 @@ def _run_piped(command: list[str], on_line: Callable[[str], None],
     return returncode
 
 
+@_exclusive_task
 def run_update(
     steamcmd: Path,
     install_dir: Path,
@@ -367,6 +395,7 @@ def has_workshop_files(content_dir: Path) -> bool:
         return False
 
 
+@_exclusive_task
 def download_workshop_items(
     steamcmd: Path,
     workshop_ids,
@@ -404,6 +433,7 @@ def needs_guard_code(lines: list[str]) -> bool:
     return any("Steam Guard code" in line or "Account Logon Denied" in line for line in lines)
 
 
+@_exclusive_task
 def login(
     steamcmd: Path,
     username: str,
