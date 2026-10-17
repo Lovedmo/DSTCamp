@@ -125,7 +125,13 @@ def is_progress_log_line(line: str, app_id: str = DEDICATED_SERVER_APP_ID) -> bo
     return f"AppID {app_id}" in line or "download rate" in line or "Failed" in line
 
 
-def _follow_content_log(log_path: Path, on_line: Callable[[str], None], stop: threading.Event) -> None:
+def is_workshop_log_line(line: str) -> bool:
+    """workshop_log 里只转发每个项目的开始与结果（实测格式：Download item <ID> requested / result : OK）。"""
+    return "Download item" in line
+
+
+def _follow_log(log_path: Path, accept: Callable[[str], bool], on_line: Callable[[str], None],
+                stop: threading.Event) -> None:
     """从启动时的末尾开始跟踪新写入的行；文件被轮转变短时从头读。"""
     try:
         offset = log_path.stat().st_size
@@ -147,7 +153,7 @@ def _follow_content_log(log_path: Path, on_line: Callable[[str], None], stop: th
                 pending = lines.pop()
                 for line in lines:
                     line = line.strip()
-                    if line and is_progress_log_line(line):
+                    if line and accept(line):
                         on_line(line)
         except OSError:
             pass
@@ -156,7 +162,9 @@ def _follow_content_log(log_path: Path, on_line: Callable[[str], None], stop: th
 
 
 def _run_once(command: list[str], on_line: Callable[[str], None],
-              cancel_event: threading.Event | None, stdin_text: str | None = None) -> int:
+              cancel_event: threading.Event | None, stdin_text: str | None = None,
+              log_name: str = "content_log.txt",
+              log_filter: Callable[[str], bool] = is_progress_log_line) -> int:
     proc = subprocess.Popen(
         command, stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -172,8 +180,8 @@ def _run_once(command: list[str], on_line: Callable[[str], None],
     finished = threading.Event()
     log_stop = threading.Event()
     log_thread = threading.Thread(
-        target=_follow_content_log,
-        args=(Path(command[0]).parent / "logs" / "content_log.txt", on_line, log_stop), daemon=True)
+        target=_follow_log,
+        args=(Path(command[0]).parent / "logs" / log_name, log_filter, on_line, log_stop), daemon=True)
     log_thread.start()
 
     def watch_cancel() -> None:
@@ -231,6 +239,51 @@ def run_update(
         if account and returncode == LOGIN_FAILED_EXIT_CODE:
             raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
     raise RuntimeError(f"SteamCMD 退出码 {returncode}")
+
+
+WORKSHOP_APP_ID = "322330"
+_WORKSHOP_BATCH = 50  # 每次 SteamCMD 下载的项目数，控制命令行长度，也让中途失败只影响一批
+
+
+def has_workshop_files(content_dir: Path) -> bool:
+    """V2 解压后有 modinfo.lua，V1 是 *_legacy.bin（启动前由 DSTCamp 部署）。"""
+    try:
+        return (content_dir / "modinfo.lua").is_file() or any(
+            item.is_file() for item in content_dir.glob("*_legacy.bin"))
+    except OSError:
+        return False
+
+
+def download_workshop_items(
+    steamcmd: Path,
+    workshop_ids,
+    *,
+    on_line: Callable[[str], None],
+    account: str = "",
+    cancel_event: threading.Event | None = None,
+) -> dict[str, int]:
+    """用 SteamCMD 下载/更新工坊 Mod 到它自己的工坊目录，返回 {工坊 ID: 清单里的更新时间}，没装上的为 0。
+
+    成败按 appworkshop_322330.acf 与实际文件判断，不看输出文字；是否已是最新由调用方对照 Web API。
+    账号登录失效时抛 SteamcmdLoginError，取消抛 InterruptedError。
+    """
+    from dstools.features.mod.workshop_acf import read_acf_time_updated
+
+    ids = [str(wid) for wid in dict.fromkeys(workshop_ids) if str(wid).isdigit()]
+    content_root = Path(steamcmd).parent / "steamapps" / "workshop" / "content" / WORKSHOP_APP_ID
+    for start in range(0, len(ids), _WORKSHOP_BATCH):
+        command = [str(steamcmd), "+login", account or "anonymous"]
+        for wid in ids[start:start + _WORKSHOP_BATCH]:
+            command += ["+workshop_download_item", WORKSHOP_APP_ID, wid]
+        command.append("+quit")
+        returncode = _run_once(command, on_line, cancel_event,
+                               log_name="workshop_log.txt", log_filter=is_workshop_log_line)
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("SteamCMD 下载已取消")
+        if account and returncode == LOGIN_FAILED_EXIT_CODE:
+            raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
+    installed = read_acf_time_updated(content_root)
+    return {wid: installed.get(int(wid), 0) if has_workshop_files(content_root / wid) else 0 for wid in ids}
 
 
 def needs_guard_code(lines: list[str]) -> bool:

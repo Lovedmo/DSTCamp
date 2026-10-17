@@ -146,6 +146,37 @@ def test_bundled_steamcmd_released_once() -> None:
     assert steamcmd_updater.ensure_bundled_steamcmd().read_bytes() == b"self-updated"
 
 
+def test_download_workshop_items_reads_acf() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        steamcmd = Path(tmp) / "steamcmd.exe"
+        workshop = Path(tmp) / "steamapps" / "workshop"
+
+        def fake_run(command, on_line, cancel_event, **_kwargs):
+            # 按真机结果造现场：V2 解压出 modinfo.lua，V1 只有 *_legacy.bin，不存在的项目什么都没有
+            (workshop / "content" / "322330" / "200").mkdir(parents=True)
+            (workshop / "content" / "322330" / "200" / "modinfo.lua").write_text("", encoding="utf-8")
+            (workshop / "content" / "322330" / "300").mkdir()
+            (workshop / "content" / "322330" / "300" / "1_legacy.bin").write_bytes(b"")
+            (workshop / "appworkshop_322330.acf").write_text(
+                '"AppWorkshop"\n{\n "appid" "322330"\n "WorkshopItemsInstalled"\n {\n'
+                '  "200" { "size" "1" "timeupdated" "1651381537" }\n'
+                '  "300" { "size" "1" "timeupdated" "1575888768" }\n }\n'
+                ' "WorkshopItemDetails"\n {\n }\n}\n', encoding="utf-8")
+            return 0
+
+        with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+            result = steamcmd_updater.download_workshop_items(steamcmd, ["200", "300", "1"], on_line=lambda _l: None)
+        assert result == {"200": 1651381537, "300": 1575888768, "1": 0}
+
+        with patch.object(steamcmd_updater, "_run_once", return_value=steamcmd_updater.LOGIN_FAILED_EXIT_CODE):
+            try:
+                steamcmd_updater.download_workshop_items(steamcmd, ["200"], on_line=lambda _l: None, account="hostbot")
+            except steamcmd_updater.SteamcmdLoginError:
+                pass
+            else:
+                raise AssertionError("登录失效应抛 SteamcmdLoginError")
+
+
 def test_workshop_dirs_follow_channel() -> None:
     from dstools.features.local_service.steam_backend import SteamBackend, set_backend
     from dstools.features.mod import parser

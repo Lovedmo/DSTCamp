@@ -50,6 +50,7 @@ class AcfWorkshopItem:
     size: int
     subscribed: bool
     subscribed_by: str = ""  # subscribedby 的值：订阅者的 Steam AccountID，多个账号订阅时以逗号分隔
+    time_updated: int = 0  # 已安装版本在工坊的更新时间，与 Web API 的 time_updated 对应（实测）
 
 
 @dataclass(frozen=True)
@@ -146,8 +147,10 @@ def read_workshop_acf(path: Path) -> WorkshopAcf:
             raise WorkshopAcfError(f"条目 {wid} 的大小无效")
         detail = details.get(wid)
         subscriber = next((c for c in detail.children if c.key == "subscribedby"), None) if detail else None
+        updated = next((c.value for c in node.children if c.key == "timeupdated"), "") or ""
         items[wid] = AcfWorkshopItem(wid, int(size_text), subscriber is not None,
-                                     (subscriber.value or "") if subscriber is not None else "")
+                                     (subscriber.value or "") if subscriber is not None else "",
+                                     int(updated) if updated.isdigit() else 0)
     return WorkshopAcf(path, raw, items)
 
 
@@ -174,6 +177,17 @@ def read_acf_installed_sizes(content_root: Path | None) -> dict[int, int]:
     except (OSError, WorkshopAcfError):
         return {}
     return {int(wid): item.size for wid, item in acf.items.items() if wid.isdigit()}
+
+
+def read_acf_time_updated(content_root: Path | None) -> dict[int, int]:
+    """清单里已安装各项的工坊更新时间；读不到返回空。"""
+    if content_root is None:
+        return {}
+    try:
+        acf = read_workshop_acf(workshop_acf_path(content_root))
+    except (OSError, WorkshopAcfError):
+        return {}
+    return {int(wid): item.time_updated for wid, item in acf.items.items() if wid.isdigit()}
 
 
 def read_acf_subscribed_ids(content_root: Path | None) -> set[int]:
