@@ -25,6 +25,12 @@ _MOD_LINE_RE = re.compile(
     r"(workshop-\d+)(?:\s*\(([^)]*)\))?",
     re.IGNORECASE,
 )
+# SteamCMD 通道附带的日志：只按名字取这几份，config.vdf（登录凭据）等绝不收；每份只留末尾一段
+_STEAMCMD_LOGS = ("console_log.txt", "content_log.txt", "workshop_log.txt")
+_STEAMCMD_LOG_TAIL_BYTES = 256 * 1024
+# 实测日志里账号信息只以这两种形式出现：Logging in user '<用户名>'、[U:1:<SteamID>]
+_STEAMCMD_USER_RE = re.compile(r"(Logging in user ')[^']*(')")
+_STEAMCMD_STEAMID_RE = re.compile(r"\[U:1:[1-9]\d*\]")
 
 
 def default_log_output_dir() -> Path:
@@ -109,6 +115,42 @@ def _extract_mod_list(files: list[tuple[Path, str]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _redact_steamcmd_log(text: str, account: str = "") -> str:
+    text = _STEAMCMD_USER_RE.sub(r"\1<账号>\2", text)
+    text = _STEAMCMD_STEAMID_RE.sub("[U:1:<SteamID>]", text)
+    if len(account) >= 3:  # 太短的名字全文替换会误伤正常内容
+        text = re.sub(re.escape(account), "<账号>", text, flags=re.IGNORECASE)
+    return text
+
+
+def _steamcmd_log_entries() -> list[tuple[str, str]]:
+    """SteamCMD 通道下附带它自己的日志末尾（去掉账号与 SteamID），返回 [(包内路径, 内容)]。
+    只算路径，不为此释放内置 SteamCMD。"""
+    from dstools.features.local_service import steamcmd_updater
+    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+    from dstools.shared.app_settings import get_steamcmd_account
+
+    if get_backend() is not SteamBackend.STEAMCMD:
+        return []
+    root = steamcmd_updater.custom_steamcmd_path() or steamcmd_updater.bundled_steamcmd_path()
+    account = get_steamcmd_account()
+    entries = []
+    for name in _STEAMCMD_LOGS:
+        path = root.parent / "logs" / name
+        try:
+            with path.open("rb") as file:
+                size = file.seek(0, 2)
+                file.seek(max(0, size - _STEAMCMD_LOG_TAIL_BYTES))
+                data = file.read()
+        except OSError:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        if size > _STEAMCMD_LOG_TAIL_BYTES:
+            text = text.split("\n", 1)[-1]  # 截断处的半行丢掉
+        entries.append((f"SteamCMD/{name}", _redact_steamcmd_log(text, account)))
+    return entries
+
+
 def create_log_bundle(cluster_path: Path, shard_names=None, output_dir: Path | None = None) -> Path:
     """打包一个服务器存档的当前日志、近期错误日志和安全配置文件。"""
     cluster_path = Path(cluster_path)
@@ -143,13 +185,16 @@ def create_log_bundle(cluster_path: Path, shard_names=None, output_dir: Path | N
         f"生成时间：{_dt.datetime.now().isoformat(timespec='seconds')}",
         f"存档目录：{cluster_path}",
         f"世界：{'、'.join(shard_names) or '未识别'}",
-        "说明：已跳过 cluster_token、管理员列表等敏感文件。",
+        "说明：已跳过 cluster_token、管理员列表等敏感文件；SteamCMD 日志已去掉账号与 SteamID，不含登录凭据。",
         "",
     ]
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for source, arcname in files:
             archive.write(source, arcname)
             manifest.append(f"{arcname} ({source.stat().st_size} bytes)")
+        for arcname, text in _steamcmd_log_entries():
+            archive.writestr(arcname, text)
+            manifest.append(f"{arcname}（末尾 {len(text.encode('utf-8'))} bytes）")
         archive.writestr("manifest.txt", "\n".join(manifest) + "\n")
         archive.writestr("mod_list.txt", _extract_mod_list(files))
     return zip_path

@@ -289,6 +289,21 @@ def test_input_prompt_watch() -> None:
         assert abort.is_set()
 
 
+def test_log_bundle_redacts_steamcmd_account() -> None:
+    """诊断包附带的 SteamCMD 日志去掉账号与 SteamID（实测只有这两种形式），Steam 客户端通道不附带。"""
+    from dstools.features.local_service import log_bundle
+    from dstools.features.local_service.steam_backend import SteamBackend, set_backend
+
+    raw = ("Logging in user 'HostBot' [U:1:0] to Steam Public...OK\n"
+           "[2026-10-17] [AppID 322330] Download item 1 requested by app [U:1:123456789]\nhostbot\n")
+    text = log_bundle._redact_steamcmd_log(raw, "hostbot")
+    assert "hostbot" not in text.casefold() and "123456789" not in text
+    assert "[U:1:0]" in text and "Download item 1 requested" in text
+
+    set_backend(SteamBackend.CLIENT)
+    assert log_bundle._steamcmd_log_entries() == []
+
+
 def test_steamcmd_mod_classify() -> None:
     from dstools.features.mod.steamcmd_mod_status import SteamcmdModState, classify
     from dstools.features.mod.workshop_webapi import RemoteWorkshopItem
