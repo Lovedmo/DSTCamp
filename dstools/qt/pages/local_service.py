@@ -73,6 +73,9 @@ from dstools.shared.token_manager import (
 )
 
 _POLL_MS = 150
+# SteamCMD 通道启动前的 Mod 更新检查：后台定期查，启动时只读缓存，结果超过有效期就不拿来拦启动
+_STEAMCMD_MOD_CHECK_INTERVAL_MS = 15 * 60 * 1000
+_STEAMCMD_MOD_CHECK_TTL = 30 * 60
 _STEAM_REMOTE_BUILD_TTL = 300.0
 _PUBLIC_CONNECT_TIMEOUT_S = 18.0
 _NAT_CONNECT_TIMEOUT_S = 28.0
@@ -684,6 +687,7 @@ class LocalServicePage(Page):
         ctx.cluster_config_saved.connect(self._on_cluster_config_saved)
         # 切到其他页签时仍需监督运行中的专服与直连代码，所以直接订阅存档切换，不走懒加载
         ctx.cluster_changed.connect(self.on_cluster_changed)
+        ctx.workshop_mods_changed.connect(self._refresh_steamcmd_mod_check)
         # F5/刷新全部：重新探测专用服务器工具（运行期间才装好的专服也能识别），WeGame 存档顺带重查进程
         ctx.env_changed.connect(self._on_env_refreshed)
 
@@ -728,6 +732,12 @@ class LocalServicePage(Page):
         self._poll_timer = QTimer(self, interval=_POLL_MS)
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start()
+        # (存档路径与启用的工坊 ID, 检查时刻, [(有更新的 ID, 标题)])
+        self._steamcmd_mod_check: tuple | None = None
+        self._steamcmd_mod_checking = False
+        self._steamcmd_mod_timer = QTimer(self, interval=_STEAMCMD_MOD_CHECK_INTERVAL_MS)
+        self._steamcmd_mod_timer.timeout.connect(self._refresh_steamcmd_mod_check)
+        self._steamcmd_mod_timer.start()
 
     # ── 装配 ────────────────────────────────────────────────────────────
     def _build_mode_row(self):
@@ -947,6 +957,7 @@ class LocalServicePage(Page):
                 self._wegame_detect_btn.setVisible(False)
                 self._wegame_detect_text.setVisible(False)
             self._refresh_shard_rows(c)
+            self._refresh_steamcmd_mod_check(c)
         else:
             self._wegame_banner.set_text("")
             self._wegame_detect_btn.setVisible(False)
@@ -1747,6 +1758,8 @@ class LocalServicePage(Page):
                 return False
         if not self._confirm_missing_mods(cluster):
             return False
+        if not self._confirm_outdated_mods(cluster):
+            return False
         if not restarting and not self._prepare_legacy_mods_for_start(cluster):
             return False
         candidate_claims, issues = collect_cluster_port_claims(cluster, target_names)
@@ -1915,7 +1928,10 @@ class LocalServicePage(Page):
             choices.append((t("local.missing_mods_steamcmd_btn" if steamcmd else "local.missing_mods_subscribe_btn"),
                             "subscribe"))
         choices.append((t("local.missing_mods_start_anyway_btn"), "start"))
-        message_key = "local.missing_mods_confirm" if missing.workshop_ids else "local.missing_mods_local_only"
+        if not missing.workshop_ids:
+            message_key = "local.missing_mods_local_only"
+        else:
+            message_key = "local.missing_mods_confirm_steamcmd" if steamcmd else "local.missing_mods_confirm"
         choice = dialogs.ask_choice(
             self.window(), t("local.missing_mods_title"),
             t(message_key, count=len(names), mods="\n".join(shown)), choices,
@@ -1928,6 +1944,73 @@ class LocalServicePage(Page):
                                         on_finished=self.ctx.workshop_mods_changed.emit)
             else:
                 self._subscribe_missing_mods(list(missing.workshop_ids))
+            return False
+        return choice == "start"
+
+    # ── SteamCMD 通道：启动前的 Mod 更新检查 ─────────────────────────────
+    # SteamCMD 不会自动更新 Mod，过期后玩家用新版本进服会因版本不一致被拒。联网检查放后台，
+    # 启动时只读缓存；检查失败或结果未出时不拦启动（网络问题不能影响开服）
+
+    @staticmethod
+    def _steamcmd_mod_check_key(cluster) -> tuple:
+        from dstools.features.mod.sync import get_enabled_mod_ids
+        ids = sorted({str(w) for w in get_enabled_mod_ids(cluster) if str(w).isdigit()}, key=int)
+        return str(cluster.path), tuple(ids)
+
+    def _refresh_steamcmd_mod_check(self, cluster=None) -> None:
+        c = cluster if cluster is not None else self.get_cluster()
+        if (c is None or c.source != SaveSource.SERVER or c.platform != Platform.STEAM
+                or get_backend() is not SteamBackend.STEAMCMD or self._steamcmd_mod_checking):
+            return
+        key = self._steamcmd_mod_check_key(c)
+        if not key[1]:
+            self._steamcmd_mod_check = None
+            return
+        self._steamcmd_mod_checking = True
+
+        def work():
+            from dstools.features.mod.steamcmd_mod_status import inspect_steamcmd_mods
+            return inspect_steamcmd_mods(key[1])
+
+        def done(statuses) -> None:
+            from dstools.features.mod.steamcmd_mod_status import SteamcmdModState
+            self._steamcmd_mod_checking = False
+            outdated = [(wid, status.title) for wid, status in statuses.items()
+                        if status.state is SteamcmdModState.OUTDATED]
+            self._steamcmd_mod_check = (key, time.monotonic(), outdated)
+
+        def error(_exc: Exception) -> None:
+            self._steamcmd_mod_checking = False  # 下次定时或换存档时再查
+
+        run_async(work, done, error)
+
+    def _confirm_outdated_mods(self, cluster) -> bool:
+        """SteamCMD 通道下存档启用的 Mod 有更新时，启动前提示先更新；缺失的 Mod 由 _confirm_missing_mods 处理。"""
+        if cluster.platform != Platform.STEAM or get_backend() is not SteamBackend.STEAMCMD:
+            return True
+        check = self._steamcmd_mod_check
+        if (check is None or check[0] != self._steamcmd_mod_check_key(cluster)
+                or time.monotonic() - check[1] > _STEAMCMD_MOD_CHECK_TTL):
+            self._refresh_steamcmd_mod_check(cluster)  # 结果没出来不拦这次启动，供下次使用
+            return True
+        outdated = check[2]
+        if not outdated:
+            return True
+        names = [f"workshop-{wid}" + (f"（{title}）" if title else "") for wid, title in outdated]
+        shown = names[:20]
+        if len(names) > len(shown):
+            shown.append(t("local.missing_mods_more", count=len(names) - len(shown)))
+        choice = dialogs.ask_choice(
+            self.window(), t("local.outdated_mods_title"),
+            t("local.outdated_mods_confirm", count=len(names), mods="\n".join(shown)),
+            [(t("dlg.cancel_btn"), "cancel"), (t("local.missing_mods_start_anyway_btn"), "start"),
+             (t("local.outdated_mods_update_btn"), "update")],
+            default="update")
+        if choice == "update":
+            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+            self._steamcmd_mod_check = None
+            run_steamcmd_mod_update(self.window(), [wid for wid, _title in outdated],
+                                    on_finished=self.ctx.workshop_mods_changed.emit)
             return False
         return choice == "start"
 
