@@ -46,6 +46,28 @@ class SteamcmdLoginError(RuntimeError):
 
 
 _TASK_LOCK = threading.Lock()
+# 本次运行内发现登录已失效的 (steamcmd 路径, 小写账号)：界面据此提示重新登录；
+# 重新登录成功或用该账号跑成功一次即清除（登录缓存存在每份 SteamCMD 自己的目录里，所以按路径区分）
+_expired_logins: set[tuple[str, str]] = set()
+
+
+def _login_key(steamcmd: Path, account: str) -> tuple[str, str]:
+    return str(Path(steamcmd)), account.casefold()
+
+
+def _record_login(steamcmd: Path, account: str, returncode: int | None) -> None:
+    """returncode 为退出码 5 记为失效，None 表示用该账号成功跑完一次。匿名不记录。"""
+    if not account:
+        return
+    if returncode == LOGIN_FAILED_EXIT_CODE:
+        _expired_logins.add(_login_key(steamcmd, account))
+    elif returncode is None:
+        _expired_logins.discard(_login_key(steamcmd, account))
+
+
+def login_expired(steamcmd: Path | None, account: str) -> bool:
+    """这份 SteamCMD 上该账号的登录本次运行中是否已发现失效。"""
+    return bool(steamcmd and account) and _login_key(steamcmd, account) in _expired_logins
 
 
 def _exclusive_task(func):
@@ -341,9 +363,11 @@ def _prepare(steamcmd: Path, account: str, on_line: Callable[[str], None],
              cancel_event: threading.Event | None) -> None:
     """登录一次即退出，让 SteamCMD 取回应用信息；用已设置的账号登录，免得匿名登录影响账号的登录缓存。
     失败（如账号登录已失效）不处理，交给随后的正式任务按原有逻辑报告。"""
-    _run_once([str(steamcmd), "+login", account or "anonymous", "+quit"], on_line, cancel_event)
+    returncode = _run_once([str(steamcmd), "+login", account or "anonymous", "+quit"], on_line, cancel_event)
     if cancel_event is not None and cancel_event.is_set():
         raise InterruptedError("SteamCMD 初始化已取消")
+    if returncode == LOGIN_FAILED_EXIT_CODE:
+        _record_login(steamcmd, account, returncode)  # 启动时的后台准备就能发现登录失效
 
 
 @_exclusive_task
@@ -408,8 +432,10 @@ def run_update(
             raise InterruptedError("SteamCMD 更新已取消")
         snapshot = snapshot_install(install_dir)
         if not suspended.is_set() and update_succeeded(returncode, snapshot):
+            _record_login(steamcmd, account, None)
             return snapshot
         if account and returncode == LOGIN_FAILED_EXIT_CODE:
+            _record_login(steamcmd, account, returncode)
             raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
     if suspended.is_set():
         raise RuntimeError("更新任务被 Steam 挂起")
@@ -460,7 +486,10 @@ def download_workshop_items(
         if cancel_event is not None and cancel_event.is_set():
             raise InterruptedError("SteamCMD 下载已取消")
         if account and returncode == LOGIN_FAILED_EXIT_CODE:
+            _record_login(steamcmd, account, returncode)
             raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
+    if ids:
+        _record_login(steamcmd, account, None)
     installed = read_acf_time_updated(content_root)
     return {wid: installed.get(int(wid), 0) if has_workshop_files(content_root / wid) else 0 for wid in ids}
 
@@ -495,4 +524,6 @@ def login(
                            stdin_text=stdin_text)
     if cancel_event is not None and cancel_event.is_set():
         raise InterruptedError("SteamCMD 登录已取消")
+    if returncode == 0:
+        _record_login(steamcmd, username, None)
     return returncode

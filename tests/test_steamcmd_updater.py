@@ -188,6 +188,12 @@ def test_account_login_failure_not_retried() -> None:
                 raise AssertionError("登录失败应抛 SteamcmdLoginError")
         # 连续登录失败会触发 Steam 限制，只试一次
         assert len(calls) == 1
+        # 记下失效供界面提示（按 SteamCMD 区分、账号不分大小写），重新登录成功后清除
+        assert steamcmd_updater.login_expired(Path("steamcmd.exe"), "HostBot")
+        assert not steamcmd_updater.login_expired(Path("other/steamcmd.exe"), "hostbot")
+        with patch.object(steamcmd_updater, "_run_once", return_value=0):
+            steamcmd_updater.login(Path("steamcmd.exe"), "hostbot", "pw", on_line=lambda _l: None)
+        assert not steamcmd_updater.login_expired(Path("steamcmd.exe"), "hostbot")
 
     # 真机输出：缺验证码时先提示 Steam Guard code，读不到就 Account Logon Denied
     assert steamcmd_updater.needs_guard_code(["Steam Guard code:ERROR (Account Logon Denied)"])

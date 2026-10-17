@@ -770,6 +770,7 @@ class LocalServicePage(Page):
         # 切到其他页签时仍需监督运行中的专服与直连代码，所以直接订阅存档切换，不走懒加载
         ctx.cluster_changed.connect(self.on_cluster_changed)
         ctx.workshop_mods_changed.connect(self._refresh_steamcmd_mod_check)
+        ctx.workshop_mods_changed.connect(self._refresh_backend_label)  # 下载 Mod 时可能发现登录失效
         # F5/刷新全部：重新探测专用服务器工具（运行期间才装好的专服也能识别），WeGame 存档顺带重查进程
         ctx.env_changed.connect(self._on_env_refreshed)
 
@@ -1138,6 +1139,7 @@ class LocalServicePage(Page):
 
         def finished(_result=None) -> None:
             self._steamcmd_preparing = False
+            self._refresh_backend_label()  # 后台准备可能发现账号登录已失效
 
         run_async(work, finished, finished)
 
@@ -1215,7 +1217,20 @@ class LocalServicePage(Page):
 
     def _refresh_backend_label(self) -> None:
         steamcmd = get_backend() is SteamBackend.STEAMCMD
-        self._backend_label.setText(t("local.backend_steamcmd" if steamcmd else "local.backend_client"))
+        text, expired = t("local.backend_client"), False
+        if steamcmd:
+            account = get_steamcmd_account()
+            # 只算路径不释放程序：内置版尚未释放时也不会有失效记录
+            exe = steamcmd_updater.custom_steamcmd_path() or steamcmd_updater.bundled_steamcmd_path()
+            expired = steamcmd_updater.login_expired(exe, account)
+            if expired:
+                text = t("local.backend_steamcmd_expired", user=account)
+            elif account:
+                text = t("local.backend_steamcmd_user", user=account)
+            else:
+                text = t("local.backend_steamcmd_anonymous")
+        self._backend_label.setText(text)
+        self._backend_label.setStyleSheet(f"color: {theme.hex('ERROR')};" if expired else "")
         # SteamCMD 通道固定用独立专服，「开服程序」一行没有可选的，隐藏
         self._mode_row.setVisible(not steamcmd)
 
