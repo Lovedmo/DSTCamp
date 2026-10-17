@@ -386,7 +386,7 @@ class _RuntimeModeDialog(dialogs.Dialog):
 
 
 class _SteamBackendDialog(dialogs.Dialog):
-    """"切换方式"窗口：Steam 客户端 / SteamCMD 单选，选 SteamCMD 时在这里指定 steamcmd.exe，点"保存"才生效。"""
+    """"切换通道"窗口：Steam 客户端 / SteamCMD 单选，选 SteamCMD 时在这里指定 steamcmd.exe，点"保存"才生效。"""
 
     def __init__(self, parent, current: SteamBackend, steamcmd: Path | None):
         super().__init__(parent, t("local.backend_title"), "md", confirm_text=t("local.runtime_mode_save_btn"))
@@ -553,10 +553,10 @@ class LocalServicePage(Page):
         root.setContentsMargins(15, 13, 15, 13)
         root.setSpacing(6)
 
-        self._mode_row, self._mode_label, self._mode_btn = self._build_mode_row()
-        root.addWidget(self._mode_row)
         self._backend_row, self._backend_label, self._backend_btn = self._build_backend_row()
         root.addWidget(self._backend_row)
+        self._mode_row, self._mode_label, self._mode_btn = self._build_mode_row()
+        root.addWidget(self._mode_row)
         (self._install_row, self._install_path_label, self._steam_update_hint,
          self._install_change_btn, self._steam_update_btn) = self._build_install_row()
         root.addWidget(self._install_row)

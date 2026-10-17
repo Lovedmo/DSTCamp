@@ -191,7 +191,7 @@ def set_steamcmd_path(path: Path | None) -> None:
 
 
 def get_steam_backend() -> str | None:
-    """Steam 内容的更新方式（见 features/local_service/steam_backend.py），未设置返回 None。"""
+    """Steam 通道（见 features/local_service/steam_backend.py），未设置返回 None。"""
     return load_settings().get(_KEY_STEAM_BACKEND)
 
 

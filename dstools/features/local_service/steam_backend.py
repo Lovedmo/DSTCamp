@@ -1,6 +1,6 @@
-"""Steam 内容的更新方式（唯一来源）：Steam 客户端或 SteamCMD，由用户在「更新方式」里明确切换。
+"""Steam 通道（唯一来源）：Steam 客户端或 SteamCMD，由用户在「Steam 通道」里明确切换。
 
-专服更新（以及后续的 Mod 更新）都按这里的选择走，两条路径互不混用，不会因为找不到一种就偷偷换另一种。
+专服安装更新、Mod 下载等所有 Steam 相关操作都按这里的选择走，两条路径互不混用，不会因为找不到一种就偷偷换另一种。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def set_backend(backend: SteamBackend) -> None:
 
 
 def update_blocker(backend: SteamBackend, runtime: ServerRuntime | None) -> str | None:
-    """当前更新方式不能更新这个开服程序时返回原因文案键，可以更新返回 None。"""
+    """当前 Steam 通道不能更新这个开服程序时返回原因文案键，可以更新返回 None。"""
     if backend is SteamBackend.STEAMCMD:
         if steamcmd_updater.find_steamcmd() is None:
             return "local.backend_steamcmd_missing"
