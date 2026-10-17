@@ -246,8 +246,22 @@ def split_installed_mod_counts(mod_ids, platform: Platform) -> tuple[int, int]:
     return len(ids) - custom, custom
 
 
+def _steamcmd_workshop_dir() -> Path | None:
+    """Steam 通道为 SteamCMD 时返回它的工坊目录，否则返回 None。两种通道不混用：选了 SteamCMD 就不再看 Steam 库。"""
+    # 延迟导入：steam_backend 经 server_runtime 间接依赖 Mod 模块
+    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+    from dstools.features.local_service.steamcmd_updater import steamcmd_workshop_dir
+    if get_backend() is SteamBackend.STEAMCMD:
+        return steamcmd_workshop_dir()
+    return None
+
+
 def find_workshop_dir() -> Path | None:
-    """查找 DST Workshop 内容目录：遍历注册表里的全部 Steam 库，不能只看默认库。"""
+    """查找 DST Workshop 内容目录：SteamCMD 通道用它自己的工坊目录；否则遍历注册表里的全部 Steam 库，不能只看默认库。"""
+    steamcmd_workshop = _steamcmd_workshop_dir()
+    if steamcmd_workshop is not None:
+        content = steamcmd_workshop / "content" / DST_APP_ID
+        return content if content.exists() else None
     for steam in find_all_steam_libraries():
         workshop = steam / "steamapps" / "workshop" / "content" / DST_APP_ID
         if workshop.exists():
@@ -288,7 +302,12 @@ def detect_mod_format(workshop_id, workshop_root: Path | None, steam_state=None)
 def find_shared_ugc_directory() -> Path | None:
     """专服 ``-ugc_directory`` 参数：直接用 Steam 的 ``steamapps/workshop``（真机验证），
     所有存档共享一份内容，不再在每个 shard 下生成 ugc_mods 副本。找不到返回 None，
-    调用方不传该参数即可。"""
+    调用方不传该参数即可。
+
+    SteamCMD 通道始终返回它的工坊目录（还没下载过 Mod 时也返回），启动前的缺失检查才能提示去下载。"""
+    steamcmd_workshop = _steamcmd_workshop_dir()
+    if steamcmd_workshop is not None:
+        return steamcmd_workshop
     for steam in find_all_steam_libraries():
         workshop = steam / "steamapps" / "workshop"
         if (workshop / "content" / DST_APP_ID).exists():

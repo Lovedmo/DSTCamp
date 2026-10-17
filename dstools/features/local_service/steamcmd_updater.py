@@ -66,6 +66,14 @@ def ensure_bundled_steamcmd() -> Path | None:
     return target
 
 
+def steamcmd_workshop_dir() -> Path:
+    """SteamCMD 下载工坊内容的位置（steamcmd.exe 同级 steamapps/workshop，不受 force_install_dir 影响）。
+    实测：目录结构、appworkshop_322330.acf 与 Steam 客户端相同，下载内容逐字节一致。只算路径，不释放程序。"""
+    custom = custom_steamcmd_path()
+    root = custom.parent if custom is not None else bundled_steamcmd_path().parent
+    return root / "steamapps" / "workshop"
+
+
 def custom_steamcmd_path() -> Path | None:
     """用户改选的 steamcmd.exe；没选过返回 None（使用内置）。"""
     return app_settings.get_steamcmd_path()

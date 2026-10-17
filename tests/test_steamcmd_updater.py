@@ -146,5 +146,30 @@ def test_bundled_steamcmd_released_once() -> None:
     assert steamcmd_updater.ensure_bundled_steamcmd().read_bytes() == b"self-updated"
 
 
+def test_workshop_dirs_follow_channel() -> None:
+    from dstools.features.local_service.steam_backend import SteamBackend, set_backend
+    from dstools.features.mod import parser
+
+    with tempfile.TemporaryDirectory() as tmp:
+        steam_library = Path(tmp) / "Steam"
+        (steam_library / "steamapps" / "workshop" / "content" / "322330").mkdir(parents=True)
+        steamcmd_dir = Path(tmp) / "steamcmd"
+        steamcmd_dir.mkdir()
+        app_settings.set_steamcmd_path(steamcmd_dir / "steamcmd.exe")
+        with patch.object(parser, "find_all_steam_libraries", return_value=[steam_library]):
+            set_backend(SteamBackend.CLIENT)
+            assert parser.find_shared_ugc_directory() == steam_library / "steamapps" / "workshop"
+
+            # SteamCMD 通道不再看 Steam 库；还没下载过 Mod 时也给出 -ugc_directory，缺失检查才能提示下载
+            set_backend(SteamBackend.STEAMCMD)
+            workshop = steamcmd_dir / "steamapps" / "workshop"
+            assert parser.find_shared_ugc_directory() == workshop
+            assert parser.find_workshop_dir() is None
+            (workshop / "content" / "322330").mkdir(parents=True)
+            assert parser.find_workshop_dir() == workshop / "content" / "322330"
+        set_backend(SteamBackend.CLIENT)
+        app_settings.set_steamcmd_path(None)
+
+
 if __name__ == "__main__":
     run(globals())
