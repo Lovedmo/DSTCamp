@@ -61,6 +61,7 @@ from dstools.shared.app_settings import (
     set_dedicated_server_extra_args, set_steamcmd_account, set_steamcmd_path, set_token_hold,
 )
 from dstools.shared.clipboard import copy_file_to_clipboard
+from dstools.shared.resource_paths import path_is_ascii
 from dstools.shared.server_ports import (
     collect_cluster_port_claims, disable_lan_restrictions, find_port_conflicts,
     format_lan_port_issues, lan_restriction_names, rewrite_cluster_ports_atomic,
@@ -503,7 +504,8 @@ class _SteamBackendDialog(dialogs.Dialog):
         path_row = QHBoxLayout()
         path_row.setContentsMargins(24, 0, 0, 0)
         self._path_edit = QLineEdit(str(steamcmd) if steamcmd else "")
-        self._path_edit.setPlaceholderText(t("local.backend_steamcmd_placeholder"))
+        self._path_edit.setPlaceholderText(
+            t("local.backend_steamcmd_placeholder", path=str(steamcmd_updater.bundled_steamcmd_path())))
         self._browse_btn = QPushButton(t("local.backend_browse_btn"))
         self._browse_btn.clicked.connect(self._browse)
         path_row.addWidget(self._path_edit, 1)
@@ -541,18 +543,32 @@ class _SteamBackendDialog(dialogs.Dialog):
                                     else t("local.steamcmd_account_anonymous"))
         self._sync_path_enabled()
 
-    def _steamcmd_from_edit(self) -> Path | None:
-        path = Path(self._path_edit.text().strip().strip('"'))
+    def _steamcmd_from_edit(self) -> tuple[Path, Path | None] | None:
+        """返回 (实际使用的 steamcmd.exe, 自选路径)；路径框留空表示用内置的（自选路径为 None）。不可用时提示并返回 None。"""
+        text = self._path_edit.text().strip().strip('"')
+        if not text:
+            bundled = steamcmd_updater.ensure_bundled_steamcmd()
+            if bundled is None:
+                key = ("local.backend_steamcmd_cache_non_ascii"
+                       if not path_is_ascii(steamcmd_updater.bundled_steamcmd_path())
+                       else "local.backend_steamcmd_extract_failed")
+                dialogs.show_warning(self, t("local.backend_title"), t(key))
+                return None
+            return bundled, None
+        path = Path(text)
         if not steamcmd_updater.is_steamcmd_exe(path):
             dialogs.show_warning(self, t("local.backend_title"), t("local.steamcmd_invalid"))
             return None
-        return path
+        if not path_is_ascii(path):
+            dialogs.show_warning(self, t("local.backend_title"), t("local.backend_steamcmd_custom_non_ascii"))
+            return None
+        return path, path
 
     def _open_login(self) -> None:
-        steamcmd = self._steamcmd_from_edit()
-        if steamcmd is None:
+        picked = self._steamcmd_from_edit()
+        if picked is None:
             return
-        dialog = _SteamcmdLoginDialog(self, steamcmd, self.result_account)
+        dialog = _SteamcmdLoginDialog(self, picked[0], self.result_account)
         if dialog.exec():
             self._set_account(dialog.result_username)
 
@@ -565,10 +581,10 @@ class _SteamBackendDialog(dialogs.Dialog):
     def accept_if_valid(self) -> None:
         backend = next(b for b, radio in self._radios.items() if radio.isChecked())
         if backend is SteamBackend.STEAMCMD:
-            path = self._steamcmd_from_edit()
-            if path is None:
+            picked = self._steamcmd_from_edit()
+            if picked is None:
                 return
-            self.result_steamcmd = path
+            self.result_steamcmd = picked[1]
         self.result_backend = backend
         self.accept()
 
@@ -1068,7 +1084,7 @@ class LocalServicePage(Page):
         self.ctx.server_runtime_changed.emit()
 
     def _choose_backend(self) -> None:
-        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.find_steamcmd(),
+        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.custom_steamcmd_path(),
                                      get_steamcmd_account())
         if not dialog.exec():
             return

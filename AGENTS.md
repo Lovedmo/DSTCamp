@@ -79,6 +79,7 @@ python scripts/build_exe.py
 - `CLUSTER_INI_DEFAULTS` 只补缺失字段；`NO_TYPE_COERCE_FIELDS` 中的密码等字段保持字符串。
 - 森林与洞穴配置独立；新增世界 key、取值或 Mod 支持前必须核对实际 Lua 源码。
 - 不联网下载 frp、vcredist、ktech；Linux 二进制用 `sftp.putfo()` 流式上传，本机不落地。
+- 内置 SteamCMD（`tools/steamcmd/`，原样附 Valve 许可协议，不得修改程序）首次使用时释放到缓存目录；它不能在非 ASCII 路径下运行，联网自更新由它自己完成。
 - WeGame 不支持一键启动专服，不实现绕过方案。
 - 动态 Mod 名称、版本、图标和配置以受限 Lua 5.1 沙箱结果为准；缓存校验包含内容哈希、来源路径、`folder_name` 和协议版本。
 - V1 Legacy 包必须校验 ZIP/CRC/路径与链接，临时解压后原子替换并支持回滚；保留客户端 `mods` junction，V2 流程独立。

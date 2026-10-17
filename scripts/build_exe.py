@@ -39,6 +39,8 @@ TOOL_FILES = (
     "ktools/coder.xml",
     "ktools/colors.xml",
     "ktools/ktech.exe",
+    "steamcmd/LICENSE.txt",
+    "steamcmd/steamcmd.exe.gz",
     "vcredist/VC++ 2013 x86.exe",
 )
 

@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import gzip
+import os
 import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 from _harness import run  # noqa: E402
 
+# 设置与缓存放进临时目录，绝不读写真实 %APPDATA%/DSTCamp。
+_SETTINGS_TMP = tempfile.TemporaryDirectory()
+os.environ["APPDATA"] = _SETTINGS_TMP.name
+
 from dstools.features.local_service import steamcmd_updater  # noqa: E402
+from dstools.shared import app_settings  # noqa: E402
 
 
 def _make_steamcmd_install(root: Path, *, buildid: str = "100") -> None:
@@ -113,12 +121,29 @@ def test_backend_update_blocker() -> None:
 
     # SteamCMD 方式：只更新 SteamCMD 装的独立专服
     with patch.object(steamcmd_updater, "find_steamcmd", return_value=None):
+        app_settings.set_steamcmd_path(Path("C:/gone/steamcmd.exe"))
         assert update_blocker(SteamBackend.STEAMCMD, custom) == "local.backend_steamcmd_missing"
+        app_settings.set_steamcmd_path(None)
+        with patch.object(steamcmd_updater, "bundled_steamcmd_path", return_value=Path("C:/缓存/steamcmd.exe")):
+            assert update_blocker(SteamBackend.STEAMCMD, custom) == "local.backend_steamcmd_cache_non_ascii"
     with patch.object(steamcmd_updater, "find_steamcmd", return_value=Path("C:/steamcmd/steamcmd.exe")):
         assert update_blocker(SteamBackend.STEAMCMD, custom) is None
         assert update_blocker(SteamBackend.STEAMCMD, library) == "local.backend_steamcmd_library_dir"
         assert update_blocker(SteamBackend.STEAMCMD, client) == "local.backend_steamcmd_client_runtime"
         assert update_blocker(SteamBackend.STEAMCMD, None) == "local.backend_steamcmd_no_runtime"
+
+
+def test_bundled_steamcmd_released_once() -> None:
+    target = steamcmd_updater.ensure_bundled_steamcmd()
+    official = gzip.decompress((PROJECT_ROOT / "tools" / "steamcmd" / "steamcmd.exe.gz").read_bytes())
+    # 原样释放（许可协议不允许修改程序），并附带许可协议
+    assert target == steamcmd_updater.bundled_steamcmd_path() and target.read_bytes() == official
+    assert (target.parent / "LICENSE.txt").is_file()
+    assert steamcmd_updater.find_steamcmd() == target  # 没改选时用内置的
+
+    # SteamCMD 自更新会替换这个文件，之后不能被随包的旧版本覆盖回去
+    target.write_bytes(b"self-updated")
+    assert steamcmd_updater.ensure_bundled_steamcmd().read_bytes() == b"self-updated"
 
 
 if __name__ == "__main__":

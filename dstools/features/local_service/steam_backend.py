@@ -10,6 +10,7 @@ from enum import Enum
 from dstools.features.local_service import steamcmd_updater
 from dstools.features.local_service.server_runtime import ServerRuntime
 from dstools.shared import app_settings
+from dstools.shared.resource_paths import path_is_ascii
 
 
 class SteamBackend(str, Enum):
@@ -28,11 +29,23 @@ def set_backend(backend: SteamBackend) -> None:
     app_settings.set_steam_backend(SteamBackend(backend).value)
 
 
+def steamcmd_unavailable_reason() -> str:
+    """找不到可用 steamcmd.exe 时的原因文案键：分清自选的、内置的，非 ASCII 路径单独说明。"""
+    custom = steamcmd_updater.custom_steamcmd_path()
+    if custom is not None:
+        if steamcmd_updater.is_steamcmd_exe(custom) and not path_is_ascii(custom):
+            return "local.backend_steamcmd_custom_non_ascii"
+        return "local.backend_steamcmd_missing"
+    if not path_is_ascii(steamcmd_updater.bundled_steamcmd_path()):
+        return "local.backend_steamcmd_cache_non_ascii"
+    return "local.backend_steamcmd_extract_failed"
+
+
 def update_blocker(backend: SteamBackend, runtime: ServerRuntime | None) -> str | None:
     """当前 Steam 通道不能更新这个开服程序时返回原因文案键，可以更新返回 None。"""
     if backend is SteamBackend.STEAMCMD:
         if steamcmd_updater.find_steamcmd() is None:
-            return "local.backend_steamcmd_missing"
+            return steamcmd_unavailable_reason()
         if runtime is None:
             return "local.backend_steamcmd_no_runtime"
         if runtime.is_client:

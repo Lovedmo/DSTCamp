@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
+import gzip
+import os
 import re
+import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -20,6 +23,7 @@ from dstools.features.local_service.steam_client_updater import (
     DEDICATED_SERVER_APP_ID, SteamAppSnapshot, snapshot_from_manifest,
 )
 from dstools.shared import app_settings
+from dstools.shared.resource_paths import cache_dir, path_is_ascii, tool_binary_dir
 
 _LINE_SPLIT_RE = re.compile(rb"[\r\n]+")
 # 实测：密码错误、缓存凭据失效都是退出码 5。登录失败不自动重试，避免连续失败触发 Steam 的登录限制
@@ -34,10 +38,46 @@ def is_steamcmd_exe(path: Path | None) -> bool:
     return bool(path) and Path(path).name.casefold() == "steamcmd.exe" and Path(path).is_file()
 
 
+def bundled_steamcmd_path() -> Path:
+    """内置 SteamCMD 的运行位置：缓存目录下（缓存目录要求纯 ASCII，SteamCMD 在非 ASCII 路径下直接报错退出）。
+    放缓存而不是 data：程序和它自更新下载的组件都可重建，清空缓存后下次使用重新释放、重新登录即可。"""
+    return cache_dir("steamcmd") / "steamcmd.exe"
+
+
+def ensure_bundled_steamcmd() -> Path | None:
+    """首次使用时把随包的官方 steamcmd.exe 原样释放到缓存目录；已存在就不动（SteamCMD 会自更新这个文件）。
+    路径含非 ASCII 字符或释放失败时返回 None。"""
+    target = bundled_steamcmd_path()
+    if not path_is_ascii(target):
+        return None
+    if target.is_file():
+        return target
+    source = tool_binary_dir() / "steamcmd"
+    try:
+        data = gzip.decompress((source / "steamcmd.exe.gz").read_bytes())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # 许可协议要求随程序附带，原样放在旁边
+        shutil.copyfile(source / "LICENSE.txt", target.parent / "LICENSE.txt")
+        tmp = target.with_suffix(".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+    except (OSError, EOFError, gzip.BadGzipFile):
+        return None
+    return target
+
+
+def custom_steamcmd_path() -> Path | None:
+    """用户改选的 steamcmd.exe；没选过返回 None（使用内置）。"""
+    return app_settings.get_steamcmd_path()
+
+
 def find_steamcmd() -> Path | None:
-    """用户选过且仍然存在的 steamcmd.exe。"""
-    path = app_settings.get_steamcmd_path()
-    return path if is_steamcmd_exe(path) else None
+    """实际使用的 steamcmd.exe：用户改选过就用它（不存在或路径含非 ASCII 字符时返回 None，不偷偷换内置），
+    否则用内置的。"""
+    custom = custom_steamcmd_path()
+    if custom is not None:
+        return custom if is_steamcmd_exe(custom) and path_is_ascii(custom) else None
+    return ensure_bundled_steamcmd()
 
 
 def is_steam_library_install(install_dir: Path) -> bool:
