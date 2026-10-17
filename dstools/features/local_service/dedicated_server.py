@@ -235,9 +235,6 @@ _REAL_START_MARKERS = (
 _MASTER_READY_MARKERS = ("sim paused", "sim unpaused", "dst_master_ready")
 _SECONDARY_READY_MARKERS = ("is now ready!",)
 
-# DSTCamp 为运行环境自动维护的配套 Mod（仅 LuaJIT），参与缺失检查但不计入玩家选择的 Mod 数
-_INTERNAL_MOD_KEYS = frozenset({"workshop-3444078585"})
-
 
 def advance_world_ready_marker(
     line: str, is_master: bool, real_start_seen: bool,
@@ -305,8 +302,8 @@ class ServerProcess:
 
     @property
     def visible_mod_ids(self) -> set[str]:
-        """玩家可见的已启用 Mod，不包含工具内部配套组件。"""
-        return self.mods_enabled - _INTERNAL_MOD_KEYS
+        """已启用的 Mod（LuaJIT 加速补丁也是启动的 Mod，一并计入）。"""
+        return set(self.mods_enabled)
 
     @property
     def visible_mod_count(self) -> int:

@@ -36,7 +36,7 @@ def _run_process(lines: list[str], *, is_master: bool = True) -> ServerProcess:
     return process
 
 
-def test_luajit_companion_is_checked_but_not_counted() -> None:
+def test_luajit_companion_is_checked_and_counted() -> None:
     lines = [
         "modoverrides.lua enabling workshop-1467214795",
         "modoverrides.lua enabling workshop-3435352667",
@@ -53,13 +53,13 @@ def test_luajit_companion_is_checked_but_not_counted() -> None:
     assert process.mods_enabled == {
         "workshop-1467214795", "workshop-3435352667", "workshop-3444078585",
     }
-    assert process.visible_mod_count == 2
+    assert process.visible_mod_count == 3
 
     missing_companion = _run_process([
         line for line in lines if "Loading mod: workshop-3444078585" not in line
     ])
     assert missing_companion.missing_mods == ["workshop-3444078585"]
-    assert missing_companion.visible_mod_count == 2
+    assert missing_companion.visible_mod_count == 3
 
 
 def test_missing_mods_are_reported_only_after_world_ready() -> None:
