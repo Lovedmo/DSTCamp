@@ -84,6 +84,7 @@ class ModPage(Page):
         self._workshop_status_checked_at = 0.0
         self._workshop_status_refreshing = False
         self._workshop_status_error = ""
+        self._steamcmd_pending_count: int | None = None  # SteamCMD 通道需要下载的 Mod 数；其它通道为 None
         self._workshop_log_dialog = None
 
         # 与其他主页签相同的外壳：主题色圆角边框、内部透明
@@ -1231,6 +1232,11 @@ class ModPage(Page):
         if self._workshop_status_refreshing:
             return
         local_ids = self._workshop_mod_ids()
+        from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+        if get_backend() is SteamBackend.STEAMCMD:
+            self._refresh_steamcmd_mod_status(gen, local_ids)
+            return
+        self._steamcmd_pending_count = None
         if not local_ids:
             return
         cache_fresh = (time.monotonic() - self._workshop_status_checked_at < 300.0
@@ -1278,6 +1284,34 @@ class ModPage(Page):
 
         run_async(work, done, lambda _exc: setattr(self, "_workshop_status_refreshing", False))
 
+    def _refresh_steamcmd_mod_status(self, gen: int, local_ids: list[int]) -> None:
+        """SteamCMD 通道：对照 SteamCMD 工坊目录与 Web API，统计列表里和当前存档启用的 Mod 中需要下载的数量。"""
+        ids = [str(wid) for wid in local_ids] + sorted(self._current_cluster_workshop_ids())
+        if not ids:
+            self._steamcmd_pending_count = None
+            return
+        self._workshop_status_refreshing = True
+
+        def work():
+            from dstools.features.mod.steamcmd_mod_status import inspect_steamcmd_mods
+            try:
+                statuses = inspect_steamcmd_mods(ids)
+            except OSError as exc:
+                return None, str(exc)
+            return sum(1 for status in statuses.values() if status.needs_download), ""
+
+        def done(result) -> None:
+            count, error = result
+            self._workshop_status_refreshing = False
+            if gen != self._refresh_gen:
+                return
+            self._steamcmd_pending_count = count
+            self._workshop_status_error = error
+            self._workshop_status_checked_at = time.monotonic()
+            self._update_workshop_update_hint()
+
+        run_async(work, done, lambda _exc: setattr(self, "_workshop_status_refreshing", False))
+
     def _update_workshop_update_hint(self) -> None:
         if self._workshop_update_running or not self._mods_loaded:
             self._update_hint_label.setVisible(False)
@@ -1286,11 +1320,14 @@ class ModPage(Page):
             self._update_hint_label.setText(t("mod.update_status_unavailable_hint"))
             self._update_hint_label.setStyleSheet(f"color: {theme.hex('ERROR')};")
         else:
-            count = sum(1 for status in self._workshop_status_cache.values() if status.needs_action)
+            if self._steamcmd_pending_count is not None:
+                count = self._steamcmd_pending_count
+            else:
+                count = sum(1 for status in self._workshop_status_cache.values() if status.needs_action)
             if count:
                 self._update_hint_label.setText(t("mod.update_pending_hint", count=count))
                 self._update_hint_label.setStyleSheet(f"color: {theme.hex('ACCENT')};")
-            elif self._workshop_status_cache:
+            elif self._workshop_status_cache or self._steamcmd_pending_count is not None:
                 self._update_hint_label.setText(t("mod.update_all_current_hint"))
                 self._update_hint_label.setStyleSheet("color: #2E7D32;")
             else:
@@ -1299,6 +1336,13 @@ class ModPage(Page):
         self._update_hint_label.setVisible(True)
 
     def _open_workshop_update_dialog(self) -> None:
+        from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+        if get_backend() is SteamBackend.STEAMCMD:
+            # SteamCMD 通道没有 Steam 客户端可用：检查列表里和当前存档启用的工坊 Mod，下载缺失与有更新的
+            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+            ids = [str(wid) for wid in self._workshop_mod_ids()] + sorted(self._current_cluster_workshop_ids())
+            run_steamcmd_mod_update(self.window(), ids, on_finished=self.ctx.workshop_mods_changed.emit)
+            return
         from dstools.qt.mod_workshop_update_dialog import WorkshopUpdateDialog
         WorkshopUpdateDialog(self).exec()
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 
 from dstools.shared.ssl_context import default_ssl_context
 
@@ -17,12 +18,18 @@ _BATCH = 100
 _TIMEOUT = 15
 
 
-def fetch_time_updated(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) -> dict[str, int]:
-    """返回 {工坊 ID: 最新更新时间}；查不到（已删除、私密等）的项目不在结果里。网络错误直接抛出，由调用方决定怎么提示。"""
+@dataclass(frozen=True)
+class RemoteWorkshopItem:
+    time_updated: int
+    title: str = ""
+
+
+def fetch_remote_items(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) -> dict[str, RemoteWorkshopItem]:
+    """返回 {工坊 ID: 最新更新时间与标题}；查不到（已删除、私密等）的项目不在结果里。网络错误直接抛出，由调用方决定怎么提示。"""
     ids = [str(wid) for wid in dict.fromkeys(workshop_ids) if str(wid).isdigit()]
     open_url = opener or (lambda request: urllib.request.urlopen(request, timeout=timeout,
                                                                   context=default_ssl_context()))
-    result: dict[str, int] = {}
+    result: dict[str, RemoteWorkshopItem] = {}
     for start in range(0, len(ids), _BATCH):
         batch = ids[start:start + _BATCH]
         form = {"itemcount": str(len(batch))}
@@ -35,5 +42,5 @@ def fetch_time_updated(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) 
             if item.get("result") == 1 and str(item.get("consumer_app_id")) == "322330":
                 updated = item.get("time_updated")
                 if isinstance(updated, int) and updated > 0:
-                    result[str(item.get("publishedfileid"))] = updated
+                    result[str(item.get("publishedfileid"))] = RemoteWorkshopItem(updated, str(item.get("title") or ""))
     return result

@@ -177,6 +177,17 @@ def test_download_workshop_items_reads_acf() -> None:
                 raise AssertionError("登录失效应抛 SteamcmdLoginError")
 
 
+def test_steamcmd_mod_classify() -> None:
+    from dstools.features.mod.steamcmd_mod_status import SteamcmdModState, classify
+    from dstools.features.mod.workshop_webapi import RemoteWorkshopItem
+
+    remote = {"1": RemoteWorkshopItem(200, "A"), "2": RemoteWorkshopItem(200), "3": RemoteWorkshopItem(200)}
+    states = classify(["1", "2", "3", "4"], {"1": 100, "2": 200}, remote)
+    assert [states[w].state for w in ("1", "2", "3", "4")] == [
+        SteamcmdModState.OUTDATED, SteamcmdModState.CURRENT, SteamcmdModState.MISSING, SteamcmdModState.UNAVAILABLE]
+    assert [w for w, s in states.items() if s.needs_download] == ["1", "3"]
+
+
 def test_workshop_dirs_follow_channel() -> None:
     from dstools.features.local_service.steam_backend import SteamBackend, set_backend
     from dstools.features.mod import parser

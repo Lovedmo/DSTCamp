@@ -1903,8 +1903,10 @@ class LocalServicePage(Page):
         if len(names) > len(shown):
             shown.append(t("local.missing_mods_more", count=len(names) - len(shown)))
         choices = [(t("dlg.cancel_btn"), "cancel")]
+        steamcmd = get_backend() is SteamBackend.STEAMCMD
         if missing.workshop_ids:
-            choices.append((t("local.missing_mods_subscribe_btn"), "subscribe"))
+            choices.append((t("local.missing_mods_steamcmd_btn" if steamcmd else "local.missing_mods_subscribe_btn"),
+                            "subscribe"))
         choices.append((t("local.missing_mods_start_anyway_btn"), "start"))
         message_key = "local.missing_mods_confirm" if missing.workshop_ids else "local.missing_mods_local_only"
         choice = dialogs.ask_choice(
@@ -1912,7 +1914,13 @@ class LocalServicePage(Page):
             t(message_key, count=len(names), mods="\n".join(shown)), choices,
             default="subscribe" if missing.workshop_ids else "cancel", danger_values=("start",))
         if choice == "subscribe":
-            self._subscribe_missing_mods(list(missing.workshop_ids))
+            if steamcmd:
+                # SteamCMD 没有订阅，直接下载到它的工坊目录；完成后由用户重新点启动
+                from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+                run_steamcmd_mod_update(self.window(), list(missing.workshop_ids),
+                                        on_finished=self.ctx.workshop_mods_changed.emit)
+            else:
+                self._subscribe_missing_mods(list(missing.workshop_ids))
             return False
         return choice == "start"
 
