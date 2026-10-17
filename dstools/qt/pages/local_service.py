@@ -8,6 +8,7 @@ import ctypes
 import html
 import ipaddress
 import re
+import shutil
 import socket
 import threading
 import time
@@ -76,6 +77,8 @@ _POLL_MS = 150
 # SteamCMD 通道启动前的 Mod 更新检查：后台定期查，启动时只读缓存，结果超过有效期就不拿来拦启动
 _STEAMCMD_MOD_CHECK_INTERVAL_MS = 15 * 60 * 1000
 _STEAMCMD_MOD_CHECK_TTL = 30 * 60
+# 实测专服安装后约 4.5 GB，下载期间还要暂存，低于这个剩余空间不开始安装
+_DEDICATED_SERVER_MIN_FREE = 6 * 1024 ** 3
 _STEAM_REMOTE_BUILD_TTL = 300.0
 _PUBLIC_CONNECT_TIMEOUT_S = 18.0
 _NAT_CONNECT_TIMEOUT_S = 28.0
@@ -187,6 +190,8 @@ def _show_not_found_warning(parent, wanted_kind: RuntimeKind | None = None) -> N
     """wanted_kind 为 None 表示自动模式（两种都没找到）。"""
     body = {None: "local.install_body", RuntimeKind.CLIENT: "local.install_client_body",
             RuntimeKind.DEDICATED: "local.install_dedicated_body"}[wanted_kind]
+    if wanted_kind is not RuntimeKind.CLIENT and get_backend() is SteamBackend.STEAMCMD:
+        body = "local.install_dedicated_body_steamcmd"  # SteamCMD 通道直接在本页安装，不用去 Steam 客户端
     dialogs.show_warning(parent, t("local.install_title"), t(body), min_width=720)
 
 
@@ -1168,6 +1173,10 @@ class LocalServicePage(Page):
                 and not steamcmd_updater.is_steam_library_install(runtime.install_dir))
 
     def _runtime_snapshot(self):
+        if self._runtime is None and get_backend() is SteamBackend.STEAMCMD:
+            # SteamCMD 通道还没有专服：按未安装处理，不去看 Steam 库
+            return steam_client_updater.SteamAppSnapshot(
+                steam_client_updater.DEDICATED_SERVER_APP_ID, None, None, None, None, None, None, None)
         if self._is_steamcmd_install():
             return steamcmd_updater.snapshot_install(self._runtime.install_dir)
         return steam_client_updater.snapshot_app(self._runtime_app_id())
@@ -1183,7 +1192,7 @@ class LocalServicePage(Page):
         remote_build_id = self._remote_build_for_runtime()
         mode = steam_client_updater.action_for_snapshot(snapshot, remote_build_id=remote_build_id)
         if get_backend() is SteamBackend.STEAMCMD:
-            labels = {"install": "local.steamcmd_update_btn", "update": "local.steamcmd_update_btn",
+            labels = {"install": "local.steamcmd_install_btn", "update": "local.steamcmd_update_btn",
                       "validate": "local.steamcmd_validate_btn"}
         else:
             labels = {"install": "local.steam_install_btn", "update": "local.steam_update_btn",
@@ -1289,12 +1298,54 @@ class LocalServicePage(Page):
         run_async(work, done, error)
 
     def _start_steamcmd_update(self) -> None:
+        if self._runtime is None:
+            self._start_steamcmd_install()
+            return
+        self._run_steamcmd_app_update(self._runtime.install_dir, t("local.steamcmd_update_title"))
+
+    def _start_steamcmd_install(self) -> None:
+        """SteamCMD 通道还没有开服程序：选目录后全新安装独立专服，装好即设为当前开服程序。"""
+        title = t("local.steamcmd_install_title")
+        picked = QFileDialog.getExistingDirectory(self.window(), t("local.steamcmd_install_pick"))
+        if not picked:
+            return
+        target = Path(picked)
+        if is_valid_install_dir(target):
+            # 选到的目录里已经有专服（比如之前装过）：直接使用，不重复下载
+            if dialogs.ask_yes_no(self.window(), title, t("local.steamcmd_install_existing", path=str(target))):
+                self._adopt_dedicated_dir(target)
+            return
+        if steamcmd_updater.is_steam_library_install(target):
+            dialogs.show_warning(self.window(), title, t("local.steamcmd_install_library_dir"))
+            return
+        try:
+            free = shutil.disk_usage(target).free
+            not_empty = any(target.iterdir())
+        except OSError as exc:
+            dialogs.show_warning(self.window(), title, t("local.steamcmd_failed", detail=str(exc)))
+            return
+        if free < _DEDICATED_SERVER_MIN_FREE:
+            dialogs.show_warning(self.window(), title,
+                                 t("local.steamcmd_install_low_space", free=f"{free / 1024 ** 3:.1f}"))
+            return
+        key = "local.steamcmd_install_confirm_not_empty" if not_empty else "local.steamcmd_install_confirm"
+        if not dialogs.ask_yes_no(self.window(), title, t(key, path=str(target))):
+            return
+        self._run_steamcmd_app_update(target, title, on_success=lambda _snapshot: self._adopt_dedicated_dir(target))
+
+    def _adopt_dedicated_dir(self, path: Path) -> None:
+        remember_install_dir(RuntimeKind.DEDICATED, path)
+        if self._wanted_runtime_kind() is RuntimeKind.CLIENT:
+            # 用户刚明确选择安装独立专服，开服程序跟着改过来
+            set_runtime_mode(RuntimeMode.DEDICATED)
+        self._on_runtime_changed()
+
+    def _run_steamcmd_app_update(self, install_dir: Path, title: str, on_success=None) -> None:
         steamcmd = steamcmd_updater.find_steamcmd()
         account = get_steamcmd_account()
-        install_dir = self._runtime.install_dir
         remote_build_id = self._remote_build_for_runtime()
         before = steamcmd_updater.snapshot_install(install_dir)
-        dialog = dialogs.LogDialog(self.window(), t("local.steamcmd_update_title"), closable=True)
+        dialog = dialogs.LogDialog(self.window(), title, closable=True)
         self._steam_update_dialog = dialog
         if remote_build_id:
             dialog.append(t("local.steam_remote_build", remote=remote_build_id, local=before.build_id or "-"))
@@ -1313,6 +1364,8 @@ class LocalServicePage(Page):
 
         def done(snapshot) -> None:
             dialog.append(t("local.steamcmd_done", build=snapshot.build_id or "-"))
+            if on_success is not None:
+                on_success(snapshot)
             self._finish_steam_update(dialog)
 
         def error(exc: Exception) -> None:

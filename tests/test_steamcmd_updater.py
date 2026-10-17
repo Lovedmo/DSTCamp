@@ -130,7 +130,7 @@ def test_backend_update_blocker() -> None:
         assert update_blocker(SteamBackend.STEAMCMD, custom) is None
         assert update_blocker(SteamBackend.STEAMCMD, library) == "local.backend_steamcmd_library_dir"
         assert update_blocker(SteamBackend.STEAMCMD, client) == "local.backend_steamcmd_client_runtime"
-        assert update_blocker(SteamBackend.STEAMCMD, None) == "local.backend_steamcmd_no_runtime"
+        assert update_blocker(SteamBackend.STEAMCMD, None) is None  # 没有开服程序时可全新安装
 
 
 def test_bundled_steamcmd_released_once() -> None:

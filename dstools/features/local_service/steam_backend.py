@@ -47,7 +47,7 @@ def update_blocker(backend: SteamBackend, runtime: ServerRuntime | None) -> str 
         if steamcmd_updater.find_steamcmd() is None:
             return steamcmd_unavailable_reason()
         if runtime is None:
-            return "local.backend_steamcmd_no_runtime"
+            return None  # 没有开服程序时可以用 SteamCMD 全新安装独立专服
         if runtime.is_client:
             # 游戏本体只能由拥有游戏的账号更新，匿名 SteamCMD 不行
             return "local.backend_steamcmd_client_runtime"
