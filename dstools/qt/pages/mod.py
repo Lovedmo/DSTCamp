@@ -1290,9 +1290,18 @@ class ModPage(Page):
 
         run_async(work, done, lambda _exc: setattr(self, "_workshop_status_refreshing", False))
 
+    def _current_save_enabled_workshop_ids(self) -> list[str]:
+        """当前存档各世界已启用的工坊 Mod，加上本页尚未保存的勾选（刚勾上就点更新也算）。"""
+        from dstools.features.mod.sync import get_enabled_mod_ids
+        cluster = self.get_cluster()
+        ids = set(get_enabled_mod_ids(cluster)) if cluster else set()
+        ids |= {str(wid).removeprefix("workshop-") for wid, mod in self._mod_data.items() if mod.enabled}
+        return sorted((wid for wid in ids if wid.isdigit() and int(wid) > 0), key=int)
+
     def _refresh_steamcmd_mod_status(self, gen: int, local_ids: list[int]) -> None:
-        """SteamCMD 通道：对照 SteamCMD 工坊目录与 Web API，统计列表里和当前存档启用的 Mod 中需要下载的数量。"""
-        ids = [str(wid) for wid in local_ids] + sorted(self._current_cluster_workshop_ids())
+        """SteamCMD 通道：对照 SteamCMD 工坊目录与 Web API，统计当前存档启用的 Mod 中需要下载的数量
+        （与「更新本存档 Mod」范围一致；local_ids 是 Steam 客户端通道用的，这里不用）。"""
+        ids = self._current_save_enabled_workshop_ids()
         if not ids:
             self._steamcmd_pending_count = None
             return
@@ -1347,7 +1356,9 @@ class ModPage(Page):
         return self.ctx.platform == Platform.STEAM and get_backend() is SteamBackend.STEAMCMD
 
     def _refresh_steamcmd_cleanup_btn(self) -> None:
-        self._steamcmd_cleanup_btn.setVisible(self._uses_steamcmd())
+        steamcmd = self._uses_steamcmd()
+        self._steamcmd_cleanup_btn.setVisible(steamcmd)
+        self._workshop_update_btn.setText(t("mod.steamcmd_update_btn" if steamcmd else "mod.workshop_update_btn"))
 
     def _open_steamcmd_cleanup_dialog(self) -> None:
         from dstools.qt.steamcmd_mod_cleanup_dialog import SteamcmdModCleanupDialog
@@ -1356,9 +1367,12 @@ class ModPage(Page):
 
     def _open_workshop_update_dialog(self) -> None:
         if self._uses_steamcmd():
-            # SteamCMD 通道没有 Steam 客户端可用：检查列表里和当前存档启用的工坊 Mod，下载缺失与有更新的
+            # SteamCMD 通道只管当前存档启用的 Mod：其它存档的由启动前检查负责，不用的由「清理未用 Mod」处理
             from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
-            ids = [str(wid) for wid in self._workshop_mod_ids()] + sorted(self._current_cluster_workshop_ids())
+            ids = self._current_save_enabled_workshop_ids()
+            if not ids:
+                dialogs.show_info(self.window(), t("steamcmd_mods.title"), t("mod.steamcmd_update_no_mods"))
+                return
             run_steamcmd_mod_update(self.window(), ids, on_finished=self.ctx.workshop_mods_changed.emit)
             return
         from dstools.qt.mod_workshop_update_dialog import WorkshopUpdateDialog
