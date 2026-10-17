@@ -39,6 +39,7 @@ from dstools.features.local_service.server_runtime import (
     resolve_runtime, set_runtime_mode,
 )
 from dstools.features.local_service.log_bundle import create_log_bundle
+from dstools.features.local_service.steam_backend import SteamBackend, get_backend, set_backend, update_blocker
 from dstools.features.local_service.shard_helpers import RUNNING_LIKE, STATUS_TEXT_KEYS, ordered_shards, max_rollback_days
 from dstools.features.local_service.auto_restart import TOKEN_HOLD_DURATION, TOKEN_WAIT_LIMIT
 from dstools.features.local_service.token_scheduler import TokenSelection, TokenUse, select_token_for_cluster
@@ -384,6 +385,66 @@ class _RuntimeModeDialog(dialogs.Dialog):
         self.accept()
 
 
+class _SteamBackendDialog(dialogs.Dialog):
+    """"切换方式"窗口：Steam 客户端 / SteamCMD 单选，选 SteamCMD 时在这里指定 steamcmd.exe，点"保存"才生效。"""
+
+    def __init__(self, parent, current: SteamBackend, steamcmd: Path | None):
+        super().__init__(parent, t("local.backend_title"), "md", confirm_text=t("local.runtime_mode_save_btn"))
+        self.result_backend = current
+        self.result_steamcmd = steamcmd
+        group = QButtonGroup(self)
+        self._radios: dict[SteamBackend, QRadioButton] = {}
+        for backend, name_key, desc_key in (
+                (SteamBackend.CLIENT, "local.backend_client", "local.backend_desc_client"),
+                (SteamBackend.STEAMCMD, "local.backend_steamcmd", "local.backend_desc_steamcmd")):
+            radio = QRadioButton(t(name_key))
+            radio.setFont(theme.font("FONT_SIZE_BASE", bold=True))
+            group.addButton(radio)
+            self._radios[backend] = radio
+            self.body.addWidget(radio)
+            desc = self.text_label(t(desc_key), muted=True)
+            desc.setContentsMargins(24, 0, 0, 0)
+            self.body.addWidget(desc)
+
+        path_row = QHBoxLayout()
+        path_row.setContentsMargins(24, 0, 0, 0)
+        self._path_edit = QLineEdit(str(steamcmd) if steamcmd else "")
+        self._path_edit.setPlaceholderText(t("local.backend_steamcmd_placeholder"))
+        self._browse_btn = QPushButton(t("local.backend_browse_btn"))
+        self._browse_btn.clicked.connect(self._browse)
+        path_row.addWidget(self._path_edit, 1)
+        path_row.addWidget(self._browse_btn)
+        self.body.addLayout(path_row)
+        self.body.addWidget(self.text_label(t("local.backend_note"), muted=True))
+
+        self._radios[SteamBackend.STEAMCMD].toggled.connect(self._sync_path_enabled)
+        self._radios[current].setChecked(True)
+        self._sync_path_enabled()
+        self.add_buttons()
+
+    def _sync_path_enabled(self) -> None:
+        enabled = self._radios[SteamBackend.STEAMCMD].isChecked()
+        self._path_edit.setEnabled(enabled)
+        self._browse_btn.setEnabled(enabled)
+
+    def _browse(self) -> None:
+        picked, _ = QFileDialog.getOpenFileName(
+            self, t("local.steamcmd_pick_title"), self._path_edit.text(), "steamcmd.exe (steamcmd.exe)")
+        if picked:
+            self._path_edit.setText(str(Path(picked)))
+
+    def accept_if_valid(self) -> None:
+        backend = next(b for b, radio in self._radios.items() if radio.isChecked())
+        if backend is SteamBackend.STEAMCMD:
+            path = Path(self._path_edit.text().strip().strip('"'))
+            if not steamcmd_updater.is_steamcmd_exe(path):
+                dialogs.show_warning(self, t("local.backend_title"), t("local.steamcmd_invalid"))
+                return
+            self.result_steamcmd = path
+        self.result_backend = backend
+        self.accept()
+
+
 class _ConnectRow(QWidget):
     """一行直连代码：标题 + 值（点击复制）+ 状态。"""
 
@@ -494,6 +555,8 @@ class LocalServicePage(Page):
 
         self._mode_row, self._mode_label, self._mode_btn = self._build_mode_row()
         root.addWidget(self._mode_row)
+        self._backend_row, self._backend_label, self._backend_btn = self._build_backend_row()
+        root.addWidget(self._backend_row)
         (self._install_row, self._install_path_label, self._steam_update_hint,
          self._install_change_btn, self._steam_update_btn) = self._build_install_row()
         root.addWidget(self._install_row)
@@ -537,6 +600,21 @@ class LocalServicePage(Page):
         mode_btn.clicked.connect(self._choose_runtime_mode)
         layout.addWidget(mode_btn)
         return row, mode_label, mode_btn
+
+    def _build_backend_row(self):
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        backend_label = QLabel()
+        backend_label.setProperty("muted", True)
+        layout.addWidget(QLabel(t("local.backend_label")))
+        layout.addWidget(backend_label)
+        layout.addStretch(1)
+        backend_btn = QPushButton(t("local.backend_btn"))
+        backend_btn.setFont(theme.font("FONT_SIZE_SM"))
+        backend_btn.clicked.connect(self._choose_backend)
+        layout.addWidget(backend_btn)
+        return row, backend_label, backend_btn
 
     def _build_install_row(self):
         row = QWidget()
@@ -798,6 +876,7 @@ class LocalServicePage(Page):
         self._runtime = resolution.runtime
         self._install_dir = self._runtime.install_dir if self._runtime else None
         self._mode_label.setText(self._runtime_mode_text(resolution))
+        self._refresh_backend_label()
         self._install_path_label.setText(str(self._install_dir) if self._install_dir else t("local.install_not_found"))
         self._refresh_steam_update_button()
         self._refresh_steam_remote_build_async()
@@ -824,6 +903,13 @@ class LocalServicePage(Page):
             switch_reason = ""
         for button in (self._mode_btn, self._install_change_btn):
             _set_button_state(button, not switch_reason, switch_reason)
+        if is_wegame:
+            backend_reason = wegame_reason
+        elif self._steam_update_running:
+            backend_reason = t("local.backend_update_running")
+        else:
+            backend_reason = ""
+        _set_button_state(self._backend_btn, not backend_reason, backend_reason)
         # 运行中开服程序文件被占用，Steam 校验/更新可能失败；但更新进行中按钮是"查看更新日志"，保持可点。
         if self._steam_update_running:
             update_reason = ""
@@ -832,7 +918,8 @@ class LocalServicePage(Page):
         elif self.manager.running():
             update_reason = t("local.steam_update_running_hint")
         else:
-            update_reason = ""
+            blocker = update_blocker(get_backend(), self._runtime)
+            update_reason = t(blocker) if blocker else ""
         _set_button_state(self._steam_update_btn, not update_reason, update_reason)
 
     def _wanted_runtime_kind(self) -> RuntimeKind | None:
@@ -849,7 +936,23 @@ class LocalServicePage(Page):
     def _on_runtime_changed(self) -> None:
         self._detect_install_dir()
         self._update_luajit_row(self.get_cluster())
+        self._update_runtime_btns_state(self.get_cluster())
         self.ctx.server_runtime_changed.emit()
+
+    def _choose_backend(self) -> None:
+        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.find_steamcmd())
+        if not dialog.exec():
+            return
+        if dialog.result_backend is SteamBackend.STEAMCMD:
+            set_steamcmd_path(dialog.result_steamcmd)
+        set_backend(dialog.result_backend)
+        self._refresh_backend_label()
+        self._refresh_steam_update_button()
+        self._update_runtime_btns_state(self.get_cluster())
+
+    def _refresh_backend_label(self) -> None:
+        self._backend_label.setText(t("local.backend_steamcmd" if get_backend() is SteamBackend.STEAMCMD
+                                      else "local.backend_client"))
 
     def _choose_runtime_mode(self) -> None:
         if self._runtime_switch_blocked():
@@ -901,14 +1004,14 @@ class LocalServicePage(Page):
             return steam_client_updater.CLIENT_APP_ID
         return steam_client_updater.DEDICATED_SERVER_APP_ID
 
-    def _uses_steamcmd(self) -> bool:
-        """独立专服不在 Steam 库里时由 SteamCMD 管理（安装、更新都不经过 Steam 客户端）。"""
+    def _is_steamcmd_install(self) -> bool:
+        """独立专服不在 Steam 库里时是 SteamCMD 安装，版本要读它自己目录下的清单。"""
         runtime = self._runtime
         return (runtime is not None and not runtime.is_client
                 and not steamcmd_updater.is_steam_library_install(runtime.install_dir))
 
     def _runtime_snapshot(self):
-        if self._uses_steamcmd():
+        if self._is_steamcmd_install():
             return steamcmd_updater.snapshot_install(self._runtime.install_dir)
         return steam_client_updater.snapshot_app(self._runtime_app_id())
 
@@ -922,7 +1025,7 @@ class LocalServicePage(Page):
         snapshot = self._runtime_snapshot()
         remote_build_id = self._remote_build_for_runtime()
         mode = steam_client_updater.action_for_snapshot(snapshot, remote_build_id=remote_build_id)
-        if self._uses_steamcmd():
+        if get_backend() is SteamBackend.STEAMCMD:
             labels = {"install": "local.steamcmd_update_btn", "update": "local.steamcmd_update_btn",
                       "validate": "local.steamcmd_validate_btn"}
         else:
@@ -967,7 +1070,11 @@ class LocalServicePage(Page):
             self._steam_update_dialog.raise_()
             self._steam_update_dialog.activateWindow()
             return
-        if self._uses_steamcmd():
+        blocker = update_blocker(get_backend(), self._runtime)
+        if blocker:
+            dialogs.show_warning(self.window(), title, t(blocker))
+            return
+        if get_backend() is SteamBackend.STEAMCMD:
             self._start_steamcmd_update()
             return
         if steam_client_updater.find_steam_executable() is None:
@@ -994,6 +1101,7 @@ class LocalServicePage(Page):
         dialog.show()
         self._steam_update_running = True
         self._steam_update_btn.setText(t("local.steam_view_log_btn"))
+        self._update_runtime_btns_state(self.get_cluster())
         cancel_event = self._steam_monitor_cancel
 
         last_state = [None]
@@ -1023,26 +1131,8 @@ class LocalServicePage(Page):
 
         run_async(work, done, error)
 
-    def _pick_steamcmd(self) -> Path | None:
-        """用之前选过的 steamcmd.exe，没有或已失效时让用户选一次并记住。"""
-        steamcmd = steamcmd_updater.find_steamcmd()
-        if steamcmd is not None:
-            return steamcmd
-        picked, _ = QFileDialog.getOpenFileName(
-            self.window(), t("local.steamcmd_pick_title"), "", "steamcmd.exe (steamcmd.exe)")
-        if not picked:
-            return None
-        path = Path(picked)
-        if not steamcmd_updater.is_steamcmd_exe(path):
-            dialogs.show_warning(self.window(), t("local.steamcmd_update_title"), t("local.steamcmd_invalid"))
-            return None
-        set_steamcmd_path(path)
-        return path
-
     def _start_steamcmd_update(self) -> None:
-        steamcmd = self._pick_steamcmd()
-        if steamcmd is None:
-            return
+        steamcmd = steamcmd_updater.find_steamcmd()
         install_dir = self._runtime.install_dir
         remote_build_id = self._remote_build_for_runtime()
         before = steamcmd_updater.snapshot_install(install_dir)
@@ -1054,6 +1144,7 @@ class LocalServicePage(Page):
         dialog.show()
         self._steam_update_running = True
         self._steam_update_btn.setText(t("local.steam_view_log_btn"))
+        self._update_runtime_btns_state(self.get_cluster())
         cancel_event = self._steam_monitor_cancel
 
         def work(emit):

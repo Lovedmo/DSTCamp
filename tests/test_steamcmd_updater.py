@@ -71,5 +71,29 @@ def test_run_update_retries_once() -> None:
                 raise AssertionError("两次都失败时应抛 RuntimeError")
 
 
+def test_backend_update_blocker() -> None:
+    from dstools.features.local_service.server_runtime import RuntimeKind, ServerRuntime
+    from dstools.features.local_service.steam_backend import SteamBackend, update_blocker
+
+    library = ServerRuntime(RuntimeKind.DEDICATED,
+                            Path("D:/Steam/steamapps/common/Don't Starve Together Dedicated Server"))
+    custom = ServerRuntime(RuntimeKind.DEDICATED, Path("C:/dstserver"))
+    client = ServerRuntime(RuntimeKind.CLIENT, Path("D:/Steam/steamapps/common/Don't Starve Together"))
+
+    # Steam 客户端方式：管不了 SteamCMD 装的目录，其余照旧
+    assert update_blocker(SteamBackend.CLIENT, library) is None
+    assert update_blocker(SteamBackend.CLIENT, client) is None
+    assert update_blocker(SteamBackend.CLIENT, custom) == "local.backend_client_steamcmd_dir"
+
+    # SteamCMD 方式：只更新 SteamCMD 装的独立专服
+    with patch.object(steamcmd_updater, "find_steamcmd", return_value=None):
+        assert update_blocker(SteamBackend.STEAMCMD, custom) == "local.backend_steamcmd_missing"
+    with patch.object(steamcmd_updater, "find_steamcmd", return_value=Path("C:/steamcmd/steamcmd.exe")):
+        assert update_blocker(SteamBackend.STEAMCMD, custom) is None
+        assert update_blocker(SteamBackend.STEAMCMD, library) == "local.backend_steamcmd_library_dir"
+        assert update_blocker(SteamBackend.STEAMCMD, client) == "local.backend_steamcmd_client_runtime"
+        assert update_blocker(SteamBackend.STEAMCMD, None) == "local.backend_steamcmd_no_runtime"
+
+
 if __name__ == "__main__":
     run(globals())

@@ -11,6 +11,7 @@ _KEY_SERVER_RUNTIME_MODE = "server_runtime_mode"
 _KEY_WEGAME_ROOT_PATH = "wegame_root_path"
 _KEY_STEAM_MODS_PATH = "steam_mods_path"
 _KEY_STEAMCMD_PATH = "steamcmd_path"
+_KEY_STEAM_BACKEND = "steam_backend"
 _KEY_THEME_NAME = "theme_name"
 _DEFAULT_THEME_NAME = "gray"
 _KEY_FONT_STYLE_CHOICE = "font_style_choice"
@@ -186,6 +187,17 @@ def set_steamcmd_path(path: Path | None) -> None:
         data[_KEY_STEAMCMD_PATH] = str(path)
     else:
         data.pop(_KEY_STEAMCMD_PATH, None)
+    save_settings(data)
+
+
+def get_steam_backend() -> str | None:
+    """Steam 内容的更新方式（见 features/local_service/steam_backend.py），未设置返回 None。"""
+    return load_settings().get(_KEY_STEAM_BACKEND)
+
+
+def set_steam_backend(value: str) -> None:
+    data = load_settings()
+    data[_KEY_STEAM_BACKEND] = value
     save_settings(data)
 
 
