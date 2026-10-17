@@ -330,6 +330,17 @@ def find_game_mods_dir() -> Path | None:
     return None
 
 
+def _default_steam_mods_dir() -> Path | None:
+    """调用方没指定 mods 目录时的默认值：SteamCMD 通道用当前独立专服的 mods（一般没有游戏客户端），
+    否则用游戏客户端 mods 目录。"""
+    if _steamcmd_workshop_dir() is not None:
+        # 延迟导入：server_runtime 间接依赖本模块
+        from dstools.features.local_service.server_runtime import current_runtime
+        runtime = current_runtime()
+        return runtime.mods_dir if runtime is not None else None
+    return find_game_mods_dir()
+
+
 def is_dedicated_server_mods_dir(path: Path) -> bool:
     """路径是否就是独立专服的 ``mods``，用于阻止同步时源和目标指向同一目录。"""
     from dstools.shared import app_settings
@@ -425,7 +436,7 @@ def find_mod_folder(
                 return candidate
         # DSTCamp 主 Mod 管理页以专服实际消费目录为准；客户端 mods/ 仅
         # 作为未部署时的兼容回退。
-        game_mods = steam_runtime_mods_dir or find_game_mods_dir()
+        game_mods = steam_runtime_mods_dir or _default_steam_mods_dir()
 
     if game_mods:
         candidate = game_mods / canonical_id  # Workshop 纯数字输入也规范为带前缀
@@ -478,7 +489,7 @@ def list_installed_mod_ids(
                     seen.add(wid)
                     ids.append(wid)
 
-    game_mods = steam_runtime_mods_dir or find_game_mods_dir()
+    game_mods = steam_runtime_mods_dir or _default_steam_mods_dir()
     if game_mods and game_mods.exists():
         for child in sorted(game_mods.iterdir()):
             if child.is_dir() and (child / "modinfo.lua").exists():
