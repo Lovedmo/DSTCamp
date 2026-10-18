@@ -510,7 +510,6 @@ class _SteamBackendDialog(dialogs.Dialog):
         # 登录缓存存在每份 SteamCMD 自己的 config 里：保存时实际用的 SteamCMD 变了就要重新登录
         self._initial_steamcmd = steamcmd or steamcmd_updater.bundled_steamcmd_path()
         self._logged_in_with: Path | None = None
-        self._cached_asked_for = ""  # 已就多个缓存账号询问过的 SteamCMD，离开输入框时不重复弹窗
         group = QButtonGroup(self)
         self._radios: dict[SteamBackend, QRadioButton] = {}
         for backend, name_key, desc_key in (
@@ -561,17 +560,17 @@ class _SteamBackendDialog(dialogs.Dialog):
         path_row.addWidget(self._browse_btn)
         self.body.addWidget(self._path_box)
 
+        # 账号下拉框：这份 SteamCMD 保存着登录的账号 + 匿名，随时切换；新账号经「登录新账号…」加入
         account_row = QHBoxLayout()
         account_row.setContentsMargins(24, 0, 0, 0)
-        self._account_label = QLabel()
+        self._account_combo = QComboBox()
+        self._account_combo.activated.connect(
+            lambda _index: self._set_account(self._account_combo.currentData() or ""))
         self._login_btn = QPushButton(t("local.steamcmd_login_open_btn"))
         self._login_btn.clicked.connect(self._open_login)
-        self._anonymous_btn = QPushButton(t("local.steamcmd_use_anonymous_btn"))
-        self._anonymous_btn.clicked.connect(lambda: self._set_account(""))
         account_row.addWidget(QLabel(t("local.steamcmd_account_label")))
-        account_row.addWidget(self._account_label, 1)
+        account_row.addWidget(self._account_combo, 1)
         account_row.addWidget(self._login_btn)
-        account_row.addWidget(self._anonymous_btn)
         self.body.addLayout(account_row)
         self.body.addWidget(self.text_label(t("local.backend_note"), muted=True))
 
@@ -583,9 +582,8 @@ class _SteamBackendDialog(dialogs.Dialog):
     def _sync_path_enabled(self) -> None:
         enabled = self._radios[SteamBackend.STEAMCMD].isChecked()
         custom = self._custom_check.isChecked()
-        for widget in (self._bundled_label, self._custom_check, self._path_box, self._login_btn):
+        for widget in (self._bundled_label, self._custom_check, self._path_box, self._login_btn, self._account_combo):
             widget.setEnabled(enabled)
-        self._anonymous_btn.setEnabled(enabled and bool(self.result_account))
         # 勾选自选时才出现路径框，内置版本的位置说明随之隐藏
         self._path_box.setVisible(custom)
         self._bundled_label.setVisible(not custom)
@@ -593,14 +591,18 @@ class _SteamBackendDialog(dialogs.Dialog):
         QTimer.singleShot(0, self.adjustSize)
 
     def _set_account(self, account: str) -> None:
+        """选定账号并按当前 SteamCMD 的登录缓存重建下拉框：保存着登录的账号、选中但没保存登录的账号（标注需要登录）、匿名。"""
         self.result_account = account
-        if not account:
-            text = t("local.steamcmd_account_anonymous")
-        elif steamcmd_updater.login_cached(self._selected_steamcmd(), account):
-            text = t("local.steamcmd_account_user", user=account)
-        else:
-            text = t("local.steamcmd_account_user_uncached", user=account)
-        self._account_label.setText(text)
+        cached = steamcmd_updater.cached_login_accounts(self._selected_steamcmd())
+        self._account_combo.clear()
+        for name in cached:
+            self._account_combo.addItem(t("local.steamcmd_account_user", user=name), name)
+        if account and not any(name.casefold() == account.casefold() for name in cached):
+            self._account_combo.addItem(t("local.steamcmd_account_user_uncached", user=account), account)
+        self._account_combo.addItem(t("local.steamcmd_account_anonymous"), "")
+        index = next((i for i in range(self._account_combo.count())
+                      if (self._account_combo.itemData(i) or "").casefold() == account.casefold()), 0)
+        self._account_combo.setCurrentIndex(index)
         self._sync_path_enabled()
 
     def _selected_steamcmd(self) -> Path | None:
@@ -611,23 +613,14 @@ class _SteamBackendDialog(dialogs.Dialog):
         return path if steamcmd_updater.is_steamcmd_exe(path) else None
 
     def _adopt_cached_login(self) -> None:
-        """换了 SteamCMD：它保存着登录的账号直接拿来用（登录缓存在每份 SteamCMD 自己的 config 里），
-        当前账号就在其中时不动；有多个时让用户选。这份没有保存任何登录时保留当前账号，保存时再提示重新登录。"""
+        """换了 SteamCMD：当前账号在它那里没有保存登录、而它保存着别的账号时，默认选第一个（下拉框里可改），
+        登录缓存在每份 SteamCMD 自己的 config 里；它什么都没保存时保留当前账号，保存时再提示重新登录。"""
         steamcmd = self._selected_steamcmd()
         cached = steamcmd_updater.cached_login_accounts(steamcmd)
-        if not cached or steamcmd_updater.login_cached(steamcmd, self.result_account):
-            self._set_account(self.result_account)  # 刷新账号一行的登录状态
-            return
-        if len(cached) == 1:
+        if cached and not steamcmd_updater.login_cached(steamcmd, self.result_account):
             self._set_account(cached[0])
-            return
-        if str(steamcmd).casefold() == self._cached_asked_for:
-            return
-        self._cached_asked_for = str(steamcmd).casefold()
-        choice = dialogs.ask_choice(
-            self, t("local.backend_title"), t("local.steamcmd_cached_pick_msg"),
-            [(t("dlg.cancel_btn"), "cancel")] + [(name, name) for name in cached], default=cached[0])
-        self._set_account(choice if choice in cached else self.result_account)
+        else:
+            self._set_account(self.result_account)  # 按新的 SteamCMD 刷新下拉框
 
     def _open_bundled_location(self) -> None:
         """打开内置 SteamCMD 所在文件夹；还没释放过就先释放，打开时就能看到程序。"""
