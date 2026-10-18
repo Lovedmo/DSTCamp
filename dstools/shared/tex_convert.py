@@ -44,6 +44,16 @@ _VC2013_X86_DLLS = ("MSVCR120.dll", "MSVCP120.dll", "VCOMP120.dll")
 _runtime_probed = False
 _runtime_missing = False
 
+# 运行库文件都在却加载失败（被换成 64 位、截断损坏等）时，系统会先弹「应用程序无法正常启动(0xc000007b)」。
+# 启动 ktech 时临时开 SEM_FAILCRITICALERRORS，让它直接带错误码退出；不设成全局，以免开服程序缺 DLL 时
+# 用户看不到系统提示缺哪个文件。错误模式是进程级的，加锁防止并发转换互相恢复成默认模式。
+_SEM_FAILCRITICALERRORS = 0x0001
+_ERROR_MODE_LOCK = threading.Lock()
+# 加载器级失败：格式不对（0xc000007b）、找不到 DLL、DLL 损坏、DLL 初始化失败
+_LOADER_FAILURE_CODES = frozenset({0xC000007B, 0xC0000135, 0xC000012F, 0xC0000142})
+# 熔断：出现一次加载器级失败后本次运行不再调用 ktech，Mod 页改显示修复提示
+_runtime_broken = False
+
 
 def _has_vc2013_x86_runtime(runtime_dir: Path) -> bool:
     """三个 DLL 必须齐全；少任意一个，32 位 ktech.exe 都无法启动。"""
@@ -250,10 +260,45 @@ def launch_vcredist_installer() -> bool:
     return True
 
 
+def ktech_runtime_broken() -> bool:
+    """本次运行中 ktech 是否已因运行库加载失败而熔断。"""
+    return _runtime_broken
+
+
+def _run_ktech(exe: Path, args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    """启动 ktech 并等待结束；加载器级失败时置熔断标记。超时或启动失败抛 OSError/SubprocessError。"""
+    global _runtime_broken
+    popen_kwargs = dict(
+        cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=_CREATIONFLAGS,
+    )
+    if sys.platform == "win32":
+        # 子进程在创建时继承错误模式，创建完立即恢复
+        with _ERROR_MODE_LOCK:
+            old_mode = _kernel32.GetErrorMode()
+            _kernel32.SetErrorMode(old_mode | _SEM_FAILCRITICALERRORS)
+            try:
+                proc = subprocess.Popen([str(exe), *args], **popen_kwargs)
+            finally:
+                _kernel32.SetErrorMode(old_mode)
+    else:
+        proc = subprocess.Popen([str(exe), *args], **popen_kwargs)
+    try:
+        stdout, stderr = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise
+    if (proc.returncode & 0xFFFFFFFF) in _LOADER_FAILURE_CODES:
+        _runtime_broken = True
+        _logger.warning("ktech 无法启动（0x%08X），运行库损坏或版本不对，本次运行不再转换图标",
+                        proc.returncode & 0xFFFFFFFF)
+    return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
+
+
 def tex_to_png(tex_path: Path, out_path: Path) -> bool:
     """把单个 .tex 转成 PNG，成功返回 True；工具缺失或转换失败返回 False（视为没有图标），不抛异常。"""
     tex_path = Path(tex_path)
-    if not _KTECH_EXE.exists() or not tex_path.exists():
+    if _runtime_broken or not _KTECH_EXE.exists() or not tex_path.exists():
         return False
     runtime_dir = _prepare_ktools_runtime()
     if runtime_dir is None:
@@ -272,13 +317,7 @@ def tex_to_png(tex_path: Path, out_path: Path) -> bool:
         staged_out = job_dir / "input.png"
         try:
             shutil.copy2(tex_path, staged_input)
-            result = subprocess.run(
-                [str(runtime_dir / "ktech.exe"), staged_input.name],
-                cwd=str(job_dir),
-                capture_output=True,
-                timeout=30,
-                creationflags=_CREATIONFLAGS,
-            )
+            result = _run_ktech(runtime_dir / "ktech.exe", [staged_input.name], job_dir)
         except (OSError, subprocess.SubprocessError) as exc:
             _logger.warning("ktech 转换启动失败：%s", exc)
             return False

@@ -2709,6 +2709,34 @@ def test_ktech_runtime_detector():
         assert _has_vc2013_x86_runtime(runtime_dir) is False
 
 
+def test_ktech_broken_runtime_fails_without_dialog():
+    """DLL 损坏（真实反馈 0xc000007b）时不弹系统错误框，直接熔断、不再调用 ktech。"""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    import shutil
+
+    from dstools.shared import tex_convert
+
+    kernel32 = ctypes.windll.kernel32
+    # 从终端启动时会继承「不弹框」的错误模式，先清成双击启动时的默认值，验证是代码自己做到的
+    old_mode = kernel32.SetErrorMode(0)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime_dir = Path(tmp) / "ktools"
+            shutil.copytree(Path(__file__).resolve().parents[1] / "tools" / "ktools", runtime_dir)
+            dll = runtime_dir / "CORE_RL_zlib_.dll"
+            dll.write_bytes(dll.read_bytes()[:4096])
+            result = tex_convert._run_ktech(runtime_dir / "ktech.exe", ["input.tex"], runtime_dir)
+            assert (result.returncode & 0xFFFFFFFF) == 0xC000007B
+            assert tex_convert.ktech_runtime_broken() is True
+            assert tex_convert.tex_to_png(runtime_dir / "coder.xml", Path(tmp) / "out.png") is False
+            assert kernel32.GetErrorMode() == 0
+    finally:
+        kernel32.SetErrorMode(old_mode)
+        tex_convert._runtime_broken = False
+
+
 def test_ktech_ascii_runtime_conversion():
     """中文安装/输入路径下，ktech 仍须从纯 ASCII 缓存副本中运行。"""
     from types import SimpleNamespace
@@ -2730,11 +2758,10 @@ def test_ktech_ascii_runtime_conversion():
 
         calls = []
 
-        def fake_run(args, *, cwd, **_kwargs):
+        def fake_run(exe, args, cwd):
             calls.append((args, cwd))
-            assert len(args) == 2
-            assert args[1] == "input.tex"
-            assert Path(args[0]).parent.is_relative_to(
+            assert args == ["input.tex"]
+            assert Path(exe).parent.is_relative_to(
                 cache_root / "runtime" / "ktools"
             )
             assert Path(cwd).is_relative_to(cache_root / "runtime" / "ktech_jobs")
@@ -2749,7 +2776,7 @@ def test_ktech_ascii_runtime_conversion():
                 patch.object(tex_convert, "_TOOLS_DIR", source_dir),
                 patch.object(tex_convert, "_KTECH_EXE", source_dir / "ktech.exe"),
                 patch.object(tex_convert, "cache_root_dir", return_value=cache_root),
-                patch.object(tex_convert.subprocess, "run", side_effect=fake_run),
+                patch.object(tex_convert, "_run_ktech", side_effect=fake_run),
             ):
                 assert tex_convert.tex_to_png(tex_path, out_path) is True
         finally:
