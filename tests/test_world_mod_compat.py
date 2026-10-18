@@ -743,6 +743,51 @@ def test_vanilla_world_without_task_set_is_rejected() -> None:
     _expect_value_error(lambda: validate_creation_plan(plan), "缺 task_set 的原版世界不应写盘")
 
 
+def test_add_shard_to_existing_cluster() -> None:
+    """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、Mod 配置照抄主世界、旧存档不动。"""
+    from dstools.features.world.shard_addition import add_shard
+    from dstools.models import ClusterConfig
+    from dstools.shared.discovery import _build_cluster
+    from dstools.shared.ini_parser import parse_cluster_ini
+
+    with TemporaryDirectory() as directory:
+        single = WorldCreationPlan(
+            "single", _complete_plan(FOREST_LOCATION), None,
+            cluster_ini=ClusterConfig(network={"cluster_name": "single"}, shard={"shard_enabled": False}),
+            mod_overrides={"WorldGate": {"enabled": True, "configuration_options": {"gate_limit": 2}}},
+        )
+        output = create_world(single, Path(directory))
+        save_file = output / "Master" / "save" / "session.bin"
+        save_file.parent.mkdir()
+        save_file.write_bytes(b"old world")
+
+        first = add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2",
+                          _complete_plan(FOREST_LOCATION), used_ports={10998})
+        second = add_shard(_build_cluster(output, SaveSource.SERVER), "Caves",
+                           _complete_plan(CAVE_LOCATION))
+
+        cluster_ini = parse_cluster_ini(output / "cluster.ini")
+        assert cluster_ini.shard["shard_enabled"] is True
+        assert cluster_ini.shard["cluster_key"] and cluster_ini.shard["master_port"]
+        configs = {name: load_shard_config(output / name) for name in ("Master", "Forest2", "Caves")}
+        assert configs["Master"].shard["is_master"] is True
+        assert [configs[name].shard["id"] for name in ("Forest2", "Caves")] == [2, 3]
+        assert configs["Forest2"].network["server_port"] != 10998  # 避开外部占用
+        ports = [config.network.get("server_port", 10999) for config in configs.values()]
+        ports.append(cluster_ini.shard["master_port"])
+        assert len(set(ports)) == len(ports)
+        assert (first / "modoverrides.lua").read_bytes() == (output / "Master" / "modoverrides.lua").read_bytes()
+        assert parse_lua_file(second / "leveldataoverride.lua")["overrides"]["task_set"] == "cave_default"
+        assert save_file.read_bytes() == b"old world"
+
+        cluster = _build_cluster(output, SaveSource.SERVER)
+        _expect_value_error(lambda: add_shard(cluster, "caves", _complete_plan(CAVE_LOCATION)),
+                            "同名世界（不区分大小写）不应覆盖")
+        _expect_value_error(lambda: add_shard(cluster, "Forest3", default_plan_for_location(FOREST_LOCATION)),
+                            "缺 task_set 的原版世界不应写盘")
+        assert sorted(path.name for path in output.iterdir() if path.is_dir()) == ["Caves", "Forest2", "Master"]
+
+
 def test_multi_shard_mod_templates_require_enabled_mods() -> None:
     extras = {
         "Shipwrecked": _complete_plan(SHIPWRECKED_LOCATION),
