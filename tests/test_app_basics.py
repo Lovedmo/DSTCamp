@@ -163,7 +163,9 @@ def test_cached_row_list_reuses_rows_and_fills_in_batches():
     app = QApplication.instance() or QApplication([])
     host = QWidget()
     layout = QVBoxLayout(host)
-    rows = CachedRowList(layout, first_batch=3, batch=2)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    rows = CachedRowList(layout, row_height=10, first_batch=3, batch=2)
     data = {f"k{i}": "v" for i in range(7)}
     built, placed = [], {}
 
@@ -187,6 +189,8 @@ def test_cached_row_list_reuses_rows_and_fills_in_batches():
     keys = list(data)
     render(keys)
     assert shown() == keys[:3], "首批只同步建 3 行"
+    # 真机反馈：补齐期间容器没及时放大，已有的行被压扁；容器须一开始就撑到最终高度
+    assert host.minimumHeight() == 7 * (10 + 2) and host.height() >= 7 * (10 + 2)
     settle(keys)
     assert shown() == keys and len(built) == 7
 

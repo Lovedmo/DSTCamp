@@ -121,7 +121,7 @@ class SteamcmdModUpdateDialog(QDialog):
         self._rows_layout.setContentsMargins(0, 3, 0, 3)
         self._rows_layout.setSpacing(3)
         # 按 Mod 缓存行控件：搜索、筛选、全选不再整表重建
-        self._row_list = CachedRowList(self._rows_layout)
+        self._row_list = CachedRowList(self._rows_layout, row_height=_ROW_H)
         self._row_checkboxes: dict[str, QCheckBox] = {}
         area.setWidget(inner)
         list_layout.addWidget(area)

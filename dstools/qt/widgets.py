@@ -311,8 +311,9 @@ class CachedRowList:
     签名用 == 比较：任何会改变行内容的数据都要放进签名；勾选、底色等可原地改的状态交给 place。
     """
 
-    def __init__(self, layout: QVBoxLayout, *, first_batch: int = 12, batch: int = 30):
+    def __init__(self, layout: QVBoxLayout, *, row_height: int | None = None, first_batch: int = 12, batch: int = 30):
         self._layout = layout
+        self._row_height = row_height
         self._first_batch = first_batch
         self._batch = batch
         self._cache: dict[str, tuple[object, QWidget]] = {}
@@ -332,6 +333,13 @@ class CachedRowList:
                 widget.setParent(None)
                 widget.deleteLater()
         keys = list(keys)
+        if self._row_height is not None:
+            # 先把容器撑到最终高度：分批补齐时滚动区要过几轮事件才放大容器，期间布局会把行压扁
+            # （真机反馈：打开窗口时各行挤成一团，补齐后才恢复）；设最小高度会同步放大容器
+            margins = self._layout.contentsMargins()
+            self._layout.parentWidget().setMinimumHeight(
+                margins.top() + margins.bottom() + len(keys) * (self._row_height + self._layout.spacing())
+                if keys else 0)
         if not keys and empty is not None:
             self._layout.addWidget(empty())
         self._layout.addStretch()
