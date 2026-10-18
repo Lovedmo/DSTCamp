@@ -18,18 +18,17 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#165-changes">Changelog</a> ·
+  <a href="#170-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.6.5 highlights
+## ✨ 1.7.0 highlights
 
-- 🎨 **Refreshed themes and window ornaments**: a new Sky theme, and five color themes can show ornaments that match the theme.
-- 💾 **Edit server settings for local saves**: name, description, password, max players, and PVP can be changed directly.
-- 🪟 **Small-window friendly**: pages compact or scroll when the window gets short or narrow, and work well at 1280×720.
-- ⚡ **Faster Mod loading**: the Mod list and update checks are much faster, even with hundreds of Mods.
+- 🚀 **SteamCMD channel**: install and update the dedicated server and download Workshop Mods without the Steam client; SteamCMD is bundled.
+- 🌍 **Add worlds to existing saves**: add a world in one click, wired up with WorldGate automatically, no new save needed.
+- ⚡ **Faster "Update Mods" window**: opens in about 0.35 s, with near-instant search and filters.
 
 ## 🧭 Features
 
@@ -107,9 +106,31 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.6.5 changes
+## 1.7.0 changes
 
 ### ✨ New features
+
+- **SteamCMD channel**: the Local Server page's "Steam channel" switches between the Steam client and the bundled SteamCMD; SteamCMD can install and update the dedicated server and download, update, and clean up Workshop Mods, with Download by ID, a Mod update check before starting, and Steam account login (only the username is stored).
+- **Add worlds to existing saves**: "Add World" on the World Settings page (dedicated-server saves only) backs up the save first and wires in WorldGate automatically; WorldGate is added to the recommended Mods.
+- **Faster "Update Mods" window**: opens in about 0.35 s, search and filters are near-instant, and the first update-status check is faster.
+- **More accurate Mod icon runtime check**: when it is broken, the banner names the faulty file, and clicking it installs or repairs the runtime.
+- **UI details**: start buttons are disabled with a reason when no server program is found; the "Account" dropdown has a tooltip; long paths in dialogs wrap; the text outline over background images fades in only when needed.
+
+### 🐞 Fixes
+
+- Vanilla Forest/Caves worlds added in the create-save wizard failed to generate (`Must specify the task set for a level!`).
+- With group-pause Mods or pause-when-empty turned off, the master world stayed "not ready" after it had started.
+- A broken Mod icon runtime caused repeated system error dialogs (0xc000007b).
+- When creating a save, single-world saves were wrongly reported as having port conflicts, and invalid ports skipped the conflict check.
+- The "Update Mods" window showed "file missing" Mods that could not be selected.
+- Direct-connect code tooltips disappeared; old 16-character Sakura access keys could not be entered; the "all loaded" Mod count left out the LuaJIT companion Mod.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.6.5)</strong></summary>
+
+### 1.6.5
+
+#### ✨ New features
 
 - **Refreshed themes and window ornaments**: new Sky theme; Mint is renamed Nature, and Twilight is renamed Starry Night with a deeper main color; Sakura, Campfire, Nature, Sky, and Starry Night gain theme-matched window ornaments (blossoms, autumn leaves and a campfire, a nest in the grass, clouds and birds, a moonlit night sky), off by default and enabled from "Theme → Window Ornaments"; Theme menu items are now aligned.
 - **Text adapts to custom backgrounds**: when the background is dark, dark text across the window switches to light text while the image itself is unchanged; clicking the opacity slider jumps straight to that position.
@@ -118,7 +139,7 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - **Faster Mod list loading and update checks**: parsing results are cached on disk, and checking hundreds of Mods for updates takes about one network round trip; "Update All" in the update dialog becomes "Quick Update", updating only Mods that need it and showing the count.
 - **Sakura node picker**: nodes are grouped into Mainland China and Overseas/HK/Macau/Taiwan, showing live load, public-game support, and high-load markers.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - Auto-update always failed when a `DSTCamp.exe` already existed in the program folder, and a failed update silently fell back to the old version without explaining why (it now rolls back and shows the reason).
 - Auto-update downloaded a new version again even if it had already been downloaded but not restarted (it is now reused when its size and SHA-256 match).
@@ -127,9 +148,6 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - Empty read-only server settings were left blank; they now show "Not generated yet" or "Not set".
 - On the World Settings page, the window height stopped shrinking after the window was made narrower.
 - The repository is renamed DSTCamp, with GitHub/Gitee links and the update check updated accordingly.
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.6.4)</strong></summary>
 
 ### 1.6.4
 
