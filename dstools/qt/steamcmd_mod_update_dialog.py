@@ -57,7 +57,8 @@ class SteamcmdModUpdateDialog(QDialog):
         self._clusters = page.ctx.clusters()
         self._server_mods_root = page._server_mods_root()
         self._current_ids = set(page._current_save_enabled_workshop_ids())
-        self._rows: list[SteamcmdModRow] = []
+        # 先显示上次查完的结果（按钮可直接用），_reload 在后台复查后原地更新
+        self._rows: list[SteamcmdModRow] = list(page.steamcmd_update_rows_snapshot)
         self._selected: set[str] = set()
         self._loading = False
         self._busy = False
@@ -166,6 +167,7 @@ class SteamcmdModUpdateDialog(QDialog):
     def _on_checked(self, statuses) -> None:
         self._loading = False
         self._rows = with_statuses(self._rows, statuses)
+        self.page.steamcmd_update_rows_snapshot = list(self._rows)
         self._selected &= {row.workshop_id for row in self._rows if row.needs_download}  # 已更新好的取消勾选
         self._render_rows()
 

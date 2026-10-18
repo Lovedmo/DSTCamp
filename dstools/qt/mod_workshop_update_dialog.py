@@ -223,7 +223,9 @@ class WorkshopUpdateDialog(QDialog):
         root.addLayout(footer)
 
         self._render_rows()
-        self._reload(force=False)
+        # Mod 页刚查过（预查或上次打开本窗口）就直接用，不让用户每次都等；要最新结果可点「刷新状态」
+        if not page.workshop_status_fresh(self._ids):
+            self._reload(force=False)
 
     # ── 数据 ────────────────────────────────────────────────────────────
     def _name_for(self, wid: str) -> str:

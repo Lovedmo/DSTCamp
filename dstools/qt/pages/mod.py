@@ -55,6 +55,17 @@ from dstools.qt.widgets import Banner, Card, PillTabBar
 from dstools.shared import app_settings, tex_convert
 
 _FILTER_DEBOUNCE_MS = 150
+# 工坊更新状态的复用有效期（秒）；更新、清理等操作后会立即作废
+_WORKSHOP_STATUS_TTL = 300.0
+
+
+def _expand_workshop_candidate_ids(list_ids, cluster_ids) -> list[int]:
+    """在列表与存档引用的 Mod 之外补上 V1 包和残留目录（要扫磁盘，可在后台线程调用）。"""
+    from dstools.features.mod.legacy_v1 import find_legacy_packages, find_legacy_runtime_residual_dirs
+    from dstools.features.mod.parser import find_workshop_residual_dirs
+    ids = [*list_ids, *find_legacy_packages(), *cluster_ids, *find_workshop_residual_dirs(),
+           *find_legacy_runtime_residual_dirs()]
+    return list(dict.fromkeys(item for item in ids if item > 0))
 
 
 class ModPage(Page):
@@ -84,6 +95,8 @@ class ModPage(Page):
         self._workshop_status_checked_at = 0.0
         self._workshop_status_refreshing = False
         self._workshop_status_error = ""
+        # SteamCMD「更新 Mod」窗口上次查完的列表：再次打开先显示它，后台照常复查后原地更新
+        self.steamcmd_update_rows_snapshot: list = []
         self._steamcmd_pending_count: int | None = None  # SteamCMD 通道需要下载的 Mod 数；其它通道为 None
         self._workshop_log_dialog = None
 
@@ -1216,14 +1229,13 @@ class ModPage(Page):
     def _workshop_candidate_ids(self) -> list[int]:
         """合并本地目录、V1 包与存档配置中的项目（订阅项由 Steam 补入），覆盖"已安装但未启用""残留文件"
         "V1 包未展开"等不在当前列表中的情况。"""
-        from dstools.features.mod.legacy_v1 import find_legacy_packages, find_legacy_runtime_residual_dirs
-        from dstools.features.mod.parser import find_workshop_residual_dirs
-        ids = list(self._workshop_mod_ids())
-        ids.extend(find_legacy_packages())
-        ids.extend(int(raw_id) for raw_id in self._current_cluster_workshop_ids())
-        ids.extend(find_workshop_residual_dirs())
-        ids.extend(find_legacy_runtime_residual_dirs())
-        return list(dict.fromkeys(item for item in ids if item > 0))
+        return _expand_workshop_candidate_ids(
+            self._workshop_mod_ids(), [int(raw_id) for raw_id in self._current_cluster_workshop_ids()])
+
+    def workshop_status_fresh(self, ids) -> bool:
+        """更新状态在有效期内查过且覆盖这些 Mod 时直接复用：工具栏提示和「更新 Mod」弹窗共用，免得每次打开都等一遍。"""
+        return (time.monotonic() - self._workshop_status_checked_at < _WORKSHOP_STATUS_TTL
+                and {int(wid) for wid in ids} <= {int(wid) for wid in self._workshop_status_cache})
 
     def _current_cluster_workshop_ids(self) -> set[str]:
         """返回当前存档所有世界中出现过的 Workshop Mod key（数字 ID 字符串）。"""
@@ -1269,12 +1281,12 @@ class ModPage(Page):
         self._steamcmd_pending_count = None
         if not local_ids:
             return
-        cache_fresh = (time.monotonic() - self._workshop_status_checked_at < 300.0
-                      and set(local_ids).issubset({int(w) for w in self._workshop_status_cache}))
-        if cache_fresh:
+        if self.workshop_status_fresh(local_ids):
             self._update_workshop_update_hint()
             return
         self._workshop_status_refreshing = True
+        # 与「更新 Mod」弹窗查同一批候选，预查结果打开弹窗时可直接复用；目录扫描放到后台线程
+        cluster_ids = [int(raw_id) for raw_id in self._current_cluster_workshop_ids()]
 
         def work():
             from dstools.features.mod.legacy_v1 import (
@@ -1291,7 +1303,7 @@ class ModPage(Page):
                 if str(wid).removeprefix("workshop-").isdigit() and not is_legacy_read_cache_path(path)}
             try:
                 states = inspect_workshop_items(
-                    local_ids, discovered_paths=discovered_paths,
+                    _expand_workshop_candidate_ids(local_ids, cluster_ids), discovered_paths=discovered_paths,
                     legacy_active_root=self._server_mods_root(), query_source=True, include_subscribed=True,
                     residual_paths=find_workshop_residual_dirs(),
                     workshop_content_paths=find_workshop_content_dirs(),
