@@ -7,11 +7,23 @@ SteamCMD 通道没有 Steam 客户端可问，用它判断已下载的 Mod 是�
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
 from dstools.shared.ssl_context import default_ssl_context
+
+# 工坊 ID 是 64 位无符号整数（十进制最多 20 位）
+_ID_RE = r"([1-9]\d{0,19})"
+# 一段输入里认得出的写法：纯数字、workshop-ID（modoverrides 里的写法）、网页链接里的 id=ID、
+# Steam 客户端"复制网页 URL"得到的 steam://url/CommunityFilePage/ID
+_TOKEN_RES = (
+    re.compile(rf"(?:workshop-)?{_ID_RE}", re.IGNORECASE),
+    re.compile(rf".*[?&]id={_ID_RE}(?:[&#].*)?", re.IGNORECASE),
+    re.compile(rf".*/CommunityFilePage/{_ID_RE}/?", re.IGNORECASE),
+)
+_SEPARATOR_RE = re.compile(r"[\s,，;；、]+")
 
 _DETAILS_URL = "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 _BATCH = 100
@@ -24,6 +36,20 @@ class RemoteWorkshopItem:
     title: str = ""
     # 工坊标签含 client_only_mod（实测：作者在 modinfo 里声明 client_only_mod 时上传带此标签），专服不加载
     client_only: bool = False
+
+
+def parse_workshop_ids(text: str) -> tuple[list[str], list[str]]:
+    """从用户输入里取出工坊 ID（可一次贴多个，空白或逗号分隔），返回 (去重后的 ID, 认不出的片段)。"""
+    ids, invalid = [], []
+    for token in _SEPARATOR_RE.split(text or ""):
+        if not token:
+            continue
+        match = next((m for m in (pattern.fullmatch(token) for pattern in _TOKEN_RES) if m), None)
+        if match is None:
+            invalid.append(token)
+        elif match.group(1) not in ids:
+            ids.append(match.group(1))
+    return ids, invalid
 
 
 def fetch_remote_items(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) -> dict[str, RemoteWorkshopItem]:

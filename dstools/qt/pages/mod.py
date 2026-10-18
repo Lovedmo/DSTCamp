@@ -137,6 +137,9 @@ class ModPage(Page):
         self._recommend_btn = QPushButton(t("mod.recommend_btn"))
         self._recommend_btn.clicked.connect(self._open_recommend_mods)
         filter_row.addWidget(self._recommend_btn)
+        self._download_by_id_btn = QPushButton(t("mod.download_by_id_btn"))
+        self._download_by_id_btn.clicked.connect(self._open_download_by_id)
+        filter_row.addWidget(self._download_by_id_btn)
         filter_row.addStretch()
         # 列表列数切换（1/2/3 列），选择记在设置里，下次打开沿用。
         self._column_choices = app_settings.MOD_LIST_COLUMN_CHOICES
@@ -1048,6 +1051,22 @@ class ModPage(Page):
     def _open_recommend_mods(self) -> None:
         RecommendModsDialog(self).exec()
 
+    def _open_download_by_id(self) -> None:
+        from dstools.qt.workshop_download_dialog import WorkshopDownloadDialog, run_subscribe_and_download
+        if self._workshop_update_running:
+            dialogs.show_toast(self.window(), t("mod.download_by_id_busy"), ms=2400)
+            return
+        steamcmd = self._uses_steamcmd()
+        dialog = WorkshopDownloadDialog(self.window(), steamcmd=steamcmd)
+        if not dialog.exec():
+            return
+        if steamcmd:
+            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+            run_steamcmd_mod_update(self.window(), dialog.workshop_ids, on_finished=self.ctx.workshop_mods_changed.emit)
+        else:
+            run_subscribe_and_download(self.window(), dialog.workshop_ids,
+                                       on_finished=self.ctx.workshop_mods_changed.emit)
+
     # ── 保存 / 应用 ─────────────────────────────────────────────────────
     def _write_mod_states(self, overrides) -> None:
         for wid, mod in self._mod_data.items():
@@ -1372,6 +1391,8 @@ class ModPage(Page):
     def _refresh_steamcmd_cleanup_btn(self) -> None:
         steamcmd = self._uses_steamcmd()
         self._steamcmd_cleanup_btn.setVisible(steamcmd)
+        # WeGame 的 Mod 不来自 Steam 创意工坊
+        self._download_by_id_btn.setVisible(self.ctx.platform == Platform.STEAM)
         # 这两个按钮操作的是游戏客户端的 mods 目录，SteamCMD 通道一般没有客户端，专服直接读 SteamCMD 工坊目录
         self._location_change_btn.setVisible(not steamcmd)
         self._sync_btn.setVisible(not steamcmd)

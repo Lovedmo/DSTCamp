@@ -700,5 +700,12 @@ def test_modinfo_cache_invalidates_on_edit_and_skips_lossy_results():
                        for p in (Path(temp) / "cache").glob("*.json"))
 
 
+def test_parse_workshop_ids_from_links():
+    from dstools.features.mod.workshop_webapi import parse_workshop_ids
+    text = ("https://steamcommunity.com/workshop/filedetails/?l=schinese&id=375850593#comments，"
+            "steam://url/CommunityFilePage/378160973/\nworkshop-3444078585 3444078585、abc 0123")
+    assert parse_workshop_ids(text) == (["375850593", "378160973", "3444078585"], ["abc", "0123"])
+
+
 if __name__ == "__main__":
     run(globals())
