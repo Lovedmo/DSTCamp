@@ -243,7 +243,8 @@ class _ShardRow(QWidget):
         cluster = self.page.get_cluster()
         is_wegame = bool(cluster and cluster.platform == Platform.WEGAME)
         locked = (not running) and is_wegame
-        self.start_btn.setEnabled(not (running or locked or restarting))
+        block_reason = self.page._start_block_reason(cluster)
+        _set_button_state(self.start_btn, not (running or locked or restarting or block_reason), block_reason)
         self.stop_btn.setEnabled(running and not restarting)
         self.restart_btn.setEnabled(status == ServerStatus.RUNNING and not restarting)
 
@@ -3139,7 +3140,19 @@ class LocalServicePage(Page):
         all_running = bool(cluster.shards) and all(
             shard_running(s) or (str(cluster.path), s.name) in self._launching_keys for s in cluster.shards)
         restart_pending = any((str(cluster.path), shard.name) in self._restarting_keys for shard in cluster.shards)
-        self._start_all_btn.setEnabled(not (all_running or restart_pending))
+        block_reason = self._start_block_reason(cluster)
+        _set_button_state(self._start_all_btn, not (all_running or restart_pending or block_reason), block_reason)
+
+    def _start_block_reason(self, cluster) -> str:
+        """Steam 存档现在不能启动的原因（启动按钮置灰并放进悬停提示），可以启动返回空串。
+        WeGame 存档不用这里的开服程序，另有限制。"""
+        if cluster is None or cluster.platform != Platform.STEAM:
+            return ""
+        if self._runtime is None:
+            return t("local.start_no_runtime")
+        if self._steamcmd_update_running():
+            return t("local.steamcmd_update_blocks_start")
+        return ""
 
     def _update_stop_all_btn_state(self, cluster) -> None:
         if not cluster or cluster.source != SaveSource.SERVER:
