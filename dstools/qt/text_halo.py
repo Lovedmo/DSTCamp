@@ -2,7 +2,7 @@
 
 所有主题都是浅底深字，偏暗的图会吃掉深色文字。按整窗实际显示的平均背景明暗统一二选一（不按局部，免得同页深浅混杂）：
 - 背景偏暗：正文、次要文字这类低饱和深色字换成明度翻转的浅色字（主次层级不变），下面垫一层很淡的深色柔影；
-- 背景偏亮或是状态色文字：保持原色，外沿垫一圈很淡的底色描边，亮背景上和背景几乎同色、看不出来。
+- 背景偏亮或是状态色文字：保持原色，深色字快看不清时外沿才渐显一圈很淡的底色描边（字够清楚时不画，免得像发光）。
 标签、透明底按钮等用 QGraphicsEffect 实现（控件背景透明，源图只有字形，可整体换色或错开叠成描边）；
 自绘文字的控件（页签条）调用 draw_adaptive_text。只在背景图生效时给登记窗口里的控件装上，关掉时卸掉。
 """
@@ -21,6 +21,10 @@ _RADIUS = 1.0  # 描边宽度（逻辑像素），再宽中文笔画会糊在一
 _STEPS = 12  # 一圈错开的方向数，越多描边越圆
 _LAYERS = 2  # 柔化后光晕变淡，叠几层补足浓度
 _SHADOW_ALPHA = 110  # 浅色字下面深色柔影的浓度（0~255，再叠 _LAYERS 层）
+# 深色字外沿的底色描边按需渐显：正文对比度不低于 _HALO_FROM 时不画（字本身够清楚，描边在偏暗背景上
+# 反而像发光），降到 _HALO_FULL 时画满；再暗就整体换浅色字（_wants_light 的切换点在对比度 3 左右）
+_HALO_FROM = 4.5
+_HALO_FULL = 3.0
 
 
 def _luminance(color: QColor) -> float:
@@ -37,6 +41,12 @@ def _contrast(a: QColor, b: QColor) -> float:
 def _is_neutral_dark(color: QColor) -> bool:
     """主题正文、次要文字这类低饱和深色字；橙色"未就绪"、绿色成功等状态色不算，保留原色。"""
     return _luminance(color) < 0.3 and color.hslSaturationF() < 0.5
+
+
+def halo_strength(fg: QColor, backdrop: QColor) -> float:
+    """深色字底色描边的浓度（0~1）：按 fg 在整窗平均背景上的对比度，从 _HALO_FROM 到 _HALO_FULL 线性渐显。"""
+    ratio = _contrast(fg, backdrop)
+    return min(1.0, max(0.0, (_HALO_FROM - ratio) / (_HALO_FROM - _HALO_FULL)))
 
 
 def _light_variant(color: QColor) -> QColor:
@@ -75,11 +85,13 @@ def draw_adaptive_text(painter: QPainter, widget: QWidget, rect: QRectF, flags, 
         painter.drawText(rect, flags, text)
         return
     light = light_text_for(widget, fg)
-    halo = QColor(0, 0, 0, _SHADOW_ALPHA // 3) if light is not None else _alpha(theme.color("BG_SOFT"), 90)
-    painter.setPen(halo)
-    for i in range(8):
-        angle = math.pi * i / 4
-        painter.drawText(rect.translated(math.cos(angle), math.sin(angle)), flags, text)
+    halo = (QColor(0, 0, 0, _SHADOW_ALPHA // 3) if light is not None
+            else _alpha(theme.color("BG_SOFT"), round(90 * manager.halo_strength)))
+    if halo.alpha() > 0:
+        painter.setPen(halo)
+        for i in range(8):
+            angle = math.pi * i / 4
+            painter.drawText(rect.translated(math.cos(angle), math.sin(angle)), flags, text)
     painter.setPen(light if light is not None else fg)
     painter.drawText(rect, flags, text)
 
@@ -116,7 +128,10 @@ class TextHaloEffect(QGraphicsEffect):
             painter.drawPixmap(offset, self._make_halo(glyphs, QColor(0, 0, 0, _SHADOW_ALPHA)))
             painter.drawPixmap(offset, glyphs)
             return
-        painter.drawPixmap(offset, self._make_halo(source, theme.color("BG_SOFT")))
+        manager = _manager_ref() if _manager_ref else None
+        strength = manager.halo_strength if manager is not None else 1.0
+        if strength > 0:
+            painter.drawPixmap(offset, self._make_halo(source, _alpha(theme.color("BG_SOFT"), round(255 * strength))))
         painter.drawPixmap(offset, source)
 
     @staticmethod
@@ -171,6 +186,7 @@ class TextHaloManager(QObject):
         self.windows: weakref.WeakSet[QWidget] = weakref.WeakSet()
         self.enabled = False
         self.light_mode = False  # 整窗背景偏暗、深色字统一换浅色
+        self.halo_strength = 0.0  # 深色字底色描边的浓度，随整窗背景明暗渐显
         self._pending: list[weakref.ref] = []
         QApplication.instance().installEventFilter(self)
         theme.changed.connect(self.refresh)  # 底色变了，整窗深浅也要重判
@@ -185,6 +201,7 @@ class TextHaloManager(QObject):
         """背景图、不透明度或主题变化后调用：重新判断整窗深浅字；开关状态变了才遍历控件。"""
         enabled = self.background.active
         self.light_mode = enabled and self._wants_light()
+        self.halo_strength = halo_strength(theme.color("TEXT"), self.background.backdrop_color()) if enabled else 0.0
         if enabled == self.enabled:
             return
         self.enabled = enabled
