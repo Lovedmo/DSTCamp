@@ -364,10 +364,11 @@ def test_steamcmd_mod_cleanup() -> None:
         overrides.write_text('return { ["workshop-100"]={ enabled=true }, ["workshop-200"]={ enabled=false } }',
                              encoding="utf-8")
         shard = SimpleNamespace(mod_overrides_path=overrides)
-        clusters = [SimpleNamespace(source=SaveSource.SERVER, platform=Platform.STEAM, shards=[shard]),
+        clusters = [SimpleNamespace(name="C", source=SaveSource.SERVER, platform=Platform.STEAM, shards=[shard]),
                     # 本地存档、WeGame 存档不用 SteamCMD 的 Mod
-                    SimpleNamespace(source=SaveSource.LOCAL, platform=Platform.STEAM, shards=[shard])]
+                    SimpleNamespace(name="L", source=SaveSource.LOCAL, platform=Platform.STEAM, shards=[shard])]
         assert cleanup.used_workshop_ids(clusters) == {"100", "200"}
+        assert cleanup.workshop_ids_by_cluster(clusters) == {"100": ["C"], "200": ["C"]}  # 只算 Steam 服务器存档
 
         root = tmp / "workshop"
         for wid in ("100", "200", "300"):

@@ -1362,7 +1362,6 @@ class ModPage(Page):
         # 这两个按钮操作的是游戏客户端的 mods 目录，SteamCMD 通道一般没有客户端，专服直接读 SteamCMD 工坊目录
         self._location_change_btn.setVisible(not steamcmd)
         self._sync_btn.setVisible(not steamcmd)
-        self._workshop_update_btn.setText(t("mod.steamcmd_update_btn" if steamcmd else "mod.workshop_update_btn"))
 
     def _open_steamcmd_cleanup_dialog(self) -> None:
         from dstools.qt.steamcmd_mod_cleanup_dialog import SteamcmdModCleanupDialog
@@ -1371,13 +1370,11 @@ class ModPage(Page):
 
     def _open_workshop_update_dialog(self) -> None:
         if self._uses_steamcmd():
-            # SteamCMD 通道只管当前存档启用的 Mod：其它存档的由启动前检查负责，不用的由「清理未用 Mod」处理
-            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
-            ids = self._current_save_enabled_workshop_ids()
-            if not ids:
-                dialogs.show_info(self.window(), t("steamcmd_mods.title"), t("mod.steamcmd_update_no_mods"))
-                return
-            run_steamcmd_mod_update(self.window(), ids, on_finished=self.ctx.workshop_mods_changed.emit)
+            # SteamCMD 通道：全局更新已下载的和所有服务器存档用到的工坊 Mod（V1、V2 都按 Web API 判断）
+            from dstools.qt.steamcmd_mod_update_dialog import SteamcmdModUpdateDialog
+            SteamcmdModUpdateDialog(self.window(), self.ctx.clusters(), self._server_mods_root(),
+                                    self._current_save_enabled_workshop_ids(),
+                                    on_changed=self.ctx.workshop_mods_changed.emit).exec()
             return
         from dstools.qt.mod_workshop_update_dialog import WorkshopUpdateDialog
         WorkshopUpdateDialog(self).exec()

@@ -29,9 +29,9 @@ class SteamcmdModEntry:
     name: str = ""
 
 
-def used_workshop_ids(clusters) -> set[str]:
-    """所有 Steam 服务器存档各世界 modoverrides.lua 里列着的工坊 ID（纯数字）。"""
-    ids: set[str] = set()
+def workshop_ids_by_cluster(clusters) -> dict[str, list[str]]:
+    """{工坊 ID（纯数字）: 列着它的 Steam 服务器存档名}，按存档顺序；任一世界 modoverrides.lua 列着即算。"""
+    result: dict[str, list[str]] = {}
     for cluster in clusters:
         if cluster.source is not SaveSource.SERVER or cluster.platform is not Platform.STEAM:
             continue
@@ -40,9 +40,14 @@ def used_workshop_ids(clusters) -> set[str]:
                 continue
             for entry in load_mod_overrides(shard.mod_overrides_path).mods.values():
                 wid = str(entry.workshop_id).replace("workshop-", "")
-                if wid.isdigit():
-                    ids.add(wid)
-    return ids
+                if wid.isdigit() and cluster.name not in result.setdefault(wid, []):
+                    result[wid].append(cluster.name)
+    return result
+
+
+def used_workshop_ids(clusters) -> set[str]:
+    """所有 Steam 服务器存档各世界 modoverrides.lua 里列着的工坊 ID（纯数字）。"""
+    return set(workshop_ids_by_cluster(clusters))
 
 
 def _dir_size(path: Path) -> int:
@@ -61,7 +66,7 @@ def _dir_size(path: Path) -> int:
     return total
 
 
-def _mod_name(path: Path) -> str:
+def read_mod_name(path: Path) -> str:
     from dstools.features.mod.parser import parse_modinfo
 
     try:
@@ -81,7 +86,7 @@ def _numbered_dirs(root: Path) -> list[Path]:
 def find_unused_mods(workshop_root: Path, used_ids: set[str]) -> list[SteamcmdModEntry]:
     """SteamCMD 工坊目录里不在 used_ids 中的 Mod，按占用空间从大到小。"""
     entries = [
-        SteamcmdModEntry(path.name, path, _dir_size(path), _mod_name(path))
+        SteamcmdModEntry(path.name, path, _dir_size(path), read_mod_name(path))
         for path in _numbered_dirs(Path(workshop_root) / "content" / _APP_ID)
         if path.name not in used_ids
     ]
