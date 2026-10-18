@@ -218,24 +218,27 @@ def test_account_login_failure_not_retried() -> None:
 
 
 def test_cached_login_accounts() -> None:
-    """登录缓存：Accounts 里的用户名，ConnectCache 有其 CRC32+"1" 键才算保存着凭据（结构按真机 config.vdf）。"""
+    """登录缓存：Accounts 里的用户名，ConnectCache 有其 CRC32+"1" 键才算保存着凭据（结构按真机 config.vdf）。
+    CRC32 不补前导 0：真机账号 w1159096560 的 CRC32 为 025d8a16，键写成 25d8a161。"""
     import zlib
     with tempfile.TemporaryDirectory() as tmp:
         exe = Path(tmp) / "steamcmd.exe"
         exe.write_bytes(b"")
         assert steamcmd_updater.cached_login_accounts(exe) == []  # 还没有 config.vdf
-        key = f"{zlib.crc32(b'alice'):08x}1"
+        key = f"{zlib.crc32(b'alice'):x}1"
+        zero_key = "25d8a161"  # w1159096560 的真机键
         (Path(tmp) / "config").mkdir()
         (Path(tmp) / "config" / "config.vdf").write_text("""\
 "InstallConfigStore"
 {
   "Software" { "Valve" { "Steam" {
-    "ConnectCache" { "KEY" "token" }
-    "Accounts" { "alice" { "SteamID" "1" } "bob" { "SteamID" "2" } }
+    "ConnectCache" { "KEY" "token" "ZERO" "token" }
+    "Accounts" { "alice" { "SteamID" "1" } "bob" { "SteamID" "2" } "w1159096560" { "SteamID" "3" } }
   } } }
 }
-""".replace("KEY", key), encoding="utf-8")
-        assert steamcmd_updater.cached_login_accounts(exe) == ["alice"]  # bob 登录过但凭据已不在
+""".replace("KEY", key).replace("ZERO", zero_key), encoding="utf-8")
+        # bob 登录过但凭据已不在
+        assert steamcmd_updater.cached_login_accounts(exe) == ["alice", "w1159096560"]
         assert steamcmd_updater.login_cached(exe, "Alice")
         assert not steamcmd_updater.login_cached(exe, "bob")
         assert not steamcmd_updater.login_cached(exe, "")
