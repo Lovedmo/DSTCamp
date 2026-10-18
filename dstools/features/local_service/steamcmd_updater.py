@@ -57,9 +57,15 @@ class SteamcmdBusyError(RuntimeError):
     """已有 SteamCMD 任务在运行，本操作不能同时进行。"""
 
 
-def run_when_idle(func, *args, **kwargs):
-    """SteamCMD 空闲时独占执行 func（如删除工坊 Mod，不能边下边删）；有任务在跑立即抛 SteamcmdBusyError，不排队。"""
-    if not _TASK_LOCK.acquire(blocking=False):
+def steamcmd_busy() -> bool:
+    """是否有 SteamCMD 任务（更新、下载、登录、后台准备，或删除/复制工坊 Mod）正在进行。"""
+    return _TASK_LOCK.locked()
+
+
+def run_when_idle(func, *args, wait: bool = False, **kwargs):
+    """SteamCMD 空闲时独占执行 func（如删除、复制工坊 Mod，不能和下载同时进行）；
+    有任务在跑时立即抛 SteamcmdBusyError，wait=True 时排队等它结束。"""
+    if not _TASK_LOCK.acquire(blocking=wait):
         raise SteamcmdBusyError("另一个 SteamCMD 任务正在运行")
     try:
         return func(*args, **kwargs)

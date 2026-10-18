@@ -1297,6 +1297,8 @@ class LocalServicePage(Page):
                                      get_steamcmd_account())
         if not dialog.exec():
             return
+        from dstools.features.mod.parser import find_workshop_dir
+        previous_workshop = find_workshop_dir()  # 切换前所在通道（Steam 库或原来那份 SteamCMD）的工坊内容目录
         if dialog.result_backend is SteamBackend.STEAMCMD:
             set_steamcmd_path(dialog.result_steamcmd)
             set_steamcmd_account(dialog.result_account)
@@ -1305,6 +1307,61 @@ class LocalServicePage(Page):
         self._on_runtime_changed()
         if changed:
             self.ctx.steam_backend_changed()  # SteamCMD 通道不显示本地存档，存档列表随之变化
+        if dialog.result_backend is SteamBackend.STEAMCMD and previous_workshop is not None:
+            self._offer_workshop_transfer(previous_workshop)
+
+    def _offer_workshop_transfer(self, source: Path) -> None:
+        """改用（另一份）SteamCMD 后，原工坊目录里有、现在这份没有的 Mod 提议复制过来，免得重新下载。"""
+        from dstools.features.mod.steamcmd_mod_cleanup import workshop_ids_by_cluster
+        from dstools.features.mod.workshop_transfer import copy_workshop_items, transfer_size, transferable_ids
+        target = steamcmd_updater.steamcmd_workshop_dir() / "content" / steamcmd_updater.WORKSHOP_APP_ID
+        try:
+            ids = transferable_ids(source, target)
+        except OSError:
+            return
+        if not ids:
+            return
+        used = set(workshop_ids_by_cluster(self.ctx.clusters()))
+        used_ids = [wid for wid in ids if wid in used]
+        size = transfer_size(source, ids)
+        size_text = f"{size / 1024 ** 3:.1f} GB" if size >= 1024 ** 3 else f"{size / 1024 ** 2:.0f} MB"
+        title = t("local.workshop_transfer_title")
+        choices = [(t("local.workshop_transfer_skip_btn"), "cancel")]
+        if used_ids and len(used_ids) < len(ids):
+            choices.append((t("local.workshop_transfer_used_btn", count=len(used_ids)), "used"))
+        choices.append((t("local.workshop_transfer_all_btn", count=len(ids)), "all"))
+        choice = dialogs.ask_choice(
+            self.window(), title,
+            t("local.workshop_transfer_msg", source=str(source), count=len(ids), size=size_text, used=len(used_ids)),
+            choices, default="used" if any(value == "used" for _label, value in choices) else "all")
+        if choice not in ("used", "all"):
+            return
+        selected = used_ids if choice == "used" else ids
+        log = dialogs.LogDialog(self.window(), title)
+        log.show()
+
+        def work(emit):
+            emit(t("local.workshop_transfer_start", count=len(selected), source=str(source), target=str(target)))
+            if steamcmd_updater.steamcmd_busy():
+                emit(t("steamcmd.waiting_other_task"))
+            return steamcmd_updater.run_when_idle(
+                copy_workshop_items, source, target, selected, wait=True,
+                on_item=lambda wid: emit(t("local.workshop_transfer_item", id=wid)))
+
+        def done(result) -> None:
+            copied, failures = result
+            for wid, reason in failures:
+                log.append(t("local.workshop_transfer_failed_item", id=wid, reason=reason))
+            log.append(t("local.workshop_transfer_done", ok=len(copied), failed=len(failures)),
+                       "result_warning" if failures else "result_success")
+            log.finish()
+            self.ctx.workshop_mods_changed.emit()
+
+        def error(exc: Exception) -> None:
+            log.append(t("local.workshop_transfer_error", detail=f"{type(exc).__name__}: {exc}"), "result_error")
+            log.finish()
+
+        run_async_with_log(work, log.append, done, error)
 
     def _refresh_backend_label(self) -> None:
         steamcmd = get_backend() is SteamBackend.STEAMCMD

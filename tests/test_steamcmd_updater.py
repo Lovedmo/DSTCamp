@@ -250,6 +250,62 @@ def test_cached_login_accounts() -> None:
         assert not steamcmd_updater.login_cached(exe, "")
 
 
+def test_workshop_transfer_merges_acf() -> None:
+    """复制 Mod 时把源清单条目原样搬到目标：目标没有清单时新建，已有的条目不动，Steam 客户端的订阅者记录去掉。"""
+    from dstools.features.mod.workshop_acf import read_workshop_acf, workshop_acf_path
+    from dstools.features.mod.workshop_transfer import copy_workshop_items, transferable_ids
+
+    source_acf = """"AppWorkshop"
+{
+    "appid"    "322330"
+    "SizeOnDisk"    "30"
+    "WorkshopItemsInstalled"
+    {
+        "100"
+        {
+            "size"    "10"
+            "timeupdated"    "111"
+            "manifest"    "1"
+        }
+        "200"
+        {
+            "size"    "20"
+            "timeupdated"    "222"
+            "manifest"    "2"
+        }
+    }
+    "WorkshopItemDetails"
+    {
+        "100"
+        {
+            "manifest"    "1"
+            "timeupdated"    "111"
+            "subscribedby"    "42"
+        }
+    }
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "a" / "content" / "322330"
+        target = Path(tmp) / "b" / "content" / "322330"
+        for wid in ("100", "200", "300"):  # 300 清单里没有记录，不算可复制
+            (source / wid).mkdir(parents=True)
+            (source / wid / "modinfo.lua").write_text("name = 'x'", encoding="utf-8")
+        workshop_acf_path(source).write_text(source_acf, encoding="utf-8")
+        assert transferable_ids(source, target) == ["100", "200"]
+
+        copied, failures = copy_workshop_items(source, target, ["100"])
+        assert copied == ["100"] and not failures
+        acf = read_workshop_acf(workshop_acf_path(target))
+        assert acf.items["100"].time_updated == 111 and not acf.items["100"].subscribed  # 订阅者记录不带过去
+        assert transferable_ids(source, target) == ["200"]
+
+        copy_workshop_items(source, target, ["200"])  # 合并进已有清单
+        acf = read_workshop_acf(workshop_acf_path(target))
+        assert set(acf.items) == {"100", "200"} and acf.items["200"].time_updated == 222
+        assert b'"SizeOnDisk"\t\t"30"' in acf.raw and (target / "200" / "modinfo.lua").is_file()
+
+
 def test_backend_update_blocker() -> None:
     from dstools.features.local_service.server_runtime import RuntimeKind, ServerRuntime
     from dstools.features.local_service.steam_backend import SteamBackend, update_blocker
