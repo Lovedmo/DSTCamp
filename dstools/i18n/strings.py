@@ -437,7 +437,7 @@ STRINGS = {
         # 世界设置页签
         "tab.world": "  世界设置  ",
         "world.create_port_conflict_title": "新存档端口冲突",
-        "world.create_port_conflict_detail": "新创建的存档与以下服务器存档使用了相同的端口，多个存档无法同时启动（后启动的会因端口被占用而开服失败）：\n{details}\n\n建议点「分配不冲突的端口」，自动换成空闲端口后再创建；如果只会单独启动其中一个存档，也可以仍然创建。",
+        "world.create_port_conflict_detail": "新创建的存档与以下服务器存档使用了相同的端口，多个存档无法同时启动：\n{details}\n\n建议点「分配不冲突的端口」，自动换成空闲端口后再创建；如果只会单独启动其中一个存档，也可以仍然创建。",
         "world.create_port_conflict_line": "· {cluster}：端口 {ports}",
         "world.create_port_conflict_more": "· ……另有 {count} 个存档",
         "world.create_port_conflict_anyway_btn": "仍然创建",
@@ -2019,7 +2019,7 @@ STRINGS = {
         # 世界设置页签
         "tab.world": "  World Settings  ",
         "world.create_port_conflict_title": "New Save Port Conflict",
-        "world.create_port_conflict_detail": "The new save uses the same ports as these server saves, so they can't run at the same time (whichever starts later will fail because the port is taken):\n{details}\n\nWe recommend \"Allocate Non-conflicting Ports\" to switch to free ports before creating. If you'll only ever run one of these saves at a time, you can create it anyway.",
+        "world.create_port_conflict_detail": "The new save uses the same ports as these server saves, so they can't run at the same time:\n{details}\n\nWe recommend \"Allocate Non-conflicting Ports\" to switch to free ports before creating. If you'll only ever run one of these saves at a time, you can create it anyway.",
         "world.create_port_conflict_line": "· {cluster}: port {ports}",
         "world.create_port_conflict_more": "· ...and {count} more save(s)",
         "world.create_port_conflict_anyway_btn": "Create Anyway",
