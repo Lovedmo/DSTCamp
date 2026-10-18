@@ -1201,7 +1201,7 @@ def test_world_creation_plan_and_atomic_writer():
             cluster_name="Cluster_Porkland_Test",
             mod_ids=frozenset({"3322803908"}),
             master=WorldShardPlan("porkland", "PORKLAND_DEFAULT", "猪镇", "危险丛林"),
-            caves=WorldShardPlan("cave", "DST_CAVE", "洞穴"),
+            caves=WorldShardPlan("cave", "DST_CAVE", "洞穴", overrides={"task_set": "cave_default"}),
         )
         path = create_world(plan, Path(td))
         master = load_leveldata(path / "Master" / "leveldataoverride.lua").preset

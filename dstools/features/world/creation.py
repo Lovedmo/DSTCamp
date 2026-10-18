@@ -134,6 +134,13 @@ def validate_creation_plan(plan: WorldCreationPlan) -> None:
             raise ValueError(f"{shard_plan.location} 世界缺少所需 Mod")
         if not shard_plan.preset_id:
             raise ValueError(f"{shard_name} 世界预设不能为空")
+        # 游戏把 leveldataoverride.lua 当完整关卡定义整体替换（shardindex.lua SetServerShardData），
+        # 缺 task_set 开服就报 "Must specify the task set for a level!"，世界生成不出来
+        if "task_set" not in shard_level_data(shard_plan)["overrides"]:
+            raise ValueError(
+                f"{shard_name} 缺少完整的世界生成数据（task_set），"
+                "请先用游戏创建一个带洞穴的世界，作为原版森林/洞穴的模板"
+            )
 
 
 def _write_lua(path: Path, data: dict) -> None:
@@ -198,18 +205,8 @@ def _write_default_server_ini(root: Path) -> None:
     )
 
 
-def _write_shard(
-    root: Path,
-    shard: WorldShardPlan,
-    mod_ids: frozenset[str],
-    mod_overrides: dict[str, dict],
-    shard_config: ShardConfig | None = None,
-) -> None:
-    root.mkdir(parents=True, exist_ok=True)
-    if shard_config is None:
-        _write_default_server_ini(root)
-    else:
-        write_server_ini(shard_config, root / "server.ini")
+def shard_level_data(shard: WorldShardPlan) -> dict[str, object]:
+    """返回该世界最终写入 leveldataoverride.lua 的完整关卡数据。"""
     # 最后一层仍合并已核对的 location 默认值，避免旧草稿、调用方手工构造
     # WorldShardPlan 或未来 UI 回归再次写出 overrides={} 的海难/火山。
     raw = get_verified_creation_level_data(shard.location)
@@ -224,7 +221,22 @@ def _write_shard(
         "location": shard.location,
         "overrides": overrides,
     })
-    _write_lua(root / "leveldataoverride.lua", raw)
+    return raw
+
+
+def _write_shard(
+    root: Path,
+    shard: WorldShardPlan,
+    mod_ids: frozenset[str],
+    mod_overrides: dict[str, dict],
+    shard_config: ShardConfig | None = None,
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    if shard_config is None:
+        _write_default_server_ini(root)
+    else:
+        write_server_ini(shard_config, root / "server.ini")
+    _write_lua(root / "leveldataoverride.lua", shard_level_data(shard))
     def _mod_key(value) -> str:
         text = str(value)
         if text.startswith("workshop-") or not text.isdigit():

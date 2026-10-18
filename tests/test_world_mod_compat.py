@@ -1,5 +1,6 @@
 """已核对 Mod 的世界创建与设置隔离回归测试（不依赖本机存档、Steam 或网络）。"""
 
+from dataclasses import replace
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -88,6 +89,16 @@ ISLAND_REQUIRED_OVERRIDES = {
         "has_ocean": False,
     },
 }
+
+# 原版森林/洞穴的完整关卡定义实际取自游戏生成的模板，测试只补上创建层校验的 task_set
+VANILLA_TASK_SETS = {FOREST_LOCATION: "default", CAVE_LOCATION: "cave_default"}
+
+
+def _complete_plan(location: str) -> WorldShardPlan:
+    plan = default_plan_for_location(location)
+    if location in VANILLA_TASK_SETS:
+        plan = replace(plan, overrides={**plan.overrides, "task_set": VANILLA_TASK_SETS[location]})
+    return plan
 
 
 def _expect_value_error(callback, message: str) -> None:
@@ -608,8 +619,8 @@ def test_creation_matrix() -> None:
             for caves_location in ISLAND_LOCATIONS:
                 plan = WorldCreationPlan(
                     cluster_name=f"islands_{count}",
-                    master=default_plan_for_location(master_location),
-                    caves=default_plan_for_location(caves_location),
+                    master=_complete_plan(master_location),
+                    caves=_complete_plan(caves_location),
                     # 故意只传内容包，验证创建层会补齐硬依赖核心。
                     mod_ids=frozenset({IA_SHIPWRECKED_MOD_ID}),
                     mod_overrides={
@@ -652,8 +663,8 @@ def test_creation_matrix() -> None:
 def test_creation_rejects_invalid_combinations() -> None:
     invalid_shipwrecked = WorldCreationPlan(
         "invalid_shipwrecked",
-        default_plan_for_location(SHIPWRECKED_LOCATION),
-        default_plan_for_location(CAVE_LOCATION),
+        _complete_plan(SHIPWRECKED_LOCATION),
+        _complete_plan(CAVE_LOCATION),
     )
     _expect_value_error(
         lambda: validate_creation_plan(invalid_shipwrecked),
@@ -664,8 +675,8 @@ def test_creation_rejects_invalid_combinations() -> None:
     # 用游戏存档确认前，禁止生成一个看似可用但实际含义不确定的组合。
     conflict = WorldCreationPlan(
         "unverified_frontend_conflict",
-        default_plan_for_location(SHIPWRECKED_LOCATION),
-        default_plan_for_location(VOLCANO_LOCATION),
+        _complete_plan(SHIPWRECKED_LOCATION),
+        _complete_plan(VOLCANO_LOCATION),
         mod_ids=frozenset({PORKLAND_MOD_ID, IA_SHIPWRECKED_MOD_ID}),
     )
     _expect_value_error(
@@ -678,8 +689,8 @@ def test_porkland_creation() -> None:
     with TemporaryDirectory() as directory:
         plan = WorldCreationPlan(
             "porkland",
-            default_plan_for_location(PORKLAND_LOCATION),
-            default_plan_for_location(CAVE_LOCATION),
+            _complete_plan(PORKLAND_LOCATION),
+            _complete_plan(CAVE_LOCATION),
             mod_ids=frozenset({PORKLAND_MOD_ID}),
         )
         output = create_world(plan, Path(directory))
@@ -699,11 +710,11 @@ def test_multi_shard_creation() -> None:
     with TemporaryDirectory() as directory:
         plan = WorldCreationPlan(
             "multi_vanilla",
-            default_plan_for_location(FOREST_LOCATION),
-            default_plan_for_location(CAVE_LOCATION),
+            _complete_plan(FOREST_LOCATION),
+            _complete_plan(CAVE_LOCATION),
             extra_shards={
-                "Forest": default_plan_for_location(FOREST_LOCATION),
-                "Caves_2": default_plan_for_location(CAVE_LOCATION),
+                "Forest": _complete_plan(FOREST_LOCATION),
+                "Caves_2": _complete_plan(CAVE_LOCATION),
             },
         )
         output = create_world(plan, Path(directory))
@@ -721,15 +732,26 @@ def test_multi_shard_creation() -> None:
         assert len({config.network["server_port"] for config in configs.values()}) == 4
 
 
+def test_vanilla_world_without_task_set_is_rejected() -> None:
+    """回归真实报错：额外森林没带模板数据，开服报 Must specify the task set for a level!"""
+    plan = WorldCreationPlan(
+        "missing_task_set",
+        _complete_plan(FOREST_LOCATION),
+        _complete_plan(CAVE_LOCATION),
+        extra_shards={"Forest": default_plan_for_location(FOREST_LOCATION)},
+    )
+    _expect_value_error(lambda: validate_creation_plan(plan), "缺 task_set 的原版世界不应写盘")
+
+
 def test_multi_shard_mod_templates_require_enabled_mods() -> None:
     extras = {
-        "Shipwrecked": default_plan_for_location(SHIPWRECKED_LOCATION),
-        "Volcano": default_plan_for_location(VOLCANO_LOCATION),
+        "Shipwrecked": _complete_plan(SHIPWRECKED_LOCATION),
+        "Volcano": _complete_plan(VOLCANO_LOCATION),
     }
     invalid = WorldCreationPlan(
         "multi_islands_invalid",
-        default_plan_for_location(FOREST_LOCATION),
-        default_plan_for_location(CAVE_LOCATION),
+        _complete_plan(FOREST_LOCATION),
+        _complete_plan(CAVE_LOCATION),
         extra_shards=extras,
     )
     _expect_value_error(
@@ -740,8 +762,8 @@ def test_multi_shard_mod_templates_require_enabled_mods() -> None:
     with TemporaryDirectory() as directory:
         valid = WorldCreationPlan(
             "multi_islands",
-            default_plan_for_location(SHIPWRECKED_LOCATION),
-            default_plan_for_location(VOLCANO_LOCATION),
+            _complete_plan(SHIPWRECKED_LOCATION),
+            _complete_plan(VOLCANO_LOCATION),
             mod_ids=frozenset({IA_SHIPWRECKED_MOD_ID}),
             extra_shards=extras,
         )
@@ -751,8 +773,10 @@ def test_multi_shard_mod_templates_require_enabled_mods() -> None:
 
         # 三合一整合版五分片：编号固定，海难不生成火山岛，modoverrides 不混入独立版
         layout = {name: (plan, config) for name, plan, config in three_worlds_layout()}
+        # 向导里 Master/Caves 沿用模板计划，只切换世界类型
         three = WorldCreationPlan(
-            "three_worlds", layout["Master"][0], layout["Caves"][0],
+            "three_worlds", _complete_plan(layout["Master"][0].location),
+            _complete_plan(layout["Caves"][0].location),
             mod_ids=frozenset({THREE_WORLDS_MOD_ID}),
             shard_configs={name: config for name, (_plan, config) in layout.items()},
             extra_shards={name: plan for name, (plan, _config) in layout.items()

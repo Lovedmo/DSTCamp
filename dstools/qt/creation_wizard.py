@@ -296,6 +296,8 @@ class CreationWizardDialog(QDialog):
         self._mod_world_icons: dict = {}
         self._server_root: Path | None = None
         self._template_root: Path | None = None
+        # 游戏生成的原版森林/洞穴完整关卡定义（location -> 计划），新增同类世界从这里复制
+        self._template_plans: dict[str, creation.WorldShardPlan] = {}
         self._created_path: Path | None = None
         self._launch_requested = False
         self._selected_mod_ids: set[str] = set()
@@ -512,6 +514,11 @@ class CreationWizardDialog(QDialog):
         else:
             self._extra_plans[shard] = plan
 
+    def _fresh_plan(self, location: str) -> creation.WorldShardPlan:
+        """新世界的初始计划：原版森林/洞穴复制游戏生成的模板（Mod 默认值里没有它们的 task_set），其余取已核对的默认值。"""
+        template = getattr(self, "_template_plans", {}).get(location)
+        return copy.deepcopy(template) if template is not None else defaults.default_plan_for_location(location)
+
     def _switch_shard_location(self, shard: str, location: str, render: bool = True) -> None:
         if location not in self._available_locations_for_shard(shard):
             return
@@ -524,7 +531,7 @@ class CreationWizardDialog(QDialog):
                               if draft_shard != shard and draft_location == location), None)
             plan = copy.deepcopy(other_plan) if other_plan is not None else None
         if plan is None:
-            plan = defaults.default_plan_for_location(location)
+            plan = self._fresh_plan(location)
             self._location_drafts[(shard, location)] = plan
         self._set_plan_for_shard(shard, plan)
         if render:
@@ -593,7 +600,7 @@ class CreationWizardDialog(QDialog):
             return
         self._dirty = True
         shard_name = self._next_extra_shard_name(location)
-        plan = copy.deepcopy(defaults.default_plan_for_location(location))
+        plan = self._fresh_plan(location)
         self._extra_plans[shard_name] = plan
         self._location_drafts[(shard_name, location)] = plan
         if self._server_panel is not None:
@@ -679,9 +686,11 @@ class CreationWizardDialog(QDialog):
                 template_root = defaults.find_verified_template(root, "forest")
                 template_plans = defaults.default_plans_from_cluster(template_root)
                 self._template_root = template_root
+                self._template_plans = {plan.location: plan for plan in template_plans}
             except FileNotFoundError:
                 template_plans = (defaults.default_plan_for_location("forest"), defaults.default_plan_for_location("cave"))
                 self._template_root = None
+                self._template_plans = {}
             missing = [(shard, plan) for shard, plan in zip((MASTER_SHARD, CAVES_SHARD), template_plans)
                        if shard not in self._removed_fixed_shards and self._plan_for_shard(shard) is None]
             for shard, plan in missing:
