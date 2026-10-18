@@ -1,6 +1,7 @@
 """Qt 通用对话框：消息框、文件位置、日志窗口及存档信息页用到的输入对话框（样式由全局 QSS 提供）。"""
 
 import ctypes
+import re
 import subprocess
 import sys
 import time
@@ -11,12 +12,12 @@ from PySide6.QtCore import (
     QEasingCurve, QPoint, QPropertyAnimation, QRect, QRectF, QSequentialAnimationGroup, Qt, QTimer,
 )
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QFontMetrics, QGuiApplication, QIntValidator, QPainter, QPainterPath, QPen,
-    QTextCursor,
+    QBrush, QColor, QFont, QFontMetrics, QGuiApplication, QIntValidator, QKeySequence, QPainter, QPainterPath,
+    QPen, QTextCursor,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView, QDialog, QGraphicsOpacityEffect, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QToolTip, QVBoxLayout,
+    QListWidget, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QToolTip, QVBoxLayout,
     QWidget,
 )
 
@@ -114,6 +115,34 @@ class _MessageIcon(QWidget):
         painter.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), glyph)
 
 
+_ZWSP = "​"
+_LONG_TOKEN_RE = re.compile(r"\S{30,}")
+_PATH_SEP_RE = re.compile(r"([\\/])")
+
+
+def _breakable_long_tokens(text: str) -> str:
+    """长路径没有空格，QLabel 找不到换行点会被截断：在长片段的 \\ / 后插入零宽空格，让它在目录分隔处换行。"""
+    return _LONG_TOKEN_RE.sub(lambda m: _PATH_SEP_RE.sub(r"\1" + _ZWSP, m.group()), text)
+
+
+class _MessageBody(QLabel):
+    """消息正文：可选中复制；复制时去掉为换行插入的零宽空格，粘贴出来的路径能直接用。"""
+
+    def _copy(self, text: str) -> None:
+        QGuiApplication.clipboard().setText(text.replace(_ZWSP, ""))
+
+    def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.Copy) and self.hasSelectedText():
+            self._copy(self.selectedText())
+            return
+        super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        menu = QMenu(self)
+        menu.addAction(t("dlg.copy_btn"), lambda: self._copy(self.selectedText() or self.text()))
+        menu.exec(event.globalPos())
+
+
 class MessageDialog(QDialog):
     """统一样式的消息框，替代 QMessageBox（会把正文重设为 9pt 系统字体、按钮样式不统一）。
 
@@ -136,7 +165,8 @@ class MessageDialog(QDialog):
         top = QHBoxLayout()
         top.setSpacing(14)
         top.addWidget(_MessageIcon(kind), 0, Qt.AlignmentFlag.AlignTop)
-        self.body = QLabel(text)
+        # 纯文本里的长路径加换行点；富文本由调用方自己排版，不改
+        self.body = _MessageBody(text if rich else _breakable_long_tokens(text))
         self.body.setObjectName("messageBody")
         self.body.setWordWrap(True)
         self.body.setTextFormat(Qt.TextFormat.RichText if rich else Qt.TextFormat.PlainText)

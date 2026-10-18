@@ -431,6 +431,7 @@ STRINGS = {
         "dlg.confirm_btn": "确认",
         "dlg.cancel_btn": "取消",
         "dlg.close_btn": "关闭",
+        "dlg.copy_btn": "复制",
         "dlg.yes_btn": "是",
         "dlg.no_btn": "否",
         # 世界设置页签
@@ -2007,6 +2008,7 @@ STRINGS = {
         "dlg.confirm_btn": "Confirm",
         "dlg.cancel_btn": "Cancel",
         "dlg.close_btn": "Close",
+        "dlg.copy_btn": "Copy",
         "dlg.yes_btn": "Yes",
         "dlg.no_btn": "No",
         # 世界设置页签
