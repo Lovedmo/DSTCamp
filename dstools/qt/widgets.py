@@ -237,12 +237,24 @@ class Banner(QWidget):
 
     _MIN_HEIGHT = 34
     _PAD_X, _PAD_Y = 14, 8
+    clicked = Signal()  # 仅 set_clickable(True) 后发出
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._text = ""
+        self._clickable = False
         self.setVisible(False)
         self.setFixedHeight(self._MIN_HEIGHT)
+
+    def set_clickable(self, clickable: bool) -> None:
+        self._clickable = clickable
+        self.setCursor(Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):
+        if (self._clickable and event.button() == Qt.MouseButton.LeftButton
+                and self.rect().contains(event.position().toPoint())):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
 
     def text(self) -> str:
         return self._text

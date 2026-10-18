@@ -42,7 +42,7 @@ _CREATIONFLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 _VC2013_X86_DLLS = ("MSVCR120.dll", "MSVCP120.dll", "VCOMP120.dll")
 
 _runtime_probed = False
-_runtime_missing = False
+_runtime_file_problem: tuple[str, str] = ("", "")
 
 # 运行库文件都在却加载失败（被换成 64 位、截断损坏等）时，系统会先弹「应用程序无法正常启动(0xc000007b)」。
 # 启动 ktech 时临时开 SEM_FAILCRITICALERRORS，让它直接带错误码退出；不设成全局，以免开服程序缺 DLL 时
@@ -60,23 +60,67 @@ def _has_vc2013_x86_runtime(runtime_dir: Path) -> bool:
     return all((runtime_dir / dll_name).is_file() for dll_name in _VC2013_X86_DLLS)
 
 
-def probe_ktech_runtime() -> bool:
+def _is_intact_x86_dll(path: Path) -> bool:
+    """只读 PE 头判断：必须是 32 位（i386），且文件长度覆盖全部节数据（排除截断）。
+
+    真实反馈的 0xc000007b 就是文件在、但被换成 64 位或已损坏；32 位 ktech 加载它们会失败。
+    """
+    try:
+        with path.open("rb") as stream:
+            head = stream.read(4096)
+            size = os.fstat(stream.fileno()).st_size
+    except OSError:
+        return False
+    if len(head) < 0x40 or head[:2] != b"MZ":
+        return False
+    pe = int.from_bytes(head[0x3C:0x40], "little")
+    if pe + 24 > len(head) or head[pe:pe + 4] != b"PE\0\0":
+        return False
+    machine = int.from_bytes(head[pe + 4:pe + 6], "little")
+    section_count = int.from_bytes(head[pe + 6:pe + 8], "little")
+    sections = pe + 24 + int.from_bytes(head[pe + 20:pe + 22], "little")
+    if machine != 0x14C or sections + section_count * 40 > len(head):
+        return False
+    data_end = 0
+    for index in range(section_count):
+        entry = sections + index * 40
+        raw_size = int.from_bytes(head[entry + 16:entry + 20], "little")
+        raw_pointer = int.from_bytes(head[entry + 20:entry + 24], "little")
+        data_end = max(data_end, raw_pointer + raw_size)
+    return size >= data_end
+
+
+def _vc2013_x86_runtime_problem(runtime_dir: Path) -> tuple[str, str]:
+    """返回 (问题, 出问题的文件)：问题为 "missing"/"broken"，正常时为 ("", "")。"""
+    if not _has_vc2013_x86_runtime(runtime_dir):
+        return "missing", ""
+    for dll_name in _VC2013_X86_DLLS:
+        if not _is_intact_x86_dll(runtime_dir / dll_name):
+            return "broken", str(runtime_dir / dll_name)
+    return "", ""
+
+
+def ktech_runtime_problem() -> tuple[str, str]:
     """检查 32 位 ktech 所需的 VC++ 2013 运行库（64 位系统在 SysWOW64，32 位在 System32）。
 
-    只检查文件是否存在，结果缓存。返回 True 表示确认缺失，需提示安装；非 Windows 返回 False。
+    返回 (问题, 出问题的文件)：问题为 "missing"（缺文件）、"broken"（文件损坏、版本不匹配，
+    或本次运行已因加载失败熔断）或 ""（正常）。文件检查结果缓存；非 Windows 恒为正常。
     """
-    global _runtime_probed, _runtime_missing
-    if _runtime_probed:
-        return _runtime_missing
-    _runtime_probed = True
+    global _runtime_probed, _runtime_file_problem
     if sys.platform != "win32":
-        return False
-    windows_dir = Path(os.environ.get("WINDIR", r"C:\\Windows"))
-    x86_runtime_dir = windows_dir / "SysWOW64"
-    if not x86_runtime_dir.is_dir():
-        x86_runtime_dir = windows_dir / "System32"
-    _runtime_missing = not _has_vc2013_x86_runtime(x86_runtime_dir)
-    return _runtime_missing
+        return "", ""
+    if not _runtime_probed:
+        _runtime_probed = True
+        windows_dir = Path(os.environ.get("WINDIR", r"C:\\Windows"))
+        x86_runtime_dir = windows_dir / "SysWOW64"
+        if not x86_runtime_dir.is_dir():
+            x86_runtime_dir = windows_dir / "System32"
+        _runtime_file_problem = _vc2013_x86_runtime_problem(x86_runtime_dir)
+    if _runtime_file_problem[0]:
+        return _runtime_file_problem
+    if _runtime_broken:
+        return "broken", ""
+    return "", ""
 
 
 

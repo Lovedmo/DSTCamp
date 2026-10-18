@@ -171,6 +171,8 @@ class ModPage(Page):
         self._wegame_banner = Banner()
         root.addWidget(self._wegame_banner)
         self._runtime_banner = Banner()
+        self._runtime_banner.set_clickable(True)
+        self._runtime_banner.clicked.connect(lambda: self.window().install_vcredist())
         root.addWidget(self._runtime_banner)
 
         self._list_panel = ModListPanel()
@@ -281,8 +283,7 @@ class ModPage(Page):
         else:
             self._local_banner.set_text(t("mod.no_save_banner") if c is None else t("mod.local_view_only_banner"))
         self._wegame_banner.set_text(t("mod.wegame_root_needed_banner") if self._wegame_root_missing(c) else "")
-        self._runtime_banner.set_text(
-            t("mod.ktech_runtime_missing_banner") if tex_convert.probe_ktech_runtime() else "")
+        self._refresh_runtime_banner()
         self._update_mod_location_display()
         self._shard_combo.blockSignals(True)
         self._shard_combo.clear()
@@ -735,6 +736,7 @@ class ModPage(Page):
         platform, wegame_dir = result["platform"], result["wegame_client_mods_dir"]
 
         def apply_icons(icons: dict) -> None:
+            self._refresh_runtime_banner()  # 转换中途可能因运行库加载失败而熔断
             if gen != self._refresh_gen or not icons:
                 return
             self._icon_imgs.update(icons)
@@ -803,6 +805,17 @@ class ModPage(Page):
 
             run_async(work, done, lambda _exc: None)
         self._refresh_main_workshop_status(gen)
+
+    def _refresh_runtime_banner(self) -> None:
+        problem, bad_file = tex_convert.ktech_runtime_problem()
+        if problem == "missing":
+            text = t("mod.ktech_runtime_missing_banner")
+        elif problem == "broken":
+            detail = t("mod.ktech_runtime_bad_file", path=bad_file) if bad_file else ""
+            text = t("mod.ktech_runtime_broken_banner", detail=detail)
+        else:
+            text = ""
+        self._runtime_banner.set_text(text)
 
     def _convert_icons(self, gen: int, targets: list, platform, on_done) -> None:
         """后台转换（必要时调用 ktech）并读取图标，完成后在界面线程交给 on_done。"""

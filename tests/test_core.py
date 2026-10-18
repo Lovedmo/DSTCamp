@@ -109,7 +109,7 @@ from dstools.features.local_service.luajit_injector import (
     write_marker,
 )
 from dstools.shared.steam_discovery import parse_library_folders, read_game_version_file
-from dstools.shared.tex_convert import _has_vc2013_x86_runtime
+from dstools.shared.tex_convert import _vc2013_x86_runtime_problem
 
 
 @contextlib.contextmanager
@@ -2697,16 +2697,28 @@ def test_frp_selfhost_port_conflict_detection():
 
 
 def test_ktech_runtime_detector():
-    """缺少任一 VC++ 2013 x86 DLL 时必须在启动 ktech.exe 前识别出来。"""
+    """缺文件、被换成 64 位、截断损坏，都必须在启动 ktech.exe 前识别出来。"""
+    x86_dll = (Path(__file__).resolve().parents[1] / "tools" / "ktools" / "CORE_RL_zlib_.dll").read_bytes()
+    pe = int.from_bytes(x86_dll[0x3C:0x40], "little")
+    x64_dll = bytearray(x86_dll)
+    x64_dll[pe + 4:pe + 6] = (0x8664).to_bytes(2, "little")
     with tempfile.TemporaryDirectory() as tmp:
         runtime_dir = Path(tmp)
         for dll_name in ("MSVCR120.dll", "MSVCP120.dll", "VCOMP120.dll"):
-            (runtime_dir / dll_name).touch()
-        assert _has_vc2013_x86_runtime(runtime_dir) is True
+            (runtime_dir / dll_name).write_bytes(x86_dll)
+        assert _vc2013_x86_runtime_problem(runtime_dir) == ("", "")
+
+        # 真实反馈的 0xc000007b：文件都在，但被换成 64 位或已损坏
+        bad = runtime_dir / "MSVCP120.dll"
+        bad.write_bytes(x64_dll)
+        assert _vc2013_x86_runtime_problem(runtime_dir) == ("broken", str(bad))
+        bad.write_bytes(x86_dll[:4096])
+        assert _vc2013_x86_runtime_problem(runtime_dir) == ("broken", str(bad))
+        bad.write_bytes(x86_dll)
 
         # 真实反馈缺的是 VCOMP120.dll；此前会先让 Windows 弹加载器错误框。
         (runtime_dir / "VCOMP120.dll").unlink()
-        assert _has_vc2013_x86_runtime(runtime_dir) is False
+        assert _vc2013_x86_runtime_problem(runtime_dir) == ("missing", "")
 
 
 def test_ktech_broken_runtime_fails_without_dialog():
