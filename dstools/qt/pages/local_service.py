@@ -19,7 +19,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QPoint, QTimer, Qt
 from PySide6.QtGui import QFontMetrics, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -1153,6 +1153,21 @@ class LocalServicePage(Page):
         else:
             for row in self._shard_rows.values():
                 row.update_state()
+        QTimer.singleShot(0, self._align_extra_args_width)  # 等新行排好版再量位置
+
+    def _align_extra_args_width(self) -> None:
+        """「额外启动参数」输入框的右端与世界行「重启」按钮的右端对齐：按实际排版位置算，随字号变化。"""
+        row = next(iter(self._shard_rows.values()), None)
+        if row is None or not row.isVisible() or not self._extra_args_edit.isVisible():
+            return
+        right = row.restart_btn.mapTo(self, QPoint(row.restart_btn.width(), 0)).x()
+        left = self._extra_args_edit.mapTo(self, QPoint(0, 0)).x()
+        if right - left >= 120 and right - left != self._extra_args_edit.width():
+            self._extra_args_edit.setFixedWidth(right - left)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._align_extra_args_width)
 
     def _sync_console_tabs_visibility(self, cluster) -> None:
         """只在标签条上显示当前选中存档名下的控制台；世界进程/后台读取线程照常跑。"""
