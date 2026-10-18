@@ -67,10 +67,11 @@ def _dir_size(path: Path) -> int:
 
 
 def read_mod_name(path: Path) -> str:
-    from dstools.features.mod.parser import parse_modinfo
+    # 带缓存的解析：modinfo 没变时不再跑 Lua 沙箱（几十个 Mod 每次要近 1 秒）
+    from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 
     try:
-        info = parse_modinfo(path)
+        info = parse_modinfo_cached(path)
     except Exception:  # modinfo 写法千奇百怪，读不出名字只影响显示
         return ""
     return _PRIVATE_USE_RE.sub("", info.name or "").strip() if info else ""

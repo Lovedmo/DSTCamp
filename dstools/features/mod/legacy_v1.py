@@ -9,8 +9,6 @@ import os
 import secrets
 import shutil
 import stat
-import subprocess
-import sys
 import threading
 import zipfile
 import zlib
@@ -578,23 +576,11 @@ def prepare_enabled_legacy_mods(
 
 
 def running_dst_processes() -> tuple[str, ...]:
-    """只读检测可能占用 V1 运行目录的游戏/专服进程。"""
-    if sys.platform != "win32":
-        return ()
-    try:
-        completed = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=8,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ()
+    """只读检测可能占用 V1 运行目录的游戏/专服进程（Toolhelp 快照，不起 tasklist 子进程）。"""
+    from dstools.shared.process_snapshot import snapshot_processes
+
     found = []
-    for line in completed.stdout.splitlines():
-        image = line.lstrip("\ufeff").strip().split('","', 1)[0].strip('"').casefold()
+    for _pid, _parent, image in snapshot_processes() or ():
         if image in _DST_PROCESS_NAMES and image not in found:
             found.append(image)
     return tuple(found)
