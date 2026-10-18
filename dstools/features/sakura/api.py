@@ -27,6 +27,11 @@ _NODE_FLAG_OFFLINE = 1 << 9
 _NODE_FLAG_PUBLIC_GAME = 1 << 11  # 官方说明："是否允许穿透公开游戏"
 
 
+def is_valid_token(token: str) -> bool:
+    """粗略校验访问密钥：旧版 16 位、新版 36 位都要放行，官方 API 不限定长度，真假交给接口判断。"""
+    return len(token) >= 16 and token.isascii() and not any(ch.isspace() for ch in token)
+
+
 class SakuraApiError(Exception):
     """SakuraFrp API 调用失败，保留原始响应文本方便把真实错误显示给用户。"""
 

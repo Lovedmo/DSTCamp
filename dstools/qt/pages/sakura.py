@@ -34,7 +34,7 @@ from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, VScrollArea, sec
 from dstools.shared import app_settings
 from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.shared.server_ports import stable_path_key
-from dstools.shared.token_manager import is_valid_token, mask_token
+from dstools.shared.token_manager import mask_token
 
 _FALLBACK_MAX_TUNNELS = 2
 _SUB_TAB_KEYS = ["sakura", "lolia", "selfhost"]  # 子页签顺序，同时是 nat_sub_tab 的取值
@@ -295,7 +295,7 @@ class _SakuraMappingPanel(QWidget):
     def _change_token(self) -> None:
         dialog = dialogs.TextInputDialog(
             self.window(), t("token.change"), t("sakura.token_prompt"),
-            validator=lambda v: None if is_valid_token(v) else t("sakura.token_invalid_hint"))
+            validator=lambda v: None if sakura_frp.is_valid_token(v) else t("sakura.token_invalid_hint"))
         if not dialog.exec() or not dialog.result_text:
             return
         app_settings.set_sakura_token(dialog.result_text)
