@@ -22,7 +22,7 @@ from dstools.qt import dialogs
 from dstools.qt.imaging import pil_to_pixmap
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
-from dstools.qt.widgets import Card, PillTabBar, mod_format_tag_colors
+from dstools.qt.widgets import CachedRowList, Card, PillTabBar, mod_format_tag_colors
 
 _STATE_KEYS = {
     SteamcmdModState.OUTDATED: "steamcmd_update.state_outdated",
@@ -120,6 +120,9 @@ class SteamcmdModUpdateDialog(QDialog):
         self._rows_layout = QVBoxLayout(inner)
         self._rows_layout.setContentsMargins(0, 3, 0, 3)
         self._rows_layout.setSpacing(3)
+        # 按 Mod 缓存行控件：搜索、筛选、全选不再整表重建
+        self._row_list = CachedRowList(self._rows_layout)
+        self._row_checkboxes: dict[str, QCheckBox] = {}
         area.setWidget(inner)
         list_layout.addWidget(area)
 
@@ -236,17 +239,30 @@ class SteamcmdModUpdateDialog(QDialog):
             self._selected.difference_update(selectable)
         self._render_rows()
 
-    def _clear_rows(self) -> None:
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()
-                widget.setParent(None)
-                widget.deleteLater()
+    def _row_signature(self, wid: str) -> tuple:
+        """行内容依赖的全部数据；变了才重建这一行（勾选和底色由 _place_row 原地更新）。"""
+        row = self._row_of(wid)
+        info = self.page._mod_infos.get(f"workshop-{wid}")
+        image = self.page._icon_imgs.get(f"workshop-{wid}")
+        return (row, self._name_for(row), version_display(info), id(image) if image else None,
+                self._busy, self._check_error)
+
+    def _place_row(self, card: Card, wid: str, index: int) -> None:
+        card.set_fill_key("CARD_BG_ALT" if index % 2 == 0 else "CARD_BG")
+        checkbox = self._row_checkboxes.get(wid)
+        if checkbox is not None and checkbox.isChecked() != (wid in self._selected):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(wid in self._selected)
+            checkbox.blockSignals(False)
+
+    def _make_empty_label(self) -> QLabel:
+        empty = QLabel(t("steamcmd_update.loading_local") if self._loading and not self._rows
+                       else t("mod.no_filtered"))
+        empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty.setContentsMargins(0, 24, 0, 24)
+        return empty
 
     def _render_rows(self, *_args) -> None:
-        self._clear_rows()
         pending = sum(1 for row in self._rows if row.needs_download)
         needs_label = t("mod.update_filter_needs_update")
         self._filter.set_labels([t("mod.show_all"), f"{needs_label}（{pending}）" if pending else needs_label,
@@ -255,16 +271,9 @@ class SteamcmdModUpdateDialog(QDialog):
         selectable = [wid for wid in visible if self._row_of(wid).needs_download]
         self._select_all_box.setEnabled(bool(selectable) and not self._busy)
         self._select_all_box.setChecked(bool(selectable) and all(wid in self._selected for wid in selectable))
-        if not visible:
-            empty = QLabel(t("steamcmd_update.loading_local") if self._loading and not self._rows
-                           else t("mod.no_filtered"))
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setContentsMargins(0, 24, 0, 24)
-            self._rows_layout.addWidget(empty)
-        else:
-            for index, wid in enumerate(visible):
-                self._rows_layout.addWidget(self._make_row(self._row_of(wid), index))
-        self._rows_layout.addStretch()
+        self._row_list.render(visible, signature=self._row_signature,
+                              build=lambda wid: self._make_row(self._row_of(wid), 0),
+                              place=self._place_row, empty=self._make_empty_label)
         self._refresh_controls()
 
     def _refresh_controls(self) -> None:
@@ -294,6 +303,7 @@ class SteamcmdModUpdateDialog(QDialog):
         checkbox.setEnabled(row.needs_download and not self._busy)
         checkbox.setChecked(wid in self._selected)
         checkbox.toggled.connect(lambda checked, w=wid: self._on_check(w, checked))
+        self._row_checkboxes[wid] = checkbox
         layout.addWidget(checkbox)
 
         icon_label = QLabel()

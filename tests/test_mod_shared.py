@@ -251,6 +251,7 @@ def test_workshop_candidates_do_not_require_installed_client_files():
     tab = ModPage.__new__(ModPage)
     tab._workshop_mod_ids = lambda: [11]
     tab._current_cluster_workshop_ids = lambda: {"33"}
+    tab._workshop_scan_ids = (0.0, [])  # 没有可复用的扫描结果，实际扫描
     with patch(
         "dstools.features.mod.legacy_v1.find_legacy_packages",
         return_value={22: Path("C:/fake/22_legacy.bin")},

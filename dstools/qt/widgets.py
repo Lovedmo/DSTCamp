@@ -1,6 +1,6 @@
 """通用自绘控件：圆角开关、半透明圆角卡片、胶囊页签条、缩放热区（颜色在 paintEvent 里现查）。"""
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QMenu, QScrollArea, QVBoxLayout, QWidget
 
@@ -61,6 +61,11 @@ class Card(QWidget):
         self._border_key = border_key
         # None：边框随底色显隐；True/False 让边框独立于底色（alpha=0 + True 即"只有描边、内部透明"）
         self._border = border
+
+    def set_fill_key(self, fill_key: str) -> None:
+        if fill_key != self._fill_key:
+            self._fill_key = fill_key
+            self.update()
 
     def paintEvent(self, _event):
         show_border = self._border if self._border is not None else (self._alpha > 0)
@@ -297,6 +302,74 @@ class Banner(QWidget):
         rect = self.rect().adjusted(self._PAD_X, self._PAD_Y, -self._PAD_X, -self._PAD_Y)
         painter.drawText(rect, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter) | int(Qt.TextFlag.TextWordWrap),
                           self._text)
+
+
+class CachedRowList:
+    """长列表的行控件管理：按 key 缓存复用，签名不变就不重建（搜索、筛选、全选只调整显隐和顺序）；
+    新建的行先同步建第一屏，其余在事件循环空闲时分批补齐，不卡住界面。
+
+    签名用 == 比较：任何会改变行内容的数据都要放进签名；勾选、底色等可原地改的状态交给 place。
+    """
+
+    def __init__(self, layout: QVBoxLayout, *, first_batch: int = 12, batch: int = 30):
+        self._layout = layout
+        self._first_batch = first_batch
+        self._batch = batch
+        self._cache: dict[str, tuple[object, QWidget]] = {}
+        self._generation = 0
+
+    def render(self, keys, *, signature, build, place, empty=None) -> None:
+        """按 keys 顺序显示各行。signature(key) 给出行内容签名，build(key) 新建行，
+        place(widget, key, index) 在每次摆放时同步可原地更新的状态；没有行时显示 empty() 返回的控件。"""
+        self._generation += 1
+        cached = {id(widget) for _sig, widget in self._cache.values()}
+        while self._layout.count():
+            widget = self._layout.takeAt(0).widget()
+            if widget is None:
+                continue  # 弹簧
+            widget.hide()
+            if id(widget) not in cached:  # 空列表提示等临时控件
+                widget.setParent(None)
+                widget.deleteLater()
+        keys = list(keys)
+        if not keys and empty is not None:
+            self._layout.addWidget(empty())
+        self._layout.addStretch()
+        self._fill(self._generation, keys, 0, signature, build, place, self._first_batch)
+
+    def clear(self) -> None:
+        """丢弃全部缓存的行（数据整体换掉时用），下次 render 全部重建。"""
+        for _sig, widget in self._cache.values():
+            widget.setParent(None)
+            widget.deleteLater()
+        self._cache.clear()
+
+    def _fill(self, generation, keys, start, signature, build, place, budget) -> None:
+        if generation != self._generation:
+            return  # 中途又重新 render 过，旧的补齐任务作废
+        created = 0
+        index = start
+        while index < len(keys) and created < budget:
+            key = keys[index]
+            sig = signature(key)
+            entry = self._cache.get(key)
+            if entry is not None and entry[0] == sig:
+                widget = entry[1]
+            else:
+                if entry is not None:
+                    entry[1].setParent(None)
+                    entry[1].deleteLater()
+                widget = build(key)
+                self._cache[key] = (sig, widget)
+                created += 1
+            place(widget, key, index)
+            self._layout.insertWidget(self._layout.count() - 1, widget)  # 插在末尾弹簧之前
+            widget.show()
+            index += 1
+        if index < len(keys):
+            # 以布局所在控件为上下文：窗口关闭销毁后定时器自动作废
+            QTimer.singleShot(0, self._layout.parentWidget(), lambda: self._fill(
+                generation, keys, index, signature, build, place, self._batch))
 
 
 class FrostedMenu(QMenu):

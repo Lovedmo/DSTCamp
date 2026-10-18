@@ -27,7 +27,7 @@ from dstools.qt import dialogs
 from dstools.qt.imaging import pil_to_pixmap
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
-from dstools.qt.widgets import Card, PillTabBar, mod_format_tag_colors
+from dstools.qt.widgets import CachedRowList, Card, PillTabBar, mod_format_tag_colors
 
 _LATEST_LABELS = {
     WorkshopModState.CURRENT: "mod.update_latest_up_to_date",
@@ -206,6 +206,9 @@ class WorkshopUpdateDialog(QDialog):
         self._rows_layout = QVBoxLayout(inner)
         self._rows_layout.setContentsMargins(0, 3, 0, 3)
         self._rows_layout.setSpacing(3)
+        # 两百多行逐个建控件要近 1 秒：按 Mod 缓存复用，搜索/筛选/全选不再整表重建
+        self._row_list = CachedRowList(self._rows_layout)
+        self._row_checkboxes: dict[str, QCheckBox] = {}
         area.setWidget(inner)
         list_layout.addWidget(area)
 
@@ -330,6 +333,7 @@ class WorkshopUpdateDialog(QDialog):
             self._states = {str(k): v for k, v in states.items()}
             self.page._workshop_status_cache = dict(states)
             self.page._workshop_status_checked_at = time.monotonic()
+            self.page._workshop_scan_ids = (self.page._workshop_status_checked_at, [int(wid) for wid in self._ids])
             self.page._update_workshop_update_hint()
             self._refresh_account_filter()
             self._render_rows()
@@ -372,17 +376,23 @@ class WorkshopUpdateDialog(QDialog):
             self._selected.difference_update(selectable)
         self._render_rows()
 
-    def _clear_rows(self) -> None:
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.hide()
-                widget.setParent(None)
-                widget.deleteLater()
+    def _row_signature(self, wid: str) -> tuple:
+        """行内容依赖的全部数据；变了才重建这一行（勾选和底色由 _place_row 原地更新）。"""
+        info = self.page._mod_infos.get(f"workshop-{wid}") or self.page._mod_infos.get(wid)
+        image = self.page._icon_imgs.get(f"workshop-{wid}") or self.page._icon_imgs.get(wid)
+        account = self.page.ctx.env.current_account(Platform.STEAM)
+        return (self._states.get(wid), self._name_for(wid), version_display(info), id(image) if image else None,
+                wid in self._cleanup_running, account.id if account is not None else None)
+
+    def _place_row(self, row: Card, wid: str, index: int) -> None:
+        row.set_fill_key("CARD_BG_ALT" if index % 2 == 0 else "CARD_BG")
+        checkbox = self._row_checkboxes.get(wid)
+        if checkbox is not None and checkbox.isChecked() != (wid in self._selected):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(wid in self._selected)
+            checkbox.blockSignals(False)
 
     def _render_rows(self) -> None:
-        self._clear_rows()
         pending = self._pending_count()
         needs_update_label = t("mod.update_filter_needs_update")
         self._status_filter.set_labels([
@@ -395,15 +405,8 @@ class WorkshopUpdateDialog(QDialog):
         selectable = [wid for wid in visible_ids if self._can_check(wid)]
         self._select_all_box.setEnabled(bool(selectable))
         self._select_all_box.setChecked(bool(selectable) and all(wid in self._selected for wid in selectable))
-        if not visible_ids:
-            empty = QLabel(t("mod.no_filtered"))
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setContentsMargins(0, 24, 0, 24)
-            self._rows_layout.addWidget(empty)
-        else:
-            for index, wid in enumerate(visible_ids):
-                self._rows_layout.addWidget(self._make_row(wid, index))
-        self._rows_layout.addStretch()
+        self._row_list.render(visible_ids, signature=self._row_signature, build=lambda wid: self._make_row(wid, 0),
+                              place=self._place_row, empty=self._make_empty_label)
         quick = self._quick_update_ids()
         self._quick_update_btn.setText(
             t("mod.update_quick_btn_count", count=len(quick)) if quick else t("mod.update_quick_btn"))
@@ -421,6 +424,13 @@ class WorkshopUpdateDialog(QDialog):
         self._cleanup_all_btn.setEnabled((has_residual or bool(self._selected_force_ids()))
                                          and not self._cleanup_running)
 
+    @staticmethod
+    def _make_empty_label() -> QLabel:
+        empty = QLabel(t("mod.no_filtered"))
+        empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty.setContentsMargins(0, 24, 0, 24)
+        return empty
+
     def _make_row(self, wid: str, index: int) -> QWidget:
         # 交替行色与主 Mod 列表一致（CARD_BG/CARD_BG_ALT），每行一个 Card 带描边形成独立卡片。
         # 坑：用 Card 自绘而不是给容器设无选择器的 styleSheet，后者会压掉子 QPushButton 的全局样式
@@ -435,6 +445,7 @@ class WorkshopUpdateDialog(QDialog):
             checkbox.setToolTip(self._force_block_reason(self._states.get(wid)))
         checkbox.setChecked(wid in self._selected)
         checkbox.toggled.connect(lambda checked, w=wid: self._on_check(w, checked))
+        self._row_checkboxes[wid] = checkbox
         layout.addWidget(checkbox)
 
         image = self.page._icon_imgs.get(f"workshop-{wid}") or self.page._icon_imgs.get(wid)

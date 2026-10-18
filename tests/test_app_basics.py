@@ -151,5 +151,58 @@ def test_resume_identity_tolerates_mod_log_noise():
     assert identities == {"A7NOISYFOLD1": "KU_noisy", "A7SECONDFOLD": "KU_second"}, identities
 
 
+def test_cached_row_list_reuses_rows_and_fills_in_batches():
+    """「更新 Mod」长列表：签名不变复用控件，签名变了只重建那一行；超出首批的行空闲时补齐、顺序不乱。"""
+    import time
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+
+    from dstools.qt.widgets import CachedRowList
+
+    app = QApplication.instance() or QApplication([])
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    rows = CachedRowList(layout, first_batch=3, batch=2)
+    data = {f"k{i}": "v" for i in range(7)}
+    built, placed = [], {}
+
+    def render(keys):
+        rows.render(keys, signature=lambda key: data[key], build=lambda key: built.append(key) or QLabel(key),
+                    place=lambda _widget, key, index: placed.__setitem__(key, index),
+                    empty=lambda: QLabel("empty"))
+
+    def shown():
+        return [layout.itemAt(i).widget().text() for i in range(layout.count())
+                if layout.itemAt(i).widget() is not None]
+
+    def settle(expected):
+        # 补齐靠 0 毫秒定时器，循环处理事件直到补齐（最多约 2 秒）
+        for _ in range(2000):
+            if shown() == expected:
+                return
+            app.processEvents()
+            time.sleep(0.001)
+
+    keys = list(data)
+    render(keys)
+    assert shown() == keys[:3], "首批只同步建 3 行"
+    settle(keys)
+    assert shown() == keys and len(built) == 7
+
+    built.clear()
+    render(keys[::-1])  # 倒序：全部复用，序号由 place 更新
+    assert shown() == keys[::-1] and built == [] and placed["k0"] == 6
+
+    data["k2"] = "changed"
+    render(keys)
+    settle(keys)
+    assert built == ["k2"] and shown() == keys
+
+    render([])
+    assert shown() == ["empty"]
+    host.deleteLater()
+
+
 if __name__ == "__main__":
     run(globals())

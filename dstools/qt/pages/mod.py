@@ -95,6 +95,8 @@ class ModPage(Page):
         self._workshop_status_checked_at = 0.0
         self._workshop_status_refreshing = False
         self._workshop_status_error = ""
+        # 上次查更新状态时扫描到的候选（含 V1 包、残留目录）及当时的检查时刻，状态有效期内复用
+        self._workshop_scan_ids: tuple[float, list[int]] = (0.0, [])
         # SteamCMD「更新 Mod」窗口上次查完的列表：再次打开先显示它，后台照常复查后原地更新
         self.steamcmd_update_rows_snapshot: list = []
         self._steamcmd_pending_count: int | None = None  # SteamCMD 通道需要下载的 Mod 数；其它通道为 None
@@ -1229,8 +1231,13 @@ class ModPage(Page):
     def _workshop_candidate_ids(self) -> list[int]:
         """合并本地目录、V1 包与存档配置中的项目（订阅项由 Steam 补入），覆盖"已安装但未启用""残留文件"
         "V1 包未展开"等不在当前列表中的情况。"""
-        return _expand_workshop_candidate_ids(
-            self._workshop_mod_ids(), [int(raw_id) for raw_id in self._current_cluster_workshop_ids()])
+        list_ids = self._workshop_mod_ids()
+        cluster_ids = [int(raw_id) for raw_id in self._current_cluster_workshop_ids()]
+        stamp, scanned = self._workshop_scan_ids
+        if scanned and stamp == self._workshop_status_checked_at and self.workshop_status_fresh(()):
+            # 状态有效期内复用那次扫描的结果，打开「更新 Mod」窗口不再扫一遍磁盘；状态作废时一起作废
+            return list(dict.fromkeys(item for item in (*list_ids, *scanned, *cluster_ids) if item > 0))
+        return _expand_workshop_candidate_ids(list_ids, cluster_ids)
 
     def workshop_status_fresh(self, ids) -> bool:
         """更新状态在有效期内查过且覆盖这些 Mod 时直接复用：工具栏提示和「更新 Mod」弹窗共用，免得每次打开都等一遍。"""
@@ -1301,27 +1308,29 @@ class ModPage(Page):
                 int(str(wid).removeprefix("workshop-")): path
                 for wid, path in self._mod_paths.items()
                 if str(wid).removeprefix("workshop-").isdigit() and not is_legacy_read_cache_path(path)}
+            candidate_ids = _expand_workshop_candidate_ids(local_ids, cluster_ids)
             try:
                 states = inspect_workshop_items(
-                    _expand_workshop_candidate_ids(local_ids, cluster_ids), discovered_paths=discovered_paths,
+                    candidate_ids, discovered_paths=discovered_paths,
                     legacy_active_root=self._server_mods_root(), query_source=True, include_subscribed=True,
                     residual_paths=find_workshop_residual_dirs(),
                     workshop_content_paths=find_workshop_content_dirs(),
                     legacy_runtime_residual_paths=find_legacy_runtime_residual_dirs(),
                     running_dst_processes=running_dst_processes(),
                     acf_subscribers=read_acf_subscribers(find_workshop_dir()))
-                return states, ""
+                return states, "", candidate_ids
             except Exception as exc:
-                return {}, str(exc)
+                return {}, str(exc), []
 
         def done(result) -> None:
-            states, error = result
+            states, error, candidate_ids = result
             self._workshop_status_refreshing = False
             if gen != self._refresh_gen:
                 return
             self._workshop_status_cache = dict(states)
             self._workshop_status_error = error
             self._workshop_status_checked_at = time.monotonic()
+            self._workshop_scan_ids = (self._workshop_status_checked_at, candidate_ids)
             self._update_workshop_update_hint()
 
         run_async(work, done, lambda _exc: setattr(self, "_workshop_status_refreshing", False))
