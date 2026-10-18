@@ -247,9 +247,11 @@ class ServerStatus(Enum):
 #   坑：新建世界的临时 worldgen 也会打印 "About to start..." 和 "Reset() returning"，
 #   随后销毁重载，不能把 Reset 当完成标记；
 #   坑：引擎不做空服暂停时（pause_when_empty=false，或"三界同行"等 Mod 自行 SetTimeScale(0) 冻结）
-#   永远不打印 "Sim paused"，因此大厅注册成功（"Server registered via geo DNS"）和
-#   从世界接入完成（"[Shard] Secondary <名>(<id>) ready!"）也算就绪；
-#   这两行在 53 份真机日志中都只出现在正式 Sim 阶段，且不早于 "Sim paused"；
+#   永远不打印 "Sim paused"（已用两份只差该项的离线存档实跑确认），因此大厅注册成功
+#   （"Server registered via geo DNS"）和从世界接入完成（"[Shard] Secondary <名>(<id>) ready!"）也算就绪；
+#   多世界的 Master 在世界加载完后打印 "[Shard] Shard server started on port"，正常日志里
+#   "Sim paused" 紧随其后 0～1 秒，同样算就绪（单世界和从世界不打印这行）；
+#   这几行在真机日志中都只出现在正式 Sim 阶段，且不早于 "Sim paused" 1 秒以上；
 # - Secondary：连上 Master 后打印 "secondary shard LUA is now ready!"（旧版为 "Slave LUA ..."）。
 # 启动分界线有两种措辞，随 cluster.ini 的 shard_enabled 变化：
 # true 为 "About to start a shard with these settings"，false 为
@@ -258,7 +260,10 @@ _REAL_START_MARKERS = (
     "about to start a shard with these settings",
     "about to start a server with the following settings",
 )
-_MASTER_READY_MARKERS = ("sim paused", "sim unpaused", "dst_master_ready", "server registered via geo dns")
+_MASTER_READY_MARKERS = (
+    "sim paused", "sim unpaused", "dst_master_ready",
+    "server registered via geo dns", "shard server started on port",
+)
 _MASTER_SECONDARY_READY_RE = re.compile(r"\[shard\] secondary .+\(\S+\) ready!")
 _SECONDARY_READY_MARKERS = ("is now ready!",)
 

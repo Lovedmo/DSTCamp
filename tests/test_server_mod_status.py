@@ -120,6 +120,7 @@ def test_presentation_waits_until_ready_line_is_consumed() -> None:
 def test_master_ready_without_sim_paused() -> None:
     # 真机日志（三界同行 Mod 自行冻结世界）：Master 全程不打印 "Sim paused"
     for ready_line in (
+        "[00:01:43]: [Shard] Shard server started on port: 10888",
         "[00:01:55]: Server registered via geo DNS in ap-east-1",
         "[00:02:06]: [Shard] Secondary Volcano(5) ready!",
     ):
