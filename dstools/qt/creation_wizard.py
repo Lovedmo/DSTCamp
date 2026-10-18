@@ -49,7 +49,8 @@ from dstools.shared import app_settings
 from dstools.shared.cluster_names import validate_cluster_folder_name
 from dstools.shared.discovery import find_klei_root
 from dstools.shared.server_ports import (
-    allocate_cluster_port_values, collect_cluster_port_claims, find_port_conflicts, scan_udp_ports,
+    allocate_cluster_port_values, allocate_lan_server_ports, collect_cluster_port_claims, find_port_conflicts,
+    scan_udp_ports,
 )
 from dstools.shared.token_manager import read_token
 from dstools.qt import dialogs
@@ -1156,9 +1157,8 @@ class CreationWizardDialog(QDialog):
                           config=cluster_ini,
                           shards=[Shard(shard_name, destination / shard_name, config=shard_configs[shard_name])
                                  for shard_name in shard_names])
-        planned_claims, issues = collect_cluster_port_claims(planned)
-        if issues:
-            return True
+        # 新存档自身的端口问题（如离线模式端口越界会被游戏回退成 10999）不影响检查：claims 里已是游戏实际会用的端口
+        planned_claims, _issues = collect_cluster_port_claims(planned)
         existing_claims = []
         for cluster in self.ctx.env.clusters:
             if cluster.source != SaveSource.SERVER or cluster.platform != Platform.STEAM:
@@ -1166,22 +1166,27 @@ class CreationWizardDialog(QDialog):
             claims, _ = collect_cluster_port_claims(cluster)
             existing_claims.extend(claims)
         planned_keys = {claim.owner_key for claim in planned_claims}
-        conflicts = [c for c in find_port_conflicts(existing_claims + planned_claims)
-                    if any(claim.owner_key in planned_keys for claim in c.claims)]
-        if not conflicts:
+        # 按现有存档汇总与新存档撞上的端口（只算新存档和现有存档之间的冲突）
+        conflict_ports: dict[str, tuple[str, set[int]]] = {}
+        for conflict in find_port_conflicts(existing_claims + planned_claims):
+            if not any(claim.owner_key in planned_keys for claim in conflict.claims):
+                continue
+            for claim in conflict.claims:
+                if claim.owner_key not in planned_keys:
+                    conflict_ports.setdefault(claim.cluster_path, (claim.cluster_name, set()))[1].add(conflict.port)
+        if not conflict_ports:
             return True
-        # 每个冲突端口一行，写明与哪个存档的哪个世界冲突
-        lines = []
-        for conflict in conflicts[:8]:
-            owners = sorted({f"{claim.cluster_name}（{claim.shard_name}）" if claim.shard_name else claim.cluster_name
-                             for claim in conflict.claims if claim.owner_key not in planned_keys})
-            lines.append(t("world.create_port_conflict_line", port=conflict.port, owners="、".join(owners)))
-        if len(conflicts) > 8:
-            lines.append("……")
+        clusters = sorted(conflict_ports.values(), key=lambda item: item[0].casefold())
+        lines = [t("world.create_port_conflict_line", cluster=cluster_name,
+                   ports="、".join(str(port) for port in sorted(ports)))
+                 for cluster_name, ports in clusters[:8]]
+        if len(clusters) > 8:
+            lines.append(t("world.create_port_conflict_more", count=len(clusters) - 8))
         choice = dialogs.ask_choice(
             self, t("world.create_port_conflict_title"),
             t("world.create_port_conflict_detail", details="\n".join(lines)),
-            [(t("world.allocate_ports_btn"), "allocate"), (t("dlg.no_btn"), "cancel"), (t("dlg.yes_btn"), "create")],
+            [(t("world.allocate_ports_btn"), "allocate"), (t("dlg.cancel_btn"), "cancel"),
+             (t("world.create_port_conflict_anyway_btn"), "create")],
             default="allocate", min_width=420)
         if choice not in ("allocate", "create"):  # 取消或直接关闭窗口
             return False
@@ -1192,6 +1197,15 @@ class CreationWizardDialog(QDialog):
         if scan.ok:
             used.update(port for ports_for_pid in scan.ports_by_pid.values() for port in ports_for_pid)
         master_port, values = allocate_cluster_port_values(shard_names, used)
+        if cluster_ini.network.get("lan_only_cluster") or cluster_ini.network.get("offline_cluster"):
+            # 离线/仅局域网时游戏端口必须在 10998..11018，否则游戏会退回 10999，又撞上别的存档
+            try:
+                lan_ports = allocate_lan_server_ports(shard_names, used)
+            except ValueError:
+                dialogs.show_warning(self, t("world.create_port_conflict_title"), t("world.create_lan_ports_full"))
+                return False
+            for shard_name, port in lan_ports.items():
+                values[shard_name]["server_port"] = port
         cluster_ini.shard["master_port"] = master_port
         for shard_name, ports_for_shard in values.items():
             config = shard_configs[shard_name]

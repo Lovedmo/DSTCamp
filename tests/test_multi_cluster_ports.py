@@ -693,6 +693,42 @@ def test_world_creation_port_conflict_choices() -> None:
         assert len(allocated) == 7
         assert not allocated & {10888, 10998, 10999, 27016, 27017, 8766, 8767}
 
+        # 离线存档：10998..11018 被占满时提示无法分配，不能分到范围外（游戏会退回 10999 再次冲突）
+        def prepare_offline(busy_ports):
+            cluster_ini = default_cluster_config("New")
+            cluster_ini.network["offline_cluster"] = True
+            shard_configs = {}
+            warnings = []
+            with patch.object(creation_wizard.dialogs, "ask_choice", return_value="allocate"), \
+                    patch.object(creation_wizard.dialogs, "show_warning",
+                                 side_effect=lambda *args: warnings.append(args)), \
+                    patch.object(creation_wizard, "scan_udp_ports",
+                                 return_value=UdpPortScan(True, {1: frozenset(busy_ports)})):
+                result = tab._prepare_unique_creation_ports("New", root / "New", cluster_ini, shard_configs)
+            return result, shard_configs, warnings
+
+        result, shard_configs, warnings = prepare_offline(range(11000, 11017))
+        assert result and not warnings
+        assert {config.network["server_port"] for config in shard_configs.values()} == {11017, 11018}
+        result, _, warnings = prepare_offline(range(11000, 11019))
+        assert not result and len(warnings) == 1
+
+
+def test_single_world_master_port_is_not_bound() -> None:
+    """实测：shard_enabled=false 的单世界不绑定 master_port，不能和别的存档算作冲突。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        multi = _write_cluster(root, "Multi")
+        single = _write_cluster(root, "Single", caves=False, master_game_port=11005)
+        ini = single.path / "cluster.ini"
+        ini.write_text(ini.read_text(encoding="utf-8").replace("shard_enabled=true", "shard_enabled=false"),
+                       encoding="utf-8")
+        claims = [*collect_cluster_port_claims(multi)[0], *collect_cluster_port_claims(single)[0]]
+        assert find_port_conflicts(claims) == []
+        # 分配新端口时仍要避开，以后改成多世界也不会撞
+        assert any(claim.field == "master_port" and claim.port == DEFAULT_MASTER_PORT
+                   for claim in collect_cluster_port_claims(single)[0])
+
 
 def test_server_manager_rejects_duplicate_start() -> None:
     from dstools.features.local_service import dedicated_server

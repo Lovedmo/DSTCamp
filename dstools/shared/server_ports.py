@@ -201,10 +201,15 @@ def collect_cluster_port_claims(
                 raw_master_port, DEFAULT_MASTER_PORT, cluster=cluster,
                 shard=shard, field="master_port", issues=issues,
             )
+            # 实测：shard_enabled=false（单世界）时主世界不启动分片服务，不绑定 master_port；
+            # 标 binding=False，冲突检测跳过，分配时仍避开（以后改成多世界也不会撞）
+            shard_enabled = bool(config.shard.get(
+                "shard_enabled", cluster_config.shard.get("shard_enabled", False)
+            ))
             if port is not None:
                 claims.append(PortClaim(
                     str(cluster.path), cluster.name, shard.name,
-                    "master_port", port, source,
+                    "master_port", port, source, binding=shard_enabled,
                 ))
 
     if selected is not None:
