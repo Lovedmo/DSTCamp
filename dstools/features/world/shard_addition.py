@@ -10,7 +10,9 @@ import secrets
 import shutil
 
 from dstools.features.cluster_config.config_manager import CLUSTER_INI_DEFAULTS
+from dstools.features.mod.parser import find_workshop_dir, is_mod_subscribed
 from dstools.features.mod.sync import get_enabled_mod_ids
+from dstools.features.mod.workshop_acf import read_acf_installed_sizes
 from dstools.features.world.creation import shard_level_data, WorldShardPlan
 from dstools.features.world.defaults import (
     default_plan_for_location,
@@ -59,6 +61,15 @@ def _master_shard(cluster: Cluster):
         if (shard.path / "server.ini").is_file() and parse_server_ini(shard.path / "server.ini").shard.get("is_master"):
             return shard
     return next((shard for shard in cluster.shards if shard.name == "Master"), None)
+
+
+def worldgate_installed() -> bool:
+    """本机的工坊目录里装好了万界之门：要有 modinfo.lua，还要登记在 appworkshop_322330.acf 里。
+
+    实测专服带 -ugc_directory 时，文件夹在但清单没登记的 Mod 不会被加载（日志 "No mods registered"）。"""
+    if not is_mod_subscribed(WORLDGATE_MOD_ID):
+        return False
+    return int(WORLDGATE_MOD_ID) in read_acf_installed_sizes(find_workshop_dir())
 
 
 def available_locations(cluster: Cluster) -> tuple[str, ...]:

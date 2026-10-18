@@ -4,18 +4,20 @@
 新世界时生效（已生成的世界需重置），后台加载，面板见 qt/world_panel.py。
 """
 
+import webbrowser
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout,
 )
 
 from dstools.features.local_service.backup_manager import create_backup
+from dstools.features.local_service.steam_backend import SteamBackend, get_backend
 from dstools.features.world import page_data, shard_addition
 from dstools.features.world.location_profiles import FOREST_LOCATION, get_location_definition
 from dstools.features.mod.shardindex import (
     LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
 )
-from dstools.features.mod.parser import is_mod_subscribed
 from dstools.i18n import get_lang, t
 from dstools.qt import dialogs
 from dstools.qt.pages.base import Page
@@ -187,6 +189,9 @@ class WorldSettingsPage(Page):
         if self.ctx.cluster_running(cluster):
             dialogs.show_warning(self.window(), title, t("world.add_shard_running"))
             return
+        if not shard_addition.worldgate_installed():
+            self._guide_worldgate(title)
+            return
         try:
             locations = shard_addition.available_locations(cluster)
         except ValueError as exc:
@@ -203,8 +208,6 @@ class WorldSettingsPage(Page):
         shard_name = shard_addition.next_shard_name(cluster, location)
         label = dict((loc, text) for text, loc in choices)[location]
         confirm = t("world.add_shard_confirm", cluster=cluster.name, shard=shard_name, location=label)
-        if not is_mod_subscribed(shard_addition.WORLDGATE_MOD_ID):
-            confirm += "\n\n" + t("world.add_shard_worldgate_missing")
         if not dialogs.ask_yes_no(self.window(), title, confirm, min_width=420):
             return
         klei_root = self.ctx.env.klei_root_for(cluster.platform)
@@ -234,6 +237,22 @@ class WorldSettingsPage(Page):
             dialogs.show_error(self.window(), title, str(exc))
 
         run_async(work, done, failed)
+
+    def _guide_worldgate(self, title: str) -> None:
+        """本机还没有万界之门：先引导订阅（SteamCMD 通道直接下载），装好后再新增世界。"""
+        steamcmd = get_backend() is SteamBackend.STEAMCMD
+        action = t("mod.recommend_download" if steamcmd else "mod.recommend_subscribe")
+        prompt = t("world.add_shard_need_worldgate_steamcmd" if steamcmd else "world.add_shard_need_worldgate")
+        choice = dialogs.ask_choice(self.window(), title, prompt,
+                                    [(action, "go"), (t("dlg.cancel_btn"), "cancel")], default="go", min_width=420)
+        if choice != "go":
+            return
+        if steamcmd:
+            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+            run_steamcmd_mod_update(self.window(), [shard_addition.WORLDGATE_MOD_ID],
+                                    on_finished=self.ctx.workshop_mods_changed.emit)
+        else:
+            webbrowser.open(f"https://steamcommunity.com/sharedfiles/filedetails/?id={shard_addition.WORLDGATE_MOD_ID}")
 
     def _load_world(self) -> None:
         self._generation += 1
