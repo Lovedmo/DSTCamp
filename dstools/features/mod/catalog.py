@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from dstools.features.mod.parser import ModInfo, find_game_mods_dir, find_workshop_dir
+from dstools.features.mod.parser import ModInfo, default_steam_mods_dir, find_workshop_dir
 from dstools.models import Platform
 
 
@@ -28,12 +28,12 @@ class ModCatalogSnapshot:
 def catalog_source_key(
     platform: Platform, wegame_client_mods_dir: Path | None = None
 ) -> tuple[str, str, str]:
-    """生成能区分平台和真实内容根目录的快照键。"""
+    """生成能区分平台和真实内容根目录的快照键（SteamCMD 通道的本地 Mod 目录是当前独立专服的 mods，换专服即换键）。"""
     if platform == Platform.WEGAME:
         return platform.value, str(wegame_client_mods_dir or ""), ""
     return (
         platform.value,
-        str(find_game_mods_dir() or ""),
+        str(default_steam_mods_dir() or ""),
         str(find_workshop_dir() or ""),
     )
 

@@ -80,7 +80,7 @@ def test_catalog_icons_and_platform_invalidation():
     steam_info = ModInfo(name="Steam")
     wegame_info = ModInfo(name="WeGame")
     with patch(
-        "dstools.features.mod.catalog.find_game_mods_dir", return_value=Path("C:/steam/mods")
+        "dstools.features.mod.catalog.default_steam_mods_dir", return_value=Path("C:/steam/mods")
     ), patch(
         "dstools.features.mod.catalog.find_workshop_dir", return_value=Path("C:/steam/workshop")
     ):
