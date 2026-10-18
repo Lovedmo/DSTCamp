@@ -509,6 +509,7 @@ class _SteamBackendDialog(dialogs.Dialog):
         # 登录缓存存在每份 SteamCMD 自己的 config 里：保存时实际用的 SteamCMD 变了就要重新登录
         self._initial_steamcmd = steamcmd or steamcmd_updater.bundled_steamcmd_path()
         self._logged_in_with: Path | None = None
+        self._cached_asked_for = ""  # 已就多个缓存账号询问过的 SteamCMD，离开输入框时不重复弹窗
         group = QButtonGroup(self)
         self._radios: dict[SteamBackend, QRadioButton] = {}
         for backend, name_key, desc_key in (
@@ -542,6 +543,7 @@ class _SteamBackendDialog(dialogs.Dialog):
         self._custom_check = QCheckBox(t("local.backend_steamcmd_custom"))
         self._custom_check.setChecked(steamcmd is not None)
         self._custom_check.toggled.connect(self._sync_path_enabled)
+        self._custom_check.toggled.connect(self._adopt_cached_login)
         custom_row = QHBoxLayout()
         custom_row.setContentsMargins(24, 0, 0, 0)
         custom_row.addWidget(self._custom_check)
@@ -551,6 +553,7 @@ class _SteamBackendDialog(dialogs.Dialog):
         path_row.setContentsMargins(48, 0, 0, 0)
         self._path_edit = QLineEdit(str(steamcmd) if steamcmd else "")
         self._path_edit.setPlaceholderText(t("local.backend_steamcmd_placeholder"))
+        self._path_edit.editingFinished.connect(self._adopt_cached_login)
         self._browse_btn = QPushButton(t("local.backend_browse_btn"))
         self._browse_btn.clicked.connect(self._browse)
         path_row.addWidget(self._path_edit, 1)
@@ -590,9 +593,40 @@ class _SteamBackendDialog(dialogs.Dialog):
 
     def _set_account(self, account: str) -> None:
         self.result_account = account
-        self._account_label.setText(t("local.steamcmd_account_user", user=account) if account
-                                    else t("local.steamcmd_account_anonymous"))
+        if not account:
+            text = t("local.steamcmd_account_anonymous")
+        elif steamcmd_updater.login_cached(self._selected_steamcmd(), account):
+            text = t("local.steamcmd_account_user", user=account)
+        else:
+            text = t("local.steamcmd_account_user_uncached", user=account)
+        self._account_label.setText(text)
         self._sync_path_enabled()
+
+    def _selected_steamcmd(self) -> Path | None:
+        """当前选中的 steamcmd.exe（只算路径，不释放内置版本）；自选路径无效时为 None。"""
+        if not self._custom_check.isChecked():
+            return steamcmd_updater.bundled_steamcmd_path()
+        path = Path(self._path_edit.text().strip().strip('"'))
+        return path if steamcmd_updater.is_steamcmd_exe(path) else None
+
+    def _adopt_cached_login(self) -> None:
+        """换了 SteamCMD：它保存着登录的账号直接拿来用（登录缓存在每份 SteamCMD 自己的 config 里），
+        当前账号就在其中时不动；有多个时让用户选。这份没有保存任何登录时保留当前账号，保存时再提示重新登录。"""
+        steamcmd = self._selected_steamcmd()
+        cached = steamcmd_updater.cached_login_accounts(steamcmd)
+        if not cached or steamcmd_updater.login_cached(steamcmd, self.result_account):
+            self._set_account(self.result_account)  # 刷新账号一行的登录状态
+            return
+        if len(cached) == 1:
+            self._set_account(cached[0])
+            return
+        if str(steamcmd).casefold() == self._cached_asked_for:
+            return
+        self._cached_asked_for = str(steamcmd).casefold()
+        choice = dialogs.ask_choice(
+            self, t("local.backend_title"), t("local.steamcmd_cached_pick_msg"),
+            [(t("dlg.cancel_btn"), "cancel")] + [(name, name) for name in cached], default=cached[0])
+        self._set_account(choice if choice in cached else self.result_account)
 
     def _open_bundled_location(self) -> None:
         """打开内置 SteamCMD 所在文件夹；还没释放过就先释放，打开时就能看到程序。"""
@@ -645,7 +679,8 @@ class _SteamBackendDialog(dialogs.Dialog):
     def _confirm_relogin(self, steamcmd: Path) -> bool:
         """换了 SteamCMD 且设置了账号：要求在新的上重新登录或改用匿名。返回 True 表示可以保存。"""
         if (not self.result_account or self._same_path(steamcmd, self._initial_steamcmd)
-                or self._same_path(steamcmd, self._logged_in_with)):
+                or self._same_path(steamcmd, self._logged_in_with)
+                or steamcmd_updater.login_cached(steamcmd, self.result_account)):
             return True
         choice = dialogs.ask_choice(
             self, t("local.backend_title"),
@@ -669,6 +704,7 @@ class _SteamBackendDialog(dialogs.Dialog):
             self, t("local.steamcmd_pick_title"), self._path_edit.text(), "steamcmd.exe (steamcmd.exe)")
         if picked:
             self._path_edit.setText(str(Path(picked)))
+            self._adopt_cached_login()
 
     def accept_if_valid(self) -> None:
         backend = next(b for b, radio in self._radios.items() if radio.isChecked())
@@ -1242,8 +1278,12 @@ class LocalServicePage(Page):
             # 只算路径不释放程序：内置版尚未释放时也不会有失效记录
             exe = steamcmd_updater.custom_steamcmd_path() or steamcmd_updater.bundled_steamcmd_path()
             expired = steamcmd_updater.login_expired(exe, account)
+            # 程序已释放/存在却没有该账号的登录凭据（比如清空过缓存目录、换了 SteamCMD）：同样需要重新登录
+            not_cached = bool(account) and exe.is_file() and not steamcmd_updater.login_cached(exe, account)
             if expired:
                 text = t("local.backend_steamcmd_expired", user=account)
+            elif not_cached:
+                text, expired = t("local.backend_steamcmd_not_cached", user=account), True
             elif account:
                 text = t("local.backend_steamcmd_user", user=account)
             else:

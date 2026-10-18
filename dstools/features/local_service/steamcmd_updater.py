@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import functools
 import threading
+import zlib
 from pathlib import Path
 from typing import Callable
 
@@ -157,6 +158,67 @@ def find_steamcmd() -> Path | None:
     if custom is not None:
         return custom if is_steamcmd_exe(custom) and path_is_ascii(custom) else None
     return ensure_bundled_steamcmd()
+
+
+_VDF_TOKEN_RE = re.compile(r'"((?:\\.|[^"\\])*)"|([{}])')
+
+
+def _parse_vdf(text: str) -> dict:
+    """解析 Valve KeyValues 文本为嵌套字典（只读用途，格式异常时尽量读出已有部分）。"""
+    stack: list[dict] = [{}]
+    key: str | None = None
+    for match in _VDF_TOKEN_RE.finditer(text):
+        value, brace = match.groups()
+        if brace == "{":
+            child: dict = {}
+            if key is not None:
+                stack[-1][key] = child
+            stack.append(child)
+            key = None
+        elif brace == "}":
+            if len(stack) > 1:
+                stack.pop()
+            key = None
+        elif key is None:
+            key = value
+        else:
+            stack[-1][key] = value
+            key = None
+    return stack[0]
+
+
+def _vdf_child(node, key: str) -> dict:
+    """按键名取子对象，键名不区分大小写；没有或不是对象时返回空字典。"""
+    if isinstance(node, dict):
+        for name, child in node.items():
+            if name.casefold() == key.casefold() and isinstance(child, dict):
+                return child
+    return {}
+
+
+def cached_login_accounts(steamcmd: Path | None) -> list[str]:
+    """这份 SteamCMD 保存着登录凭据的账号，按 config.vdf 中的顺序；读不到返回空列表。
+
+    实测 config/config.vdf：InstallConfigStore/Software/Valve/Steam 下 Accounts 记登录过的用户名，
+    ConnectCache 存登录凭据，键为用户名 CRC32 的 8 位小写十六进制加 "1"。
+    这只说明凭据还在；改了密码或 Steam 让它过期时，要到实际登录才会发现（退出码 5）。"""
+    if steamcmd is None:
+        return []
+    try:
+        text = (Path(steamcmd).parent / "config" / "config.vdf").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    steam = _parse_vdf(text)
+    for key in ("InstallConfigStore", "Software", "Valve", "Steam"):
+        steam = _vdf_child(steam, key)
+    cache = {name.casefold() for name in _vdf_child(steam, "ConnectCache")}
+    return [name for name in _vdf_child(steam, "Accounts")
+            if f"{zlib.crc32(name.encode('utf-8')):08x}1" in cache]
+
+
+def login_cached(steamcmd: Path | None, account: str) -> bool:
+    """这份 SteamCMD 是否保存着该账号的登录凭据（用户名不区分大小写）。"""
+    return bool(account) and account.casefold() in {name.casefold() for name in cached_login_accounts(steamcmd)}
 
 
 def steamcmd_needs_prepare(steamcmd: Path) -> bool:

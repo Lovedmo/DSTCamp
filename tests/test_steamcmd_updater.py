@@ -217,6 +217,30 @@ def test_account_login_failure_not_retried() -> None:
     assert not steamcmd_updater.needs_guard_code(["Logging in user 'x' [U:1:0] to Steam Public...ERROR (Invalid Password)"])
 
 
+def test_cached_login_accounts() -> None:
+    """登录缓存：Accounts 里的用户名，ConnectCache 有其 CRC32+"1" 键才算保存着凭据（结构按真机 config.vdf）。"""
+    import zlib
+    with tempfile.TemporaryDirectory() as tmp:
+        exe = Path(tmp) / "steamcmd.exe"
+        exe.write_bytes(b"")
+        assert steamcmd_updater.cached_login_accounts(exe) == []  # 还没有 config.vdf
+        key = f"{zlib.crc32(b'alice'):08x}1"
+        (Path(tmp) / "config").mkdir()
+        (Path(tmp) / "config" / "config.vdf").write_text("""\
+"InstallConfigStore"
+{
+  "Software" { "Valve" { "Steam" {
+    "ConnectCache" { "KEY" "token" }
+    "Accounts" { "alice" { "SteamID" "1" } "bob" { "SteamID" "2" } }
+  } } }
+}
+""".replace("KEY", key), encoding="utf-8")
+        assert steamcmd_updater.cached_login_accounts(exe) == ["alice"]  # bob 登录过但凭据已不在
+        assert steamcmd_updater.login_cached(exe, "Alice")
+        assert not steamcmd_updater.login_cached(exe, "bob")
+        assert not steamcmd_updater.login_cached(exe, "")
+
+
 def test_backend_update_blocker() -> None:
     from dstools.features.local_service.server_runtime import RuntimeKind, ServerRuntime
     from dstools.features.local_service.steam_backend import SteamBackend, update_blocker
