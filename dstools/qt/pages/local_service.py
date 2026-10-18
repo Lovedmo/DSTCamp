@@ -535,8 +535,6 @@ class _SteamBackendDialog(dialogs.Dialog):
         self.result_backend = current
         self.result_steamcmd = steamcmd
         self.result_account = account
-        # 登录缓存存在每份 SteamCMD 自己的 config 里：保存时实际用的 SteamCMD 变了就要重新登录
-        self._initial_steamcmd = steamcmd or steamcmd_updater.bundled_steamcmd_path()
         self._logged_in_with: Path | None = None
         group = QButtonGroup(self)
         self._radios: dict[SteamBackend, QRadioButton] = {}
@@ -699,9 +697,9 @@ class _SteamBackendDialog(dialogs.Dialog):
         return a is not None and b is not None and str(a).casefold() == str(b).casefold()
 
     def _confirm_relogin(self, steamcmd: Path) -> bool:
-        """换了 SteamCMD 且设置了账号：要求在新的上重新登录或改用匿名。返回 True 表示可以保存。"""
-        if (not self.result_account or self._same_path(steamcmd, self._initial_steamcmd)
-                or self._same_path(steamcmd, self._logged_in_with)
+        """选了账号但这份 SteamCMD 没有保存它的登录（换了 SteamCMD、清过缓存目录等）：要求先登录或改用匿名，
+        否则之后的更新和 Mod 下载会因要输密码而失败。返回 True 表示可以保存。"""
+        if (not self.result_account or self._same_path(steamcmd, self._logged_in_with)
                 or steamcmd_updater.login_cached(steamcmd, self.result_account)):
             return True
         choice = dialogs.ask_choice(
