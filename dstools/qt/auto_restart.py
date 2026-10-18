@@ -188,6 +188,9 @@ class AutoRestartController(QObject):
         if page._install_dir is None:
             self._give_up(cluster, state, t("local.auto_restart_reason_install"))
             return
+        if page._steamcmd_update_running():
+            self._give_up(cluster, state, t("local.auto_restart_reason_steamcmd_update"))
+            return
         try:
             conf_dir_arg = resolve_conf_dir_arg(page.ctx.env.klei_root)
         except ConfDirCrossDriveError:

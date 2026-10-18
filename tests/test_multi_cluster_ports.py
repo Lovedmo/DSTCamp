@@ -87,6 +87,7 @@ def _local_page(clusters=(), *, manager=None, mapping=None, jumps=None):
     )
     service.manager = manager or SimpleNamespace(running=lambda: [])
     service._launching_keys = set()
+    service._steam_update_running = False
     service._steam_remote_build_id = None
     service._steam_remote_build_app = None
     service._install_dir = None

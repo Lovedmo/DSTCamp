@@ -395,6 +395,7 @@ def test_auto_restart_controller_flow() -> None:
             _switch_to_alternative_token=lambda _c: (switch_calls.append(1), bool(opts["alternative"]))[1],
             _current_token_hold=lambda _c: opts["hold"],
             _install_dir=root, _detect_install_dir=lambda: None, _launching_keys=set(),
+            _steamcmd_update_running=lambda: False,
             _release_token_reservation_if_stopped=lambda _path: None,
             _continue_start_shard=lambda _c, shard, _arg: (events.append(("start", shard.name)),
                                                            make_proc(shard.name, ready=False)),

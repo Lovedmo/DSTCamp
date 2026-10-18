@@ -1936,7 +1936,14 @@ class LocalServicePage(Page):
         self.ctx.cluster_config_saved.emit(cluster)
         return self._preflight_start(cluster, shards, allow_repair=False, restarting=restarting)
 
+    def _steamcmd_update_running(self) -> bool:
+        """SteamCMD 正在安装/更新独立专服：程序文件写到一半，此时启动会读到不完整的文件。"""
+        return self._steam_update_running and get_backend() is SteamBackend.STEAMCMD
+
     def _preflight_start(self, cluster, shards, allow_repair=True, restarting=False) -> bool:
+        if cluster.platform == Platform.STEAM and self._steamcmd_update_running():
+            dialogs.show_info(self.window(), t("local.steamcmd_update_title"), t("local.steamcmd_update_blocks_start"))
+            return False
         target_names = {shard.name for shard in shards}
         duplicate = sorted(name for name in target_names if (str(cluster.path), name) in self._launching_keys)
         if duplicate:
