@@ -1052,20 +1052,11 @@ class ModPage(Page):
         RecommendModsDialog(self).exec()
 
     def _open_download_by_id(self) -> None:
-        from dstools.qt.workshop_download_dialog import WorkshopDownloadDialog, run_subscribe_and_download
-        if self._workshop_update_running:
-            dialogs.show_toast(self.window(), t("mod.download_by_id_busy"), ms=2400)
-            return
-        steamcmd = self._uses_steamcmd()
-        dialog = WorkshopDownloadDialog(self.window(), steamcmd=steamcmd)
-        if not dialog.exec():
-            return
-        if steamcmd:
-            from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+        from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
+        from dstools.qt.workshop_download_dialog import WorkshopDownloadDialog
+        dialog = WorkshopDownloadDialog(self.window())
+        if dialog.exec():
             run_steamcmd_mod_update(self.window(), dialog.workshop_ids, on_finished=self.ctx.workshop_mods_changed.emit)
-        else:
-            run_subscribe_and_download(self.window(), dialog.workshop_ids,
-                                       on_finished=self.ctx.workshop_mods_changed.emit)
 
     # ── 保存 / 应用 ─────────────────────────────────────────────────────
     def _write_mod_states(self, overrides) -> None:
@@ -1391,8 +1382,8 @@ class ModPage(Page):
     def _refresh_steamcmd_cleanup_btn(self) -> None:
         steamcmd = self._uses_steamcmd()
         self._steamcmd_cleanup_btn.setVisible(steamcmd)
-        # WeGame 的 Mod 不来自 Steam 创意工坊
-        self._download_by_id_btn.setVisible(self.ctx.platform == Platform.STEAM)
+        # Steam 客户端通道在工坊网页订阅即可，只有 SteamCMD 通道需要按 ID 下载
+        self._download_by_id_btn.setVisible(steamcmd)
         # 这两个按钮操作的是游戏客户端的 mods 目录，SteamCMD 通道一般没有客户端，专服直接读 SteamCMD 工坊目录
         self._location_change_btn.setVisible(not steamcmd)
         self._sync_btn.setVisible(not steamcmd)
