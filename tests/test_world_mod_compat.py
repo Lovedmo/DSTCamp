@@ -744,8 +744,12 @@ def test_vanilla_world_without_task_set_is_rejected() -> None:
 
 
 def test_add_shard_to_existing_cluster() -> None:
-    """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、各世界启用同一份万界之门配置、旧存档不动。"""
-    from dstools.features.world.shard_addition import add_shard
+    """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、各世界启用同一份万界之门配置（含自定义名称）、旧存档不动。"""
+    from dstools.features.world.shard_addition import (
+        add_shard, planned_world_names, shard_name_error, world_name_error,
+    )
+    import shutil
+
     from dstools.models import ClusterConfig
     from dstools.shared.discovery import _build_cluster
     from dstools.shared.ini_parser import parse_cluster_ini
@@ -763,8 +767,12 @@ def test_add_shard_to_existing_cluster() -> None:
 
         add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2",
                   _complete_plan(FOREST_LOCATION), used_ports={10998})
-        second = add_shard(_build_cluster(output, SaveSource.SERVER), "Caves",
-                           _complete_plan(CAVE_LOCATION))
+        cluster = _build_cluster(output, SaveSource.SERVER)
+        assert planned_world_names(cluster, CAVE_LOCATION, "zh") == ("洞穴", {"森林", "森林 2"})
+        assert shard_name_error(cluster, "Caves 2") and shard_name_error(cluster, "forest2")
+        assert world_name_error(cluster, CAVE_LOCATION, "森林 2", "zh")  # 和已有世界重名
+        assert world_name_error(cluster, CAVE_LOCATION, "  ", "zh")
+        second = add_shard(cluster, "Caves", _complete_plan(CAVE_LOCATION), world_name="地下城")
 
         cluster_ini = parse_cluster_ini(output / "cluster.ini")
         assert cluster_ini.shard["shard_enabled"] is True
@@ -776,7 +784,7 @@ def test_add_shard_to_existing_cluster() -> None:
         ports = [config.network.get("server_port", 10999) for config in configs.values()]
         ports.append(cluster_ini.shard["master_port"])
         assert len(set(ports)) == len(ports)
-        worlds = {"1": {"name": "森林"}, "2": {"name": "森林 2"}, "3": {"name": "洞穴"}}
+        worlds = {"1": {"name": "森林"}, "2": {"name": "森林 2"}, "3": {"name": "地下城"}}
         for name in ("Master", "Forest2", "Caves"):
             mods = parse_lua_file(output / name / "modoverrides.lua")
             assert mods["workshop-123"]["configuration_options"] == {"mode": "hard"}  # 原有 Mod 原样保留
@@ -792,6 +800,11 @@ def test_add_shard_to_existing_cluster() -> None:
         _expect_value_error(lambda: add_shard(cluster, "Forest3", default_plan_for_location(FOREST_LOCATION)),
                             "缺 task_set 的原版世界不应写盘")
         assert sorted(path.name for path in output.iterdir() if path.is_dir()) == ["Caves", "Forest2", "Master"]
+
+        # 手动删掉的世界不再占名字，新世界复用编号也不继承旧名称
+        shutil.rmtree(output / "Forest2")
+        assert planned_world_names(_build_cluster(output, SaveSource.SERVER), FOREST_LOCATION, "zh") == (
+            "森林 2", {"森林", "地下城"})
 
 
 def test_multi_shard_mod_templates_require_enabled_mods() -> None:

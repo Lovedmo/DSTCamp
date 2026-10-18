@@ -8,7 +8,7 @@ import webbrowser
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout,
+    QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QStackedWidget, QVBoxLayout,
 )
 
 from dstools.features.local_service.backup_manager import create_backup
@@ -27,6 +27,50 @@ from dstools.qt.widgets import Banner, Card, PillTabBar
 from dstools.qt.world_panel import WorldPanel
 
 FLASH_MS = 200  # 被点的箭头短暂画成"按下"效果，模仿游戏 UI 的点击反馈
+
+
+class AddShardDialog(dialogs.Dialog):
+    """新增世界：填文件夹名和世界名称（都预填默认值），确认前按存档当前状态校验。"""
+
+    def __init__(self, parent, title: str, cluster, location: str, location_label: str, language: str):
+        super().__init__(parent, title, "md")
+        self._cluster = cluster
+        self._location = location
+        self._language = language
+        self.shard_name = ""
+        self.world_name = ""
+        default_name, _others = shard_addition.planned_world_names(cluster, location, language)
+        self.body.addWidget(self.text_label(t("world.add_shard_intro", cluster=cluster.name,
+                                              location=location_label), size_key="FONT_SIZE_BASE"))
+        self._folder_edit = self._field(t("world.add_shard_folder_label"),
+                                        shard_addition.next_shard_name(cluster, location),
+                                        t("world.add_shard_folder_hint"))
+        self._name_edit = self._field(t("world.add_shard_name_label"), default_name, t("world.add_shard_name_hint"))
+        self.body.addWidget(self.text_label(t("world.add_shard_notes"), muted=True))
+        self._error = self.error_label()
+        self.body.addWidget(self._error)
+        self.add_buttons()
+        self._name_edit.setFocus()
+        self._name_edit.selectAll()
+
+    def _field(self, label: str, value: str, hint: str) -> QLineEdit:
+        self.body.addWidget(self.text_label(label))
+        edit = QLineEdit(value)
+        edit.setFont(theme.font("FONT_SIZE_BASE"))
+        self.body.addWidget(edit)
+        self.body.addWidget(self.text_label(hint, muted=True, size_key="FONT_SIZE_XS"))
+        return edit
+
+    def accept_if_valid(self) -> None:
+        shard_name = self._folder_edit.text().strip()
+        world_name = self._name_edit.text().strip()
+        error = (shard_addition.shard_name_error(self._cluster, shard_name)
+                 or shard_addition.world_name_error(self._cluster, self._location, world_name, self._language))
+        if error:
+            self._error.setText(error)
+            return
+        self.shard_name, self.world_name = shard_name, world_name
+        self.accept()
 
 
 class WorldSettingsPage(Page):
@@ -199,20 +243,24 @@ class WorldSettingsPage(Page):
             return
         if not locations:
             return
+        language = get_lang()
         choices = [(t("world.creation_surface_world") if loc == FOREST_LOCATION
-                    else get_location_definition(loc).name_zh, loc) for loc in locations]
+                    else get_location_definition(loc).name(language), loc) for loc in locations]
         location = dialogs.ask_choice(self.window(), title, t("world.add_shard_prompt"),
                                       choices, default=locations[0], min_width=420)
         if not location:
             return
-        shard_name = shard_addition.next_shard_name(cluster, location)
         label = dict((loc, text) for text, loc in choices)[location]
-        confirm = t("world.add_shard_confirm", cluster=cluster.name, shard=shard_name, location=label)
-        if not dialogs.ask_yes_no(self.window(), title, confirm, min_width=420):
+        try:
+            dialog = AddShardDialog(self.window(), title, cluster, location, label, language)
+        except (OSError, ValueError) as exc:  # 读不了已有世界的配置
+            dialogs.show_error(self.window(), title, str(exc))
             return
+        if dialog.exec() != dialogs.Dialog.DialogCode.Accepted:
+            return
+        shard_name, world_name = dialog.shard_name, dialog.world_name
         klei_root = self.ctx.env.klei_root_for(cluster.platform)
         clusters = list(self.ctx.env.clusters)
-        language = get_lang()
         self._add_shard_button.setEnabled(False)
 
         def work() -> None:
@@ -221,7 +269,7 @@ class WorldSettingsPage(Page):
             shard_addition.validate_new_shard(cluster, shard_name, plan)
             create_backup(cluster.path)
             shard_addition.add_shard(cluster, shard_name, plan,
-                                     shard_addition.used_ports_elsewhere(clusters, cluster), language)
+                                     shard_addition.used_ports_elsewhere(clusters, cluster), language, world_name)
 
         def done(_result) -> None:
             self._add_shard_button.setEnabled(True)
@@ -230,7 +278,7 @@ class WorldSettingsPage(Page):
             if index >= 0:
                 self._shard_combo.setCurrentIndex(index)
                 self._on_shard_picked(index)
-            dialogs.show_info(self.window(), title, t("world.add_shard_done", shard=shard_name))
+            dialogs.show_info(self.window(), title, t("world.add_shard_done", shard=world_name))
 
         def failed(exc: Exception) -> None:
             self._add_shard_button.setEnabled(True)
