@@ -61,21 +61,32 @@ def test_mode_resolution_and_migration() -> None:
             assert resolve_runtime().runtime.install_dir == dedicated
             assert app_settings.get_server_runtime_mode() == RuntimeMode.DEDICATED.value
 
-            # SteamCMD 装到任意名字的目录：手动指定后按独立专服使用；客户端目录不能冒充独立专服。
-            custom = _make_install(library, "dstserver", client=False)
-            assert server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, custom)
-            assert not server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, client)
-            app_settings.set_dedicated_server_path(custom)
-            assert resolve_runtime().runtime.install_dir == custom
-
-            # SteamCMD 通道固定用独立专服；用户存的「游戏专服」不改，切回 Steam 客户端通道后照旧
+            # 两个通道的独立专服彻底分开：Steam 客户端通道只认 Steam 库里的，客户端目录也不能冒充独立专服
             from dstools.features.local_service.steam_backend import SteamBackend, set_backend
+            custom = _make_install(library, "dstserver", client=False)  # SteamCMD 装到 Steam 库以外、任意名字
+            assert server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, dedicated)
+            assert not server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, custom)
+            assert not server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, client)
+
+            # SteamCMD 通道固定用独立专服、不扫 Steam 库：还没装时如实报告没有
             set_runtime_mode(RuntimeMode.CLIENT)
             set_backend(SteamBackend.STEAMCMD)
+            assert resolve_runtime().runtime is None
+            assert server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, custom)
+            assert not server_runtime.accepts_install_dir(RuntimeKind.DEDICATED, dedicated)
+
+            # 旧版本把 SteamCMD 装的专服存在共用路径里：迁移给 SteamCMD 通道，SteamCMD 通道下也会迁移
+            app_settings.set_dedicated_server_path(custom)
             assert resolve_runtime().runtime.install_dir == custom
-            assert app_settings.get_server_runtime_mode() == RuntimeMode.CLIENT.value
+            assert app_settings.get_dedicated_server_path() is None
+            assert app_settings.get_steamcmd_server_path() == custom
+            assert app_settings.get_server_runtime_mode() == RuntimeMode.CLIENT.value  # 用户存的「游戏专服」不改
+
+            # 切回 Steam 客户端通道照旧用客户端；指定独立专服时用 Steam 库里的，不碰 SteamCMD 那份
             set_backend(SteamBackend.CLIENT)
             assert resolve_runtime().runtime.install_dir == client
+            set_runtime_mode(RuntimeMode.DEDICATED)
+            assert resolve_runtime().runtime.install_dir == dedicated
 
 
 # 业务代码只能经 server_runtime 取开服程序目录。白名单：探测函数自身（dedicated_server/server_runtime）、
@@ -84,6 +95,8 @@ _ALLOWED = {
     "find_dedicated_server_dir(": {"dedicated_server.py", "server_runtime.py", "legacy_v1.py"},
     "get_dedicated_server_path(": {"dedicated_server.py", "server_runtime.py", "parser.py", "app_settings.py"},
     "get_client_runtime_path(": {"server_runtime.py", "app_settings.py"},
+    "find_steamcmd_server_dir(": {"dedicated_server.py", "server_runtime.py"},
+    "get_steamcmd_server_path(": {"dedicated_server.py", "server_runtime.py", "parser.py", "app_settings.py"},
 }
 
 

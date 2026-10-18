@@ -14,8 +14,8 @@ from enum import Enum
 from pathlib import Path
 
 from dstools.features.local_service.dedicated_server import (
-    CLIENT_APP_ID, DEDICATED_SERVER_APP_ID, find_dedicated_server_dir,
-    is_client_install_dir, is_valid_install_dir,
+    CLIENT_APP_ID, DEDICATED_SERVER_APP_ID, find_dedicated_server_dir, find_steamcmd_server_dir,
+    is_client_install_dir, is_steam_library_install, is_valid_install_dir,
 )
 from dstools.shared import app_settings
 from dstools.shared.steam_discovery import find_all_steam_libraries
@@ -94,14 +94,20 @@ def set_runtime_mode(mode: RuntimeMode) -> None:
 
 
 def migrate_runtime_settings() -> None:
-    """迁移旧设置：专服路径实际指向客户端目录时挪到客户端路径并切到客户端模式（幂等）。"""
+    """迁移旧设置（幂等）：专服路径实际指向客户端目录时挪到客户端路径并切到客户端模式；
+    指向 Steam 库以外（SteamCMD 安装）的独立专服时挪给 SteamCMD 通道，Steam 客户端通道不再使用它。"""
     stored = app_settings.get_dedicated_server_path()
-    if stored is None or not is_client_install_dir(stored):
+    if stored is None:
         return
-    app_settings.set_client_runtime_path(stored)
-    app_settings.clear_dedicated_server_path()
-    if app_settings.get_server_runtime_mode() is None:
-        app_settings.set_server_runtime_mode(RuntimeMode.CLIENT.value)
+    if is_client_install_dir(stored):
+        app_settings.set_client_runtime_path(stored)
+        app_settings.clear_dedicated_server_path()
+        if app_settings.get_server_runtime_mode() is None:
+            app_settings.set_server_runtime_mode(RuntimeMode.CLIENT.value)
+    elif not is_steam_library_install(stored):
+        if app_settings.get_steamcmd_server_path() is None:
+            app_settings.set_steamcmd_server_path(stored)
+        app_settings.clear_dedicated_server_path()
 
 
 def find_client_install_dir() -> Path | None:
@@ -116,26 +122,32 @@ def find_client_install_dir() -> Path | None:
     return None
 
 
+def _steamcmd_channel() -> bool:
+    # 延迟导入：steam_backend 依赖本模块
+    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
+    return get_backend() is SteamBackend.STEAMCMD
+
+
 def find_runtime_of_kind(kind: RuntimeKind) -> ServerRuntime | None:
+    """独立专服按 Steam 通道各找各的：Steam 客户端通道只认 Steam 库里的，SteamCMD 通道只认它自己的目录。"""
     if kind is RuntimeKind.CLIENT:
         install_dir = find_client_install_dir()
     else:
-        install_dir = find_dedicated_server_dir()
+        install_dir = find_steamcmd_server_dir() if _steamcmd_channel() else find_dedicated_server_dir()
     return ServerRuntime(kind, install_dir) if install_dir is not None else None
 
 
 def effective_runtime_mode() -> RuntimeMode:
     """实际生效的开服程序选项：Steam 通道为 SteamCMD 时固定用独立专服（SteamCMD 只能匿名安装更新独立专服），
     用户存的选项不改，切回 Steam 客户端通道后照旧生效。"""
-    # 延迟导入：steam_backend 依赖本模块
-    from dstools.features.local_service.steam_backend import SteamBackend, get_backend
-    if get_backend() is SteamBackend.STEAMCMD:
+    if _steamcmd_channel():
         return RuntimeMode.DEDICATED
     return get_runtime_mode()
 
 
 def resolve_runtime(mode: RuntimeMode | None = None) -> RuntimeResolution:
     """按开服程序选项选出实际开服程序。"""
+    migrate_runtime_settings()  # SteamCMD 通道不读开服程序选项，迁移不能只放在 get_runtime_mode 里
     mode = effective_runtime_mode() if mode is None else RuntimeMode(mode)
     if mode is RuntimeMode.AUTO:
         runtime = (find_runtime_of_kind(RuntimeKind.DEDICATED)
@@ -151,14 +163,22 @@ def current_runtime() -> ServerRuntime | None:
 
 
 def accepts_install_dir(kind: RuntimeKind, path: Path) -> bool:
-    """"更换路径"只接受当前模式对应类型的目录，避免路径和模式互相矛盾。"""
+    """"更换路径"只接受当前模式对应类型的目录，避免路径和模式互相矛盾；
+    独立专服还要属于当前 Steam 通道（见 dedicated_dir_wrong_channel）。"""
     if kind is RuntimeKind.CLIENT:
         return is_client_install_dir(path)
-    return is_valid_install_dir(path)
+    return is_valid_install_dir(path) and not dedicated_dir_wrong_channel(path)
+
+
+def dedicated_dir_wrong_channel(path: Path) -> bool:
+    """是独立专服，但属于另一个 Steam 通道：Steam 库里的归 Steam 客户端，库以外的归 SteamCMD。"""
+    return is_valid_install_dir(path) and is_steam_library_install(path) == _steamcmd_channel()
 
 
 def remember_install_dir(kind: RuntimeKind, path: Path) -> None:
     if kind is RuntimeKind.CLIENT:
         app_settings.set_client_runtime_path(path)
+    elif _steamcmd_channel():
+        app_settings.set_steamcmd_server_path(path)
     else:
         app_settings.set_dedicated_server_path(path)

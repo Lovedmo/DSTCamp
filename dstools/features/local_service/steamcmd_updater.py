@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 from dstools.features.local_service.conpty import run_in_pseudo_console
+from dstools.features.local_service.dedicated_server import is_steam_library_install  # noqa: F401  调用方经本模块使用
 from dstools.i18n import t
 from dstools.features.local_service.steam_client_updater import (
     DEDICATED_SERVER_APP_ID, SteamAppSnapshot, snapshot_from_manifest,
@@ -162,12 +163,6 @@ def steamcmd_needs_prepare(steamcmd: Path) -> bool:
     """程序在、但还没登录取过应用信息（没有 appcache/appinfo.vdf）。"""
     steamcmd = Path(steamcmd)
     return steamcmd.is_file() and not (steamcmd.parent / "appcache" / "appinfo.vdf").is_file()
-
-
-def is_steam_library_install(install_dir: Path) -> bool:
-    """装在 Steam 库 steamapps/common 下的由 Steam 客户端管理，其余按 SteamCMD 安装处理。"""
-    parent = Path(install_dir).parent
-    return parent.name.casefold() == "common" and parent.parent.name.casefold() == "steamapps"
 
 
 def snapshot_install(install_dir: Path, app_id: str = DEDICATED_SERVER_APP_ID) -> SteamAppSnapshot:

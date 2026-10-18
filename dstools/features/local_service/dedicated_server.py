@@ -152,16 +152,33 @@ def find_bin64_dir(install_dir: Path) -> Path | None:
     return install_dir / _BIN_DIRS[b]
 
 
+def is_steam_library_install(install_dir: Path) -> bool:
+    """装在 Steam 库 steamapps/common 下的由 Steam 客户端管理，其余按 SteamCMD 安装处理。"""
+    parent = Path(install_dir).parent
+    return parent.name.casefold() == "common" and parent.parent.name.casefold() == "steamapps"
+
+
 def find_dedicated_server_dir() -> Path | None:
-    """按优先级探测专服安装目录：用户手动确认的路径 > 全部 Steam 库；找不到返回 None。"""
+    """Steam 客户端通道的独立专服：用户手动确认的路径 > 全部 Steam 库；只认 Steam 库里的，找不到返回 None。
+
+    两个通道的专服彻底分开：SteamCMD 装的（不在 Steam 库里）只归 find_steamcmd_server_dir，
+    免得 Steam 客户端和 SteamCMD 管理同一份文件、清单互相打架。"""
     remembered = app_settings.get_dedicated_server_path()
-    if remembered and is_valid_install_dir(remembered):
+    if remembered and is_steam_library_install(remembered) and is_valid_install_dir(remembered):
         return remembered
 
     for lib in find_all_steam_libraries():
         install_dir = lib / "steamapps" / "common" / _INSTALL_DIR_NAME
         if is_valid_install_dir(install_dir):
             return install_dir
+    return None
+
+
+def find_steamcmd_server_dir() -> Path | None:
+    """SteamCMD 通道的独立专服：只认在 SteamCMD 通道安装或选定的目录（不在 Steam 库里），不扫描 Steam 库。"""
+    remembered = app_settings.get_steamcmd_server_path()
+    if remembered and not is_steam_library_install(remembered) and is_valid_install_dir(remembered):
+        return remembered
     return None
 
 

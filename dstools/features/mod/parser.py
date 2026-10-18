@@ -351,6 +351,9 @@ def is_dedicated_server_mods_dir(path: Path) -> bool:
     # 开服路径也可能手动选成游戏客户端目录，客户端 mods 不是专服 mods。
     if configured is not None and "dedicated server" in Path(configured).name.lower():
         targets.append(Path(configured) / "mods")
+    steamcmd_server = app_settings.get_steamcmd_server_path()
+    if steamcmd_server is not None:
+        targets.append(Path(steamcmd_server) / "mods")
     for steam in find_all_steam_libraries():
         targets.append(
             steam

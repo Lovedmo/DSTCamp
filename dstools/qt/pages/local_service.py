@@ -37,7 +37,8 @@ from dstools.features.local_service.dedicated_server import (
     resolve_conf_dir_arg,
 )
 from dstools.features.local_service.server_runtime import (
-    RuntimeKind, RuntimeMode, accepts_install_dir, find_runtime_of_kind, remember_install_dir,
+    RuntimeKind, RuntimeMode, accepts_install_dir, dedicated_dir_wrong_channel, find_runtime_of_kind,
+    remember_install_dir,
     resolve_runtime, set_runtime_mode,
 )
 from dstools.features.local_service.log_bundle import create_log_bundle
@@ -1278,6 +1279,12 @@ class LocalServicePage(Page):
         if not picked:
             return
         path = Path(picked)
+        if dedicated_dir_wrong_channel(path):
+            # 两个通道的独立专服互不使用：Steam 库里的归 Steam 客户端，库以外的归 SteamCMD
+            key = ("local.install_dedicated_steam_library" if get_backend() is SteamBackend.STEAMCMD
+                   else "local.install_dedicated_steamcmd_dir")
+            dialogs.show_warning(self.window(), t("local.install_title"), t(key))
+            return
         wanted = self._wanted_runtime_kind()
         if wanted is None:
             # 自动模式下手动选目录，等于明确指定了用哪种程序开服。
@@ -1455,14 +1462,15 @@ class LocalServicePage(Page):
         if not picked:
             return
         target = Path(picked)
+        # 先排除 Steam 库：库里已有的专服归 Steam 客户端通道，不能被 SteamCMD 接管
+        if steamcmd_updater.is_steam_library_install(target):
+            dialogs.show_warning(self.window(), title, t("local.steamcmd_install_library_dir"))
+            return
         if is_valid_install_dir(target):
             # 选到的目录里已经有专服（比如之前装过）：直接使用，不重复下载
             if dialogs.ask_yes_no(self.window(), title, t("local.steamcmd_install_existing", path=str(target))):
                 self._adopt_dedicated_dir(target)
                 self._validate_adopted_dir()
-            return
-        if steamcmd_updater.is_steam_library_install(target):
-            dialogs.show_warning(self.window(), title, t("local.steamcmd_install_library_dir"))
             return
         try:
             free = shutil.disk_usage(target).free

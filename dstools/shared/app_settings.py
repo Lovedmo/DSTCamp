@@ -6,6 +6,7 @@ from pathlib import Path
 
 _SETTINGS_FILE = "settings.json"
 _KEY_DEDICATED_SERVER_PATH = "dedicated_server_path"
+_KEY_STEAMCMD_SERVER_PATH = "steamcmd_server_path"
 _KEY_CLIENT_RUNTIME_PATH = "client_runtime_path"
 _KEY_SERVER_RUNTIME_MODE = "server_runtime_mode"
 _KEY_WEGAME_ROOT_PATH = "wegame_root_path"
@@ -98,7 +99,7 @@ def save_settings(data: dict) -> None:
 
 
 def get_dedicated_server_path() -> Path | None:
-    """用户手动确认过的专服安装目录，未设置返回 None。"""
+    """用户手动确认过的 Steam 客户端通道专服安装目录（Steam 库里的），未设置返回 None。"""
     raw = load_settings().get(_KEY_DEDICATED_SERVER_PATH)
     return Path(raw) if raw else None
 
@@ -115,6 +116,18 @@ def clear_dedicated_server_path() -> None:
     data = load_settings()
     if data.pop(_KEY_DEDICATED_SERVER_PATH, None) is not None:
         save_settings(data)
+
+
+def get_steamcmd_server_path() -> Path | None:
+    """SteamCMD 通道的独立专服目录（SteamCMD 安装或用户选的，不在 Steam 库里），未设置返回 None。"""
+    raw = load_settings().get(_KEY_STEAMCMD_SERVER_PATH)
+    return Path(raw) if raw else None
+
+
+def set_steamcmd_server_path(path: Path) -> None:
+    data = load_settings()
+    data[_KEY_STEAMCMD_SERVER_PATH] = str(path)
+    save_settings(data)
 
 
 def get_client_runtime_path() -> Path | None:
