@@ -23,7 +23,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFontMetrics, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QRadioButton, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QProgressBar, QRadioButton, QSizePolicy, QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from dstools.features.cluster_config.config_manager import (
@@ -426,7 +426,22 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
         self._guard_label = labels[-1]
         self._guard_label.hide()
         self._guard_edit.hide()
-        self._status = self.error_label()
+        # 状态框：登录中显示标题 + 不定进度条 + 分条提示；出错时标题变红，详情放下面
+        self._status = QFrame()
+        self._status.setObjectName("loginStatus")
+        status_layout = QVBoxLayout(self._status)
+        status_layout.setContentsMargins(12, 10, 12, 10)
+        status_layout.setSpacing(6)
+        self._status_title = QLabel()
+        self._status_title.setWordWrap(True)
+        self._status_title.setFont(theme.font("FONT_SIZE_BASE", bold=True))
+        self._status_progress = QProgressBar()
+        self._status_progress.setRange(0, 0)  # 不定进度：SteamCMD 不报告登录进度
+        self._status_progress.setTextVisible(False)
+        self._status_progress.setFixedHeight(4)
+        self._status_detail = self.text_label("", muted=True)
+        for widget in (self._status_title, self._status_progress, self._status_detail):
+            status_layout.addWidget(widget)
         self._status.hide()
         self.body.addWidget(self._status)
         self._confirm = self.add_buttons()
@@ -436,14 +451,25 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
         for widget in (self._user_edit, self._password_edit, self._guard_edit, self._confirm):
             widget.setEnabled(not busy)
 
-    def _show_status(self, text: str, error: bool) -> None:
-        self._status.setStyleSheet(f"color: {theme.hex('ERROR' if error else 'TEXT_MUTED')};")
-        self._status.setText(text)
+    def _show_status(self, title: str, error: bool, detail: str = "", busy: bool = False) -> None:
+        border = theme.hex("ERROR" if error else "CARD_BORDER")
+        self._status.setStyleSheet(f"QFrame#loginStatus {{ background: {theme.hex('BG_SOFT')}; "
+                                   f"border: 1px solid {border}; border-radius: 6px; }}")
+        self._status_title.setStyleSheet(f"color: {theme.hex('ERROR')};" if error else "")
+        # 短标题（带详情或进行中）加粗；整段的错误说明不加粗，免得满屏粗体红字
+        self._status_title.setFont(theme.font("FONT_SIZE_BASE" if (detail or busy) else "FONT_SIZE_SM",
+                                              bold=bool(detail or busy)))
+        self._status_title.setText(title)
+        self._status_detail.setText(detail)
+        self._status_detail.setVisible(bool(detail))
+        self._status_progress.setVisible(busy)
         self._status.show()
         # 自动换行的标签高度随宽度变化，布局算最小高度时不够，提示变长会把输入框压扁：按当前宽度定下最小高度再加高窗口
         margins = self.body.contentsMargins()
-        # 标签刚显示时自身宽度还没更新，按窗口内容区宽度算
-        self._status.setMinimumHeight(self._status.heightForWidth(self.width() - margins.left() - margins.right()))
+        # 标签刚显示时自身宽度还没更新，按窗口内容区宽度减去状态框内边距算
+        width = self.width() - margins.left() - margins.right() - 24
+        for label in (self._status_title, self._status_detail):
+            label.setMinimumHeight(label.heightForWidth(width) if label.isVisible() else 0)
         self.adjustSize()
 
     def accept_if_valid(self) -> None:
@@ -456,7 +482,8 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
             self._show_status(t("local.steamcmd_login_empty"), error=True)
             return
         self._set_busy(True)
-        self._show_status(t("local.steamcmd_login_running"), error=False)
+        self._show_status(t("local.steamcmd_login_running", user=username), error=False,
+                          detail=t("local.steamcmd_login_running_detail"), busy=True)
         lines: list[str] = []
         cancel = self._cancel
 
@@ -473,7 +500,8 @@ class _SteamcmdLoginDialog(dialogs.Dialog):
                 # 同时 Steam 往邮箱发验证码。密码保留，用户只需补填验证码
                 self._guard_label.show()
                 self._guard_edit.show()
-                self._show_status(t("local.steamcmd_login_need_guard"), error=True)
+                self._show_status(t("local.steamcmd_login_need_guard"), error=True,
+                                  detail=t("local.steamcmd_login_need_guard_detail"))
                 self._guard_edit.setFocus()
                 return
             self._password_edit.clear()
