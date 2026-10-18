@@ -144,6 +144,7 @@ class PillTabBar(QWidget):
 
     def set_labels(self, labels: list[str]) -> None:
         self._labels = list(labels)
+        self.updateGeometry()  # 文字变长（如"待更新（83）"）时通知布局按新的 sizeHint 重排，否则会被右侧控件压住
         self.update()
 
     def current_index(self) -> int:

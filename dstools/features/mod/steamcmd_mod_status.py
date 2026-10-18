@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
@@ -53,21 +53,23 @@ def classify(workshop_ids, installed: dict[str, int], remote: dict[str, RemoteWo
 
 @dataclass(frozen=True)
 class SteamcmdModRow:
-    """全局更新列表的一行：状态、格式（V1 只有 *_legacy.bin、V2 有 modinfo.lua，没下载时为 None）与使用它的存档。"""
-    status: SteamcmdModStatus
+    """全局更新列表的一行：格式（V1 只有 *_legacy.bin、V2 有 modinfo.lua，没下载时为 None）、使用它的存档，
+    以及对照 Web API 的状态（还没查到时为 None）。"""
+    workshop_id: str
     name: str = ""
     mod_format: str | None = None
     used_by: tuple[str, ...] = ()
     v1_deploy_pending: bool = False  # V1 包已下载，但专服 mods 里的展开副本不存在或与包不一致（启动前自动部署）
+    status: SteamcmdModStatus | None = None
 
     @property
-    def workshop_id(self) -> str:
-        return self.status.workshop_id
+    def needs_download(self) -> bool:
+        return self.status is not None and self.status.needs_download
 
 
-def scan_steamcmd_mods(clusters, server_mods_root: Path | None) -> list[SteamcmdModRow]:
-    """SteamCMD 全局更新的候选：它的工坊目录里已下载的 Mod，加上任一 Steam 服务器存档列着的（含还没下载的）。
-    状态对照 Web API（网络错误直接抛出）；V1 另查专服 mods 里的展开副本是否与包一致。"""
+def collect_steamcmd_mod_rows(clusters, server_mods_root: Path | None) -> list[SteamcmdModRow]:
+    """SteamCMD 全局更新的候选（只读本地，不联网）：它的工坊目录里已下载的 Mod，加上任一 Steam 服务器存档列着的
+    （含还没下载的）；V1 另查专服 mods 里的展开副本是否与包一致。状态由 with_statuses 补上。"""
     from dstools.features.mod.legacy_v1 import find_legacy_packages, legacy_runtime_matches_package
     from dstools.features.mod.parser import detect_mod_format
     from dstools.features.mod.steamcmd_mod_cleanup import read_mod_name, workshop_ids_by_cluster
@@ -78,20 +80,27 @@ def scan_steamcmd_mods(clusters, server_mods_root: Path | None) -> list[Steamcmd
         downloaded = [p.name for p in content_root.iterdir() if p.is_dir() and p.name.isdigit()]
     except OSError:
         downloaded = []
-    ids = sorted(set(downloaded) | set(used), key=int)
-    statuses = inspect_steamcmd_mods(ids)
     packages = find_legacy_packages()  # SteamCMD 通道下即它的工坊目录
     rows = []
-    for wid in ids:
-        status = statuses[wid]
+    for wid in sorted(set(downloaded) | set(used), key=int):
         mod_format = detect_mod_format(wid, content_root) if has_workshop_files(content_root / wid) else None
         pending = False
         package = packages.get(int(wid))
         if mod_format == "V1" and package is not None and server_mods_root is not None:
             pending = not legacy_runtime_matches_package(package, Path(server_mods_root) / f"workshop-{wid}")
-        name = status.title or (read_mod_name(content_root / wid) if mod_format == "V2" else "")
-        rows.append(SteamcmdModRow(status, name, mod_format, tuple(used.get(wid, ())), pending))
+        name = read_mod_name(content_root / wid) if mod_format == "V2" else ""
+        rows.append(SteamcmdModRow(wid, name, mod_format, tuple(used.get(wid, ())), pending))
     return rows
+
+
+def with_statuses(rows: list[SteamcmdModRow], statuses: dict[str, SteamcmdModStatus]) -> list[SteamcmdModRow]:
+    """给各行填上 Web API 状态；本地读不出名字的用工坊标题。"""
+    result = []
+    for row in rows:
+        status = statuses.get(row.workshop_id)
+        name = row.name or (status.title if status is not None else "")
+        result.append(replace(row, status=status, name=name))
+    return result
 
 
 def inspect_steamcmd_mods(workshop_ids) -> dict[str, SteamcmdModStatus]:

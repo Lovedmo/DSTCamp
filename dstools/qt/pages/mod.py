@@ -1372,9 +1372,7 @@ class ModPage(Page):
         if self._uses_steamcmd():
             # SteamCMD 通道：全局更新已下载的和所有服务器存档用到的工坊 Mod（V1、V2 都按 Web API 判断）
             from dstools.qt.steamcmd_mod_update_dialog import SteamcmdModUpdateDialog
-            SteamcmdModUpdateDialog(self.window(), self.ctx.clusters(), self._server_mods_root(),
-                                    self._current_save_enabled_workshop_ids(),
-                                    on_changed=self.ctx.workshop_mods_changed.emit).exec()
+            SteamcmdModUpdateDialog(self).exec()
             return
         from dstools.qt.mod_workshop_update_dialog import WorkshopUpdateDialog
         WorkshopUpdateDialog(self).exec()
