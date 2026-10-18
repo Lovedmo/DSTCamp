@@ -12,12 +12,21 @@ import shutil
 from dstools.features.cluster_config.config_manager import CLUSTER_INI_DEFAULTS
 from dstools.features.mod.sync import get_enabled_mod_ids
 from dstools.features.world.creation import shard_level_data, WorldShardPlan
+from dstools.features.world.defaults import (
+    default_plan_for_location,
+    default_plans_from_cluster,
+    find_verified_template,
+    shard_plan_from_template,
+)
 from dstools.features.world.location_profiles import (
+    CAVE_LOCATION,
+    FOREST_LOCATION,
     get_location_definition,
     location_requirements_met,
+    resolve_world_location_profile,
     with_required_dependencies,
 )
-from dstools.models import Cluster, SaveSource, ShardConfig
+from dstools.models import Cluster, Platform, SaveSource, ShardConfig
 from dstools.shared.ini_parser import parse_cluster_ini, parse_server_ini, write_cluster_ini, write_server_ini
 from dstools.shared.lua_parser import serialize_lua_table
 from dstools.shared.server_ports import (
@@ -29,7 +38,12 @@ from dstools.shared.server_ports import (
     LAN_SERVER_PORT_MIN,
     collect_cluster_port_claims,
     next_free_port,
+    scan_udp_ports,
 )
+
+# 与创建向导的额外世界命名一致
+_SHARD_NAME_BASES = {"forest": "Forest", "cave": "Caves", "porkland": "Porkland",
+                     "shipwrecked": "Shipwrecked", "volcanoworld": "Volcano"}
 
 # 打开多世界时 cluster.ini [SHARD] 必须有的字段，缺失时补官方默认值（master_port 另行避开已占用端口）
 _SHARD_REQUIRED_KEYS = ("bind_ip", "master_ip", "cluster_key")
@@ -41,6 +55,59 @@ def _master_shard(cluster: Cluster):
         if (shard.path / "server.ini").is_file() and parse_server_ini(shard.path / "server.ini").shard.get("is_master"):
             return shard
     return next((shard for shard in cluster.shards if shard.name == "Master"), None)
+
+
+def available_locations(cluster: Cluster) -> tuple[str, ...]:
+    """按存档已启用的 Mod 列出可以新增的世界类型（与创建向导"添加新的世界"一致）。"""
+    profile = resolve_world_location_profile(get_enabled_mod_ids(cluster))
+    return tuple(dict.fromkeys(profile.master_locations + profile.caves_locations))
+
+
+def next_shard_name(cluster: Cluster, location: str) -> str:
+    """按世界类型取不重复的目录名：Forest、Forest_2……（不区分大小写）。"""
+    base = _SHARD_NAME_BASES.get(location, "World")
+    occupied = {path.name.casefold() for path in cluster.path.iterdir()}
+    if base.casefold() not in occupied:
+        return base
+    index = 2
+    while f"{base}_{index}".casefold() in occupied:
+        index += 1
+    return f"{base}_{index}"
+
+
+def initial_plan(cluster: Cluster, location: str, klei_root: Path | None) -> WorldShardPlan:
+    """新世界的初始关卡数据：优先复制本存档同类世界（完整定义，设置也与旧世界一致），
+    其次取游戏生成的其他存档模板，Mod 世界用已核对的默认值。"""
+    for shard in cluster.shards:
+        if shard.leveldata_path is None or not shard.leveldata_path.is_file():
+            continue
+        try:
+            plan = shard_plan_from_template(shard.leveldata_path)
+        except ValueError:
+            continue
+        if plan.location == location:
+            return plan
+    if klei_root is not None and location in (FOREST_LOCATION, CAVE_LOCATION):
+        try:
+            master, caves = default_plans_from_cluster(find_verified_template(klei_root, FOREST_LOCATION))
+            return master if location == FOREST_LOCATION else caves
+        except (FileNotFoundError, ValueError):
+            pass
+    return default_plan_for_location(location)
+
+
+def used_ports_elsewhere(clusters, cluster: Cluster) -> set[int]:
+    """其他 Steam 专服存档配置的端口加上系统当前占用的 UDP 端口（netstat，较慢，放后台调用）。"""
+    used: set[int] = set()
+    for other in clusters:
+        if other.path == cluster.path or other.source != SaveSource.SERVER or other.platform != Platform.STEAM:
+            continue
+        claims, _issues = collect_cluster_port_claims(other)
+        used.update(claim.port for claim in claims)
+    scan = scan_udp_ports()
+    if scan.ok:
+        used.update(port for ports in scan.ports_by_pid.values() for port in ports)
+    return used
 
 
 def next_shard_id(cluster: Cluster) -> int:

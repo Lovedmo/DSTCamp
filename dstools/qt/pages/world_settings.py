@@ -9,7 +9,9 @@ from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout,
 )
 
-from dstools.features.world import page_data
+from dstools.features.local_service.backup_manager import create_backup
+from dstools.features.world import page_data, shard_addition
+from dstools.features.world.location_profiles import FOREST_LOCATION, get_location_definition
 from dstools.features.mod.shardindex import (
     LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
 )
@@ -49,8 +51,12 @@ class WorldSettingsPage(Page):
         self._shard_combo = QComboBox()
         self._shard_combo.setMinimumWidth(180)
         self._shard_combo.activated.connect(self._on_shard_picked)
+        # 只对专服存档显示（本地存档由游戏前端管理世界），见 on_cluster_changed
+        self._add_shard_button = QPushButton()
+        self._add_shard_button.clicked.connect(self._on_add_shard)
         shard_row.addWidget(self._shard_label)
         shard_row.addWidget(self._shard_combo)
+        shard_row.addWidget(self._add_shard_button)
         shard_row.addStretch()
         layout.addLayout(shard_row)
 
@@ -104,6 +110,8 @@ class WorldSettingsPage(Page):
     # ── 文案 ────────────────────────────────────────────────────────────
     def retranslate(self) -> None:
         self._shard_label.setText(t("world.shard"))
+        self._add_shard_button.setText(t("world.add_shard_btn"))
+        self._add_shard_button.setToolTip(t("world.add_shard_tip"))
         self._save_button.setText(t("world.save_rules"))
         self._update_tab_labels()
         self._update_banner()
@@ -162,11 +170,66 @@ class WorldSettingsPage(Page):
         else:
             self._shard = ""
         self._shard_combo.blockSignals(False)
+        self._add_shard_button.setVisible(self._selected_is_server())
         self._load_world()
 
     def _on_shard_picked(self, _index: int) -> None:
         self._shard = self._shard_combo.currentText()
         self._load_world()
+
+    def _on_add_shard(self) -> None:
+        """给专服存档新增一个世界：选类型 → 确认 → 后台备份并写分片目录 → 刷新并选中新世界。"""
+        cluster = self.ctx.selected_cluster()
+        if cluster is None or not self._selected_is_server():
+            return
+        title = t("world.add_shard_btn")
+        if self.ctx.cluster_running(cluster):
+            dialogs.show_warning(self.window(), title, t("world.add_shard_running"))
+            return
+        try:
+            locations = shard_addition.available_locations(cluster)
+        except ValueError as exc:
+            dialogs.show_error(self.window(), title, str(exc))
+            return
+        if not locations:
+            return
+        choices = [(t("world.creation_surface_world") if loc == FOREST_LOCATION
+                    else get_location_definition(loc).name_zh, loc) for loc in locations]
+        location = dialogs.ask_choice(self.window(), title, t("world.add_shard_prompt"),
+                                      choices, default=locations[0], min_width=420)
+        if not location:
+            return
+        shard_name = shard_addition.next_shard_name(cluster, location)
+        label = dict((loc, text) for text, loc in choices)[location]
+        if not dialogs.ask_yes_no(self.window(), title, t("world.add_shard_confirm", cluster=cluster.name,
+                                                           shard=shard_name, location=label), min_width=420):
+            return
+        klei_root = self.ctx.env.klei_root_for(cluster.platform)
+        clusters = list(self.ctx.env.clusters)
+        self._add_shard_button.setEnabled(False)
+
+        def work() -> None:
+            plan = shard_addition.initial_plan(cluster, location, klei_root)
+            # 先校验再备份，避免明知不能加还留下一份备份
+            shard_addition.validate_new_shard(cluster, shard_name, plan)
+            create_backup(cluster.path)
+            shard_addition.add_shard(cluster, shard_name, plan,
+                                     shard_addition.used_ports_elsewhere(clusters, cluster))
+
+        def done(_result) -> None:
+            self._add_shard_button.setEnabled(True)
+            self.ctx.refresh_env()
+            index = self._shard_combo.findText(shard_name)
+            if index >= 0:
+                self._shard_combo.setCurrentIndex(index)
+                self._on_shard_picked(index)
+            dialogs.show_info(self.window(), title, t("world.add_shard_done", shard=shard_name))
+
+        def failed(exc: Exception) -> None:
+            self._add_shard_button.setEnabled(True)
+            dialogs.show_error(self.window(), title, str(exc))
+
+        run_async(work, done, failed)
 
     def _load_world(self) -> None:
         self._generation += 1
