@@ -6,7 +6,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QListWidget, QListWidgetItem, QPushButton
 
-from dstools.features.local_service import steamcmd_updater
+from dstools.features.local_service import luajit_injector, steamcmd_updater
+from dstools.features.local_service.server_runtime import current_runtime
 from dstools.features.mod import steamcmd_mod_cleanup
 from dstools.i18n import t
 from dstools.qt import dialogs
@@ -23,7 +24,12 @@ def _format_size(num_bytes: int) -> str:
 def _scan(clusters):
     """后台：统计未用 Mod 与下载残留；读不出名字的再向 Steam 公开接口查标题（查不到不影响清理）。"""
     root = steamcmd_updater.steamcmd_workshop_dir()
-    unused = steamcmd_mod_cleanup.find_unused_mods(root, steamcmd_mod_cleanup.used_workshop_ids(clusters))
+    used = steamcmd_mod_cleanup.used_workshop_ids(clusters)
+    # LuaJIT 注入的 Injector.dll 就在配套 Mod 目录里，已安装时即使没有存档列着它也不能删
+    runtime = current_runtime()
+    if runtime is not None and luajit_injector.read_injector_path_marker(runtime.install_dir) is not None:
+        used.add(luajit_injector.WORKSHOP_ID)
+    unused = steamcmd_mod_cleanup.find_unused_mods(root, used)
     leftovers = steamcmd_mod_cleanup.find_leftover_downloads(root)
     titles = {}
     missing = [e.workshop_id for e in unused if not e.name]
