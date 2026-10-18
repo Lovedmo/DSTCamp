@@ -744,7 +744,7 @@ def test_vanilla_world_without_task_set_is_rejected() -> None:
 
 
 def test_add_shard_to_existing_cluster() -> None:
-    """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、Mod 配置照抄主世界、旧存档不动。"""
+    """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、各世界启用同一份万界之门配置、旧存档不动。"""
     from dstools.features.world.shard_addition import add_shard
     from dstools.models import ClusterConfig
     from dstools.shared.discovery import _build_cluster
@@ -754,15 +754,15 @@ def test_add_shard_to_existing_cluster() -> None:
         single = WorldCreationPlan(
             "single", _complete_plan(FOREST_LOCATION), None,
             cluster_ini=ClusterConfig(network={"cluster_name": "single"}, shard={"shard_enabled": False}),
-            mod_overrides={"WorldGate": {"enabled": True, "configuration_options": {"gate_limit": 2}}},
+            mod_overrides={"workshop-123": {"enabled": True, "configuration_options": {"mode": "hard"}}},
         )
         output = create_world(single, Path(directory))
         save_file = output / "Master" / "save" / "session.bin"
         save_file.parent.mkdir()
         save_file.write_bytes(b"old world")
 
-        first = add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2",
-                          _complete_plan(FOREST_LOCATION), used_ports={10998})
+        add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2",
+                  _complete_plan(FOREST_LOCATION), used_ports={10998})
         second = add_shard(_build_cluster(output, SaveSource.SERVER), "Caves",
                            _complete_plan(CAVE_LOCATION))
 
@@ -776,7 +776,13 @@ def test_add_shard_to_existing_cluster() -> None:
         ports = [config.network.get("server_port", 10999) for config in configs.values()]
         ports.append(cluster_ini.shard["master_port"])
         assert len(set(ports)) == len(ports)
-        assert (first / "modoverrides.lua").read_bytes() == (output / "Master" / "modoverrides.lua").read_bytes()
+        worlds = {"1": {"name": "森林"}, "2": {"name": "森林 2"}, "3": {"name": "洞穴"}}
+        for name in ("Master", "Forest2", "Caves"):
+            mods = parse_lua_file(output / name / "modoverrides.lua")
+            assert mods["workshop-123"]["configuration_options"] == {"mode": "hard"}  # 原有 Mod 原样保留
+            gate = mods["workshop-3822260794"]
+            assert gate["enabled"] is True
+            assert gate["configuration_options"] == {"worlds": worlds, "language": "zh"}
         assert parse_lua_file(second / "leveldataoverride.lua")["overrides"]["task_set"] == "cave_default"
         assert save_file.read_bytes() == b"old world"
 

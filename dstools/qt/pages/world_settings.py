@@ -15,7 +15,8 @@ from dstools.features.world.location_profiles import FOREST_LOCATION, get_locati
 from dstools.features.mod.shardindex import (
     LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
 )
-from dstools.i18n import t
+from dstools.features.mod.parser import is_mod_subscribed
+from dstools.i18n import get_lang, t
 from dstools.qt import dialogs
 from dstools.qt.pages.base import Page
 from dstools.qt.theme import theme
@@ -201,11 +202,14 @@ class WorldSettingsPage(Page):
             return
         shard_name = shard_addition.next_shard_name(cluster, location)
         label = dict((loc, text) for text, loc in choices)[location]
-        if not dialogs.ask_yes_no(self.window(), title, t("world.add_shard_confirm", cluster=cluster.name,
-                                                           shard=shard_name, location=label), min_width=420):
+        confirm = t("world.add_shard_confirm", cluster=cluster.name, shard=shard_name, location=label)
+        if not is_mod_subscribed(shard_addition.WORLDGATE_MOD_ID):
+            confirm += "\n\n" + t("world.add_shard_worldgate_missing")
+        if not dialogs.ask_yes_no(self.window(), title, confirm, min_width=420):
             return
         klei_root = self.ctx.env.klei_root_for(cluster.platform)
         clusters = list(self.ctx.env.clusters)
+        language = get_lang()
         self._add_shard_button.setEnabled(False)
 
         def work() -> None:
@@ -214,7 +218,7 @@ class WorldSettingsPage(Page):
             shard_addition.validate_new_shard(cluster, shard_name, plan)
             create_backup(cluster.path)
             shard_addition.add_shard(cluster, shard_name, plan,
-                                     shard_addition.used_ports_elsewhere(clusters, cluster))
+                                     shard_addition.used_ports_elsewhere(clusters, cluster), language)
 
         def done(_result) -> None:
             self._add_shard_button.setEnabled(True)
