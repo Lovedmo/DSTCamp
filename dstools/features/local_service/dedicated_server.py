@@ -253,8 +253,11 @@ class ServerStatus(Enum):
 #   "Sim paused" 紧随其后 0～1 秒，同样算就绪（单世界和从世界不打印这行）；
 #   单世界靠 "Telling Client our new session identifier"：世界加载完后的最后一步，新建和已有存档实跑
 #   都在 "Sim paused" 前约 1 秒；从世界也打印它但要再等主世界接入，所以只给 Master 用；
-#   这几行在真机日志中都只出现在正式 Sim 阶段，且不早于 "Sim paused" 1 秒以上；
+#   这几行在真机日志中都只出现在正式 Sim 阶段（之后不再销毁重载）；比 "Sim paused" 早 0～1 秒，
+#   Mod 多或 WeGame 创建 Rail 服务器时早 2～4 秒，此时 Lua 世界已建好，控制台命令可用；
 # - Secondary：连上 Master 后打印 "secondary shard LUA is now ready!"（旧版为 "Slave LUA ..."）。
+#   坑：更早的 "secondary shard is now ready!" 不能算：从世界快照比主世界新时，随后会
+#   "Synchronizing backward to master snapshot" 并整个销毁重载，LUA ready 才在重载之后（202 份真机日志核对）。
 # 启动分界线有两种措辞，随 cluster.ini 的 shard_enabled 变化：
 # true 为 "About to start a shard with these settings"，false 为
 # "About to start a server with the following settings"，两种都要认，否则单世界存档永远不就绪。
@@ -268,7 +271,7 @@ _MASTER_READY_MARKERS = (
     "telling client our new session identifier",
 )
 _MASTER_SECONDARY_READY_RE = re.compile(r"\[shard\] secondary .+\(\S+\) ready!")
-_SECONDARY_READY_MARKERS = ("is now ready!",)
+_SECONDARY_READY_MARKERS = ("lua is now ready!",)
 
 
 def advance_world_ready_marker(

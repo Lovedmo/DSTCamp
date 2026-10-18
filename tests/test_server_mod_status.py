@@ -112,6 +112,10 @@ def test_presentation_waits_until_ready_line_is_consumed() -> None:
     )
     assert secondary_start is True and secondary_ready is False
     secondary_start, secondary_ready = advance_world_ready_marker(
+        "[Shard] secondary shard is now ready!", False, secondary_start,
+    )
+    assert secondary_ready is False, "之后还可能回退到主世界快照并重载"
+    secondary_start, secondary_ready = advance_world_ready_marker(
         "[Shard] secondary shard LUA is now ready!", False, secondary_start,
     )
     assert secondary_ready is True
