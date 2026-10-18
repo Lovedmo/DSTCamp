@@ -752,6 +752,8 @@ class _ConnectRow(QWidget):
         self._title = QLabel(title + ":")
         self._title.setProperty("muted", True)
         self._title.setFixedWidth(90)
+        self._title.setToolTip(hint)
+        self._hint = hint
         self._value = QLabel("")
         self._value.setCursor(Qt.CursorShape.PointingHandCursor)
         self._value.setToolTip(hint)
@@ -768,7 +770,8 @@ class _ConnectRow(QWidget):
 
     def set_value(self, display: str, original: str | None = None) -> None:
         self._value.setText(display)
-        self._value.setToolTip(original if original is not None else display)
+        # 值的提示显示完整代码（界面上密码已打码），说明附在后面，不能被代码覆盖掉
+        self._value.setToolTip(f"{original if original is not None else display}\n\n{self._hint}")
 
     def set_status(self, text: str, color: str, reason: str = "") -> None:
         self._status.setText(text)
