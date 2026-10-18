@@ -117,6 +117,23 @@ def test_presentation_waits_until_ready_line_is_consumed() -> None:
     assert secondary_ready is True
 
 
+def test_master_ready_without_sim_paused() -> None:
+    # 真机日志（三界同行 Mod 自行冻结世界）：Master 全程不打印 "Sim paused"
+    for ready_line in (
+        "[00:01:55]: Server registered via geo DNS in ap-east-1",
+        "[00:02:06]: [Shard] Secondary Volcano(5) ready!",
+    ):
+        start_seen, ready_now = advance_world_ready_marker(
+            "About to start a shard with these settings:", True, False,
+        )
+        start_seen, ready_now = advance_world_ready_marker(
+            "[00:01:55]: [Shard] Secondary shard Caves(4) connected: [LAN] 127.0.0.1", True, start_seen,
+        )
+        assert ready_now is False, "从世界刚连上还不算就绪"
+        start_seen, ready_now = advance_world_ready_marker(ready_line, True, start_seen)
+        assert ready_now is True, ready_line
+
+
 def test_mod_syntax_error_is_failed_but_world_can_be_ready() -> None:
     process = _run_process([
         "modoverrides.lua enabling CommonModSets",

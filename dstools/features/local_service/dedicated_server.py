@@ -241,6 +241,10 @@ class ServerStatus(Enum):
 # - Master：正式 Sim 建立后打印 "Sim paused"/"Sim unpaused"（兼容旧版 "DST_Master_Ready"）。
 #   坑：新建世界的临时 worldgen 也会打印 "About to start..." 和 "Reset() returning"，
 #   随后销毁重载，不能把 Reset 当完成标记；
+#   坑：引擎不做空服暂停时（pause_when_empty=false，或"三界同行"等 Mod 自行 SetTimeScale(0) 冻结）
+#   永远不打印 "Sim paused"，因此大厅注册成功（"Server registered via geo DNS"）和
+#   从世界接入完成（"[Shard] Secondary <名>(<id>) ready!"）也算就绪；
+#   这两行在 53 份真机日志中都只出现在正式 Sim 阶段，且不早于 "Sim paused"；
 # - Secondary：连上 Master 后打印 "secondary shard LUA is now ready!"（旧版为 "Slave LUA ..."）。
 # 启动分界线有两种措辞，随 cluster.ini 的 shard_enabled 变化：
 # true 为 "About to start a shard with these settings"，false 为
@@ -249,7 +253,8 @@ _REAL_START_MARKERS = (
     "about to start a shard with these settings",
     "about to start a server with the following settings",
 )
-_MASTER_READY_MARKERS = ("sim paused", "sim unpaused", "dst_master_ready")
+_MASTER_READY_MARKERS = ("sim paused", "sim unpaused", "dst_master_ready", "server registered via geo dns")
+_MASTER_SECONDARY_READY_RE = re.compile(r"\[shard\] secondary .+\(\S+\) ready!")
 _SECONDARY_READY_MARKERS = ("is now ready!",)
 
 
@@ -261,8 +266,12 @@ def advance_world_ready_marker(
     if not real_start_seen:
         real_start_seen = any(marker in lowered for marker in _REAL_START_MARKERS)
         return real_start_seen, False
-    markers = _MASTER_READY_MARKERS if is_master else _SECONDARY_READY_MARKERS
-    return real_start_seen, any(marker in lowered for marker in markers)
+    if is_master:
+        return real_start_seen, (
+            any(marker in lowered for marker in _MASTER_READY_MARKERS)
+            or _MASTER_SECONDARY_READY_RE.search(lowered) is not None
+        )
+    return real_start_seen, any(marker in lowered for marker in _SECONDARY_READY_MARKERS)
 
 # Mod 加载完整性：配置启用时打印 "modoverrides.lua enabling <id>"（不代表加载成功），
 # 真正加载才打印 "Loading mod: <id> (<name>) Version:..."，两者之差即配置启用但未加载的 Mod。
