@@ -153,9 +153,14 @@ def find_bin64_dir(install_dir: Path) -> Path | None:
 
 
 def is_steam_library_install(install_dir: Path) -> bool:
-    """装在 Steam 库 steamapps/common 下的由 Steam 客户端管理，其余按 SteamCMD 安装处理。"""
+    """装在 Steam 库 steamapps/common 下的由 Steam 客户端管理，其余按 SteamCMD 安装处理。
+
+    坑：SteamCMD 不带 force_install_dir 时默认装到它自己的 steamapps/common 下，目录结构与 Steam 库相同，
+    以 steamapps 同级有 steamcmd.exe 区分，这种归 SteamCMD。"""
     parent = Path(install_dir).parent
-    return parent.name.casefold() == "common" and parent.parent.name.casefold() == "steamapps"
+    if parent.name.casefold() != "common" or parent.parent.name.casefold() != "steamapps":
+        return False
+    return not (parent.parent.parent / "steamcmd.exe").is_file()
 
 
 def find_dedicated_server_dir() -> Path | None:

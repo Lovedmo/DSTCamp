@@ -36,6 +36,12 @@ def test_steamcmd_install_layout() -> None:
         assert not steamcmd_updater.is_steam_library_install(root)
         assert steamcmd_updater.is_steam_library_install(
             Path(tmp) / "steamapps" / "common" / "Don't Starve Together Dedicated Server")
+        # SteamCMD 不带 force_install_dir 的默认位置：结构同 Steam 库，但同级有 steamcmd.exe，归 SteamCMD
+        steamcmd_root = Path(tmp) / "steamcmd"
+        steamcmd_root.mkdir()
+        (steamcmd_root / "steamcmd.exe").write_bytes(b"")
+        assert not steamcmd_updater.is_steam_library_install(
+            steamcmd_root / "steamapps" / "common" / "Don't Starve Together Dedicated Server")
 
         missing = steamcmd_updater.snapshot_install(root)
         assert missing.manifest_path is None and missing.install_dir is None
