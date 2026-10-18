@@ -323,6 +323,17 @@ def test_residual_directory_is_not_treated_as_installed_or_updateable():
         assert subscribed_missing.can_update is True
         assert subscribed_missing.can_cleanup_residual is False
 
+        # Steam 仅标记已安装（4）、当前账号未订阅且没有文件：不能留在待更新里成为无操作的死项
+        for evidence_kwargs, expected in (
+            ({}, WorkshopModState.NOT_INSTALLED),
+            ({"configured": True}, WorkshopModState.UNSUBSCRIBED_REFERENCED),
+            ({"acf_subscribed": True, "acf_subscriber": "123"}, WorkshopModState.SUBSCRIBED_BY_OTHER_ACCOUNT),
+        ):
+            unsubscribed_missing = evaluate_workshop_status(
+                WorkshopModEvidence(workshop_id=3671964429, steam_state=WorkshopItemState(4), **evidence_kwargs))
+            assert unsubscribed_missing.state == expected
+            assert unsubscribed_missing.needs_action is False
+
         runtime_residue = evaluate_workshop_status(
             WorkshopModEvidence(
                 workshop_id=3671964429,

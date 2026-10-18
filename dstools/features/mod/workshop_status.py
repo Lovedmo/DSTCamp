@@ -185,6 +185,18 @@ def evaluate_workshop_status(evidence: WorkshopModEvidence) -> WorkshopModStatus
     )
 
     def result(state: WorkshopModState, *reasons: str) -> WorkshopModStatus:
+        if state == WorkshopModState.MISSING and steam is not None and not steam.subscribed:
+            # 当前账号没订阅就没法"更新"修复：不能算待更新，改判成有对应操作或说明的状态，
+            # 否则会在待更新里出现一个勾不上、也没有任何按钮的行
+            reasons = ("当前登录的 Steam 账号未订阅", *reasons, source_error)
+            if evidence.configured:
+                state = WorkshopModState.UNSUBSCRIBED_REFERENCED
+            elif evidence.acf_subscribed:
+                state = WorkshopModState.SUBSCRIBED_BY_OTHER_ACCOUNT
+            elif residual_path is not None or content_path is not None or runtime_residual_paths:
+                state = WorkshopModState.RESIDUAL_FILES
+            else:
+                state = WorkshopModState.NOT_INSTALLED
         return WorkshopModStatus(
             workshop_id=evidence.workshop_id,
             state=state,

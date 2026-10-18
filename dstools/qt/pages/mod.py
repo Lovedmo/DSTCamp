@@ -1313,7 +1313,7 @@ class ModPage(Page):
                 states = inspect_workshop_items(
                     candidate_ids, discovered_paths=discovered_paths,
                     legacy_active_root=self._server_mods_root(), query_source=True, include_subscribed=True,
-                    residual_paths=find_workshop_residual_dirs(),
+                    configured_ids=cluster_ids, residual_paths=find_workshop_residual_dirs(),
                     workshop_content_paths=find_workshop_content_dirs(),
                     legacy_runtime_residual_paths=find_legacy_runtime_residual_dirs(),
                     running_dst_processes=running_dst_processes(),

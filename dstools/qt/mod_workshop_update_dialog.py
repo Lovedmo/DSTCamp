@@ -305,6 +305,7 @@ class WorkshopUpdateDialog(QDialog):
         self._refresh_btn.setEnabled(False)
         self._count_label.setText(t("mod.update_status_checking_hint"))
         ids = [int(wid) for wid in self._ids]
+        configured_ids = [int(wid) for wid in self._current_ids]
 
         def work():
             from dstools.features.mod.legacy_v1 import (
@@ -321,7 +322,7 @@ class WorkshopUpdateDialog(QDialog):
                 if str(wid).removeprefix("workshop-").isdigit() and not is_legacy_read_cache_path(path)}
             return inspect_workshop_items(
                 ids, discovered_paths=discovered_paths, legacy_active_root=self.page._server_mods_root(),
-                query_source=True, include_subscribed=True,
+                query_source=True, include_subscribed=True, configured_ids=configured_ids,
                 residual_paths=find_workshop_residual_dirs(), workshop_content_paths=find_workshop_content_dirs(),
                 legacy_runtime_residual_paths=find_legacy_runtime_residual_dirs(),
                 running_dst_processes=running_dst_processes(),
