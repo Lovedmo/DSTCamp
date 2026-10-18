@@ -62,7 +62,11 @@ class SteamcmdModCleanupDialog(dialogs.Dialog):
         self._total_label = self.text_label(t("steamcmd_cleanup.scanning"), muted=True, wrap=False)
         row.addWidget(self._total_label)
         self.body.addLayout(row)
-        self._confirm = self.add_buttons()
+        # 只留「删除」：关闭用窗口右上角的关闭按钮
+        self._confirm = QPushButton(self._confirm_text)
+        self._confirm.clicked.connect(self.accept_if_valid)
+        self._confirm.setDefault(True)
+        self.add_footer(right=[self._confirm])
         self._set_ready(False)
         dialogs.fit_to_screen(self, dialogs.DIALOG_WIDTHS["md"], 520)
         run_async(lambda: _scan(clusters), self._on_scanned, self._on_scan_failed)
