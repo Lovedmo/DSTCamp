@@ -19,6 +19,7 @@ RECOMMENDED_MODS = [
     ("3444078585", "DontStarveLuaJit2", "mod.recommend_desc_luajit"),
     ("2941527805", "Chinese++ Pro", "mod.recommend_desc_chinese_pp"),
     ("2998347052", "Say about your ping(Server)", "mod.recommend_desc_ping"),
+    ("3822260794", "万界之门(WorldGate)", "mod.recommend_desc_worldgate"),
 ]
 
 _ICON = 56  # 图标边长（逻辑像素）
