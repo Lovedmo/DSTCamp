@@ -59,6 +59,9 @@ def run_steamcmd_mod_update(parent, workshop_ids, *, on_finished=None) -> None:
             emit(f"· {_label(wid, titles[wid])}：{t(_STATE_KEYS[statuses[wid].state])}")
         if unavailable:
             emit(t("steamcmd_mods.unavailable", mods="、".join(f"workshop-{wid}" for wid in unavailable)))
+        client_only = [wid for wid, status in statuses.items() if status.state is SteamcmdModState.CLIENT_ONLY]
+        if client_only:
+            emit(t("steamcmd_mods.client_only_skipped", mods="、".join(_label(w, titles[w]) for w in client_only)))
         if not targets:
             emit(t("steamcmd_mods.all_current"))
             return 0, 0

@@ -21,6 +21,7 @@ class SteamcmdModState(str, Enum):
     OUTDATED = "outdated"        # 已下载，工坊上有更新
     CURRENT = "current"          # 已下载且与工坊一致
     UNAVAILABLE = "unavailable"  # 工坊查不到（已删除、私密或 ID 无效）
+    CLIENT_ONLY = "client_only"  # 仅客户端 Mod（工坊标签 client_only_mod），专服不加载，不用下载和更新
 
 
 @dataclass(frozen=True)
@@ -34,13 +35,17 @@ class SteamcmdModStatus:
         return self.state in (SteamcmdModState.MISSING, SteamcmdModState.OUTDATED)
 
 
-def classify(workshop_ids, installed: dict[str, int], remote: dict[str, RemoteWorkshopItem]) -> dict[str, SteamcmdModStatus]:
-    """installed 为已有完整文件的项目在清单里的更新时间。工坊查不到的一律算不可用，不猜测已下载的是否最新。"""
+def classify(workshop_ids, installed: dict[str, int], remote: dict[str, RemoteWorkshopItem],
+             needed_ids=frozenset()) -> dict[str, SteamcmdModStatus]:
+    """installed 为已有完整文件的项目在清单里的更新时间。工坊查不到的一律算不可用，不猜测已下载的是否最新。
+    仅客户端 Mod 专服不加载，不下载也不更新；needed_ids 里的（如 LuaJIT 配套 Mod，DSTCamp 要用它的文件）照常处理。"""
     result = {}
     for wid in dict.fromkeys(str(w) for w in workshop_ids):
         item = remote.get(wid)
         if item is None:
             state = SteamcmdModState.UNAVAILABLE
+        elif item.client_only and wid not in needed_ids:
+            state = SteamcmdModState.CLIENT_ONLY
         elif wid not in installed:
             state = SteamcmdModState.MISSING
         elif installed[wid] < item.time_updated:
@@ -109,4 +114,6 @@ def inspect_steamcmd_mods(workshop_ids) -> dict[str, SteamcmdModStatus]:
     content_root = steamcmd_workshop_dir() / "content" / WORKSHOP_APP_ID
     times = read_acf_time_updated(content_root)
     installed = {wid: times.get(int(wid), 0) for wid in ids if has_workshop_files(content_root / wid)}
-    return classify(ids, installed, fetch_remote_items(ids))
+    # 延迟导入：luajit_injector 依赖 Mod 解析模块
+    from dstools.features.local_service.luajit_injector import WORKSHOP_ID as LUAJIT_WORKSHOP_ID
+    return classify(ids, installed, fetch_remote_items(ids), needed_ids={LUAJIT_WORKSHOP_ID})

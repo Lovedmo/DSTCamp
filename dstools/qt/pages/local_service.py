@@ -17,6 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QTimer, Qt
@@ -2205,6 +2206,10 @@ class LocalServicePage(Page):
             get_enabled_mod_ids(cluster),
             ugc_content_root=Path(ugc_directory) / "content" / "322330" if ugc_directory else None,
             server_mods_root=self._runtime_mods_root())
+        client_only = self._steamcmd_client_only_ids(cluster)
+        if client_only and missing.workshop_ids:
+            # 仅客户端 Mod 专服不加载，缺了也不影响存档，不拦启动（依据后台检查拿到的工坊标签）
+            missing = replace(missing, workshop_ids=tuple(w for w in missing.workshop_ids if w not in client_only))
         if not missing:
             return True
         names = [f"workshop-{wid}" for wid in missing.workshop_ids] + list(missing.local_names)
@@ -2266,12 +2271,22 @@ class LocalServicePage(Page):
             self._steamcmd_mod_checking = False
             outdated = [(wid, status.title) for wid, status in statuses.items()
                         if status.state is SteamcmdModState.OUTDATED]
-            self._steamcmd_mod_check = (key, time.monotonic(), outdated)
+            client_only = {wid for wid, status in statuses.items() if status.state is SteamcmdModState.CLIENT_ONLY}
+            self._steamcmd_mod_check = (key, time.monotonic(), outdated, client_only)
 
         def error(_exc: Exception) -> None:
             self._steamcmd_mod_checking = False  # 下次定时或换存档时再查
 
         run_async(work, done, error)
+
+    def _steamcmd_client_only_ids(self, cluster) -> set[str]:
+        """后台检查查到的仅客户端 Mod（工坊标签不会随时间变化，不看有效期）；不是 SteamCMD 通道或还没查到时为空。"""
+        if get_backend() is not SteamBackend.STEAMCMD:
+            return set()
+        check = self._steamcmd_mod_check
+        if check is None or check[0] != self._steamcmd_mod_check_key(cluster):
+            return set()
+        return check[3]
 
     def _confirm_outdated_mods(self, cluster) -> bool:
         """SteamCMD 通道下存档启用的 Mod 有更新时，启动前提示先更新；缺失的 Mod 由 _confirm_missing_mods 处理。"""

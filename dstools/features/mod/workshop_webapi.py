@@ -22,6 +22,8 @@ _TIMEOUT = 15
 class RemoteWorkshopItem:
     time_updated: int
     title: str = ""
+    # 工坊标签含 client_only_mod（实测：作者在 modinfo 里声明 client_only_mod 时上传带此标签），专服不加载
+    client_only: bool = False
 
 
 def fetch_remote_items(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) -> dict[str, RemoteWorkshopItem]:
@@ -42,5 +44,7 @@ def fetch_remote_items(workshop_ids, *, timeout: float = _TIMEOUT, opener=None) 
             if item.get("result") == 1 and str(item.get("consumer_app_id")) == "322330":
                 updated = item.get("time_updated")
                 if isinstance(updated, int) and updated > 0:
-                    result[str(item.get("publishedfileid"))] = RemoteWorkshopItem(updated, str(item.get("title") or ""))
+                    tags = {str(tag.get("tag", "")) for tag in item.get("tags") or () if isinstance(tag, dict)}
+                    result[str(item.get("publishedfileid"))] = RemoteWorkshopItem(
+                        updated, str(item.get("title") or ""), "client_only_mod" in tags)
     return result

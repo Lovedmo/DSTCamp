@@ -404,6 +404,11 @@ def test_steamcmd_mod_classify() -> None:
     assert [states[w].state for w in ("1", "2", "3", "4")] == [
         SteamcmdModState.OUTDATED, SteamcmdModState.CURRENT, SteamcmdModState.MISSING, SteamcmdModState.UNAVAILABLE]
     assert [w for w, s in states.items() if s.needs_download] == ["1", "3"]
+    # 仅客户端 Mod 专服不用：不下载不更新；DSTCamp 自己要用的（LuaJIT 配套 Mod）照常
+    remote = {"5": RemoteWorkshopItem(200, client_only=True), "6": RemoteWorkshopItem(200, client_only=True)}
+    states = classify(["5", "6"], {}, remote, needed_ids={"6"})
+    assert states["5"].state is SteamcmdModState.CLIENT_ONLY and not states["5"].needs_download
+    assert states["6"].state is SteamcmdModState.MISSING
 
 
 def test_workshop_dirs_follow_channel() -> None:

@@ -29,15 +29,17 @@ _STATE_KEYS = {
     SteamcmdModState.MISSING: "steamcmd_update.state_missing",
     SteamcmdModState.CURRENT: "steamcmd_update.state_current",
     SteamcmdModState.UNAVAILABLE: "steamcmd_update.state_unavailable",
+    SteamcmdModState.CLIENT_ONLY: "steamcmd_update.state_client_only",
 }
 # 状态文字颜色：有更新用强调色，查不到用错误色，最新用成功色，未下载保持默认
 _STATE_COLORS = {
     SteamcmdModState.OUTDATED: "ACCENT",
     SteamcmdModState.UNAVAILABLE: "ERROR",
     SteamcmdModState.CURRENT: "SUCCESS",
+    SteamcmdModState.CLIENT_ONLY: "TEXT_MUTED",
 }
 _STATE_ORDER = {SteamcmdModState.OUTDATED: 0, SteamcmdModState.MISSING: 1,
-                SteamcmdModState.CURRENT: 2, SteamcmdModState.UNAVAILABLE: 3}
+                SteamcmdModState.CURRENT: 2, SteamcmdModState.UNAVAILABLE: 3, SteamcmdModState.CLIENT_ONLY: 4}
 _FILTER_ALL, _FILTER_PENDING, _FILTER_CURRENT_SAVE = range(3)
 _ROW_H = 84
 _ICON = 58
