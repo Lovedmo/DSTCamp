@@ -231,7 +231,7 @@ class MenuStrip(QWidget):
         self._minimize_action.setText(t("settings.minimize_on_close_label"))
         self._steam_backend_action.setText(t("settings.steam_backend_label"))
         self._defender_action.setText(t("settings.defender_label"))
-        self._cache_dir_action.setText(t("settings.cache_dir_label"))
+        self._cache_dir_action.setText(t("settings.cache_dir_menu"))
         self._lang_menu.setTitle(t("settings.language_label"))
         self._lang_actions["zh"].setText(t("menu.lang_zh"))
         self._lang_actions["en"].setText(t("menu.lang_en"))
@@ -315,11 +315,6 @@ class MenuStrip(QWidget):
         menu.addMenu(lang_menu)
         self._lang_menu = lang_menu
         menu.addSeparator()
-        minimize = QAction(t("settings.minimize_on_close_label"), self, checkable=True)
-        minimize.setChecked(get_minimize_on_close())
-        minimize.triggered.connect(lambda checked: set_minimize_on_close(bool(checked)))
-        menu.addAction(minimize)
-        self._minimize_action = minimize
         steam_backend = QAction(t("settings.steam_backend_label"), self)
         steam_backend.triggered.connect(self._window.show_steam_backend_dialog)
         menu.addAction(steam_backend)
@@ -328,10 +323,16 @@ class MenuStrip(QWidget):
         defender.triggered.connect(self._window.show_defender_dialog)
         menu.addAction(defender)
         self._defender_action = defender
-        cache_dir = QAction(t("settings.cache_dir_label"), self)
+        cache_dir = QAction(t("settings.cache_dir_menu"), self)
         cache_dir.triggered.connect(self._window.show_cache_dir_dialog)
         menu.addAction(cache_dir)
         self._cache_dir_action = cache_dir
+        menu.addSeparator()
+        minimize = QAction(t("settings.minimize_on_close_label"), self, checkable=True)
+        minimize.setChecked(get_minimize_on_close())
+        minimize.triggered.connect(lambda checked: set_minimize_on_close(bool(checked)))
+        menu.addAction(minimize)
+        self._minimize_action = minimize
         return menu
 
 
