@@ -1,6 +1,7 @@
 """导出已启用 Mod 列表图片用的条目整理（纯逻辑，不依赖界面）。"""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from dstools.features.mod.list_model import localize_mod_name
 
@@ -12,10 +13,14 @@ class ExportModEntry:
     author: str
     version: str  # 只放沙箱已确认的版本，其余留空
     id_text: str  # 创意工坊数字 ID；非工坊 Mod 为空
+    mod_format: str = ""  # 工坊格式 "V1"/"V2"，判断不了（本地 Mod 等）为空
 
 
-def build_export_entries(mod_data: dict, mod_infos: dict) -> list[ExportModEntry]:
-    """取已启用的服务端 Mod（排除 client_only），顺序沿用 mod_data 的现有排序。"""
+def build_export_entries(mod_data: dict, mod_infos: dict, formats: dict | None = None) -> list[ExportModEntry]:
+    """取已启用的服务端 Mod（排除 client_only），顺序沿用 mod_data 的现有排序。
+
+    ``formats`` 为 Mod 键 → "V1"/"V2"，与 Mod 页列表的标签同一来源。"""
+    formats = formats or {}
     entries = []
     for mod_id, mod in mod_data.items():
         if not mod.enabled:
@@ -31,6 +36,7 @@ def build_export_entries(mod_data: dict, mod_infos: dict) -> list[ExportModEntry
             author=(info.author if info else "").strip(),
             version=(version or "").strip(),
             id_text=numeric if numeric.isascii() and numeric.isdecimal() else "",
+            mod_format=formats.get(mod_id) or "",
         ))
     return entries
 
@@ -81,9 +87,23 @@ def collect_export_data(mod_ids, folders: dict, platform) -> tuple[list[ExportMo
     infos = {mod_id: info for mod_id, info, _icon in results}
     icons = {mod_id: icon for mod_id, _info, icon in results if icon is not None}
     enabled = {mod_id: _Enabled() for mod_id in infos}
-    entries = build_export_entries(enabled, infos)
+    entries = build_export_entries(enabled, infos, {mod_id: loaded_mod_format(mod_id, folders.get(mod_id))
+                                                    for mod_id in infos})
     entries.sort(key=functools.cmp_to_key(lambda a, b: mod_name_cmp(a.name, b.name)))
     return entries, icons
+
+
+def loaded_mod_format(mod_id: str, folder: Path | None) -> str | None:
+    """专服实际加载的目录对应的工坊格式：工坊内容目录（以数字 ID 命名）是 V2，
+    mods 目录里的 workshop-ID 是 V1 部署出来的副本；本地 Mod 判断不了，返回 None。"""
+    numeric = str(mod_id).removeprefix("workshop-")
+    if folder is None or not (numeric.isascii() and numeric.isdecimal()):
+        return None
+    if folder.name == numeric:
+        return "V2"
+    if folder.name.lower() == f"workshop-{numeric}":
+        return "V1"
+    return None
 
 
 class _Enabled:

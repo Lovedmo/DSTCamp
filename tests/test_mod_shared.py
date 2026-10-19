@@ -605,10 +605,17 @@ def test_export_entries_keep_enabled_server_mods_only():
         "workshop-3": ModInfo(name="Client", client_only=True),
         "my_local_mod": ModInfo(name="Local", version="9", version_status="pending"),
     }
-    entries = build_export_entries(data, infos)
+    entries = build_export_entries(data, infos, {"workshop-1": "V1", "my_local_mod": None})
     assert [e.workshop_id for e in entries] == ["workshop-1", "my_local_mod"]
-    assert (entries[0].author, entries[0].version, entries[0].id_text) == ("Bob", "1.2", "1")
-    assert (entries[1].version, entries[1].id_text) == ("", "")
+    assert (entries[0].author, entries[0].version, entries[0].id_text, entries[0].mod_format) == ("Bob", "1.2", "1", "V1")
+    assert (entries[1].version, entries[1].id_text, entries[1].mod_format) == ("", "", "")
+
+    # 运行中专服按实际加载的目录判断：工坊内容目录是 V2，mods 里的 workshop-ID 副本是 V1
+    from dstools.features.mod.export_list import loaded_mod_format
+
+    assert loaded_mod_format("workshop-1", Path("ugc/content/322330/1")) == "V2"
+    assert loaded_mod_format("workshop-1", Path("Server/mods/workshop-1")) == "V1"
+    assert loaded_mod_format("WorldGate", Path("mods/WorldGate")) is None
 
 
 def test_shadowed_v1_copy_is_detected_only_when_v2_exists():

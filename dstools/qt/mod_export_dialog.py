@@ -15,6 +15,7 @@ from dstools.qt import dialogs
 from dstools.qt.imaging import pil_to_pixmap
 from dstools.qt.mod_panel import _DEFAULT_ICON_PATH
 from dstools.qt.theme import theme
+from dstools.qt.widgets import mod_format_tag_colors
 
 # 以下尺寸均为逻辑像素，最终按 _RENDER_SCALE 倍输出，分享到聊天软件里放大也清楚。
 _RENDER_SCALE = 2
@@ -126,7 +127,7 @@ def _draw_banner(painter: QPainter, rect: QRectF, title: str, chips: list[str]) 
 
 
 def _draw_card(painter: QPainter, rect: QRectF, entry: ExportModEntry, icon, fonts: dict, number: int) -> None:
-    """单张 Mod 卡片：阴影浮起，第一行名称 + 版本标签，第二行作者（左）与工坊 ID（右）。"""
+    """单张 Mod 卡片：阴影浮起，第一行名称 + 版本与 V1/V2 标签，第二行作者（左）与工坊 ID（右）。"""
     _draw_soft_shadow(painter, rect, _CARD_RADIUS)
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(theme.color("CARD_BG"))
@@ -162,21 +163,27 @@ def _draw_card(painter: QPainter, rect: QRectF, entry: ExportModEntry, icon, fon
     name_y = rect.top() + (rect.height() - block_h) / 2
     meta_y = name_y + name_fm.height() + line_gap
 
-    # 版本号做成主题浅色小标签跟在名称后；名称过长时先省略名称，保证标签完整。
+    # 版本号与 V1/V2 做成小标签跟在名称后（V1/V2 与 Mod 页列表同款配色）；名称过长时先省略名称，保证标签完整。
     version = entry.version.lstrip("vV")
     tag_text = t("mod.export_version", version=version) if version else ""
     tag_w = tag_fm.horizontalAdvance(tag_text) + 14 if tag_text else 0
-    name_max = int(text_w - (tag_w + 8 if tag_w else 0))
+    fmt_w = tag_fm.horizontalAdvance(entry.mod_format) + 14 if entry.mod_format else 0
+    name_max = int(text_w - sum(w + 8 for w in (tag_w, fmt_w) if w))
     name = name_fm.elidedText(entry.name, Qt.TextElideMode.ElideRight, max(20, name_max))
     painter.setFont(name_font)
     painter.setPen(theme.color("HEADING"))
     painter.drawText(QRectF(text_left, name_y, name_max, name_fm.height()),
                      Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
+    tag_h = tag_fm.height() + 4
+    tag_x = text_left + min(name_fm.horizontalAdvance(name), name_max) + 8
+    tag_y = name_y + (name_fm.height() - tag_h) / 2
     if tag_text:
-        tag_h = tag_fm.height() + 4
-        tag_x = text_left + min(name_fm.horizontalAdvance(name), name_max) + 8
-        tag_rect = QRectF(tag_x, name_y + (name_fm.height() - tag_h) / 2, tag_w, tag_h)
-        _draw_pill(painter, tag_rect, theme.color("PRIMARY_LIGHT"), theme.color("PRIMARY_DARK"), tag_font, tag_text)
+        _draw_pill(painter, QRectF(tag_x, tag_y, tag_w, tag_h), theme.color("PRIMARY_LIGHT"),
+                   theme.color("PRIMARY_DARK"), tag_font, tag_text)
+        tag_x += tag_w + 8
+    if entry.mod_format:
+        background, color = mod_format_tag_colors(entry.mod_format)
+        _draw_pill(painter, QRectF(tag_x, tag_y, fmt_w, tag_h), background, color, tag_font, entry.mod_format)
 
     # 工坊 ID 靠右，作者占剩余宽度，两者不重叠。
     id_text = f"ID {entry.id_text}" if entry.id_text else t("mod.export_non_workshop")

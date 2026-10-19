@@ -908,7 +908,7 @@ class ModPage(Page):
         locked_id = luajit_injector.WORKSHOP_MOD_KEY if self._luajit_mod_locked else None
         rows = build_mod_rows(self._mod_data, self._mod_infos, platform=platform, locked_mod_id=locked_id,
                               **self._row_filter_args())
-        from dstools.features.mod.parser import detect_mod_format, find_workshop_dir
+        from dstools.features.mod.parser import find_workshop_dir
 
         workshop_root = find_workshop_dir()
         for row in rows:
@@ -916,14 +916,22 @@ class ModPage(Page):
             row["has_folder"] = bool(path and Path(path).is_dir())
             numeric = str(row["workshop_id"]).removeprefix("workshop-")
             status = self._workshop_status_cache.get(int(numeric)) if numeric.isdigit() else None
-            steam = status.evidence.steam_state if status is not None and status.evidence is not None else None
-            row["mod_format"] = None if row.get("is_local") else detect_mod_format(numeric, workshop_root, steam)
+            row["mod_format"] = None if row.get("is_local") else self._mod_format(row["workshop_id"], workshop_root)
             if not row["has_folder"] and row["enabled"] and self._mod_infos.get(row["workshop_id"]) is None:
                 # 存档 modoverrides.lua 启用了、本机却没有文件（多半是没订阅）：读不到 modinfo，
                 # 名称和版本都是空的，用户不知道这一行从哪来——写明来源和原因。
                 row["name"] = row["name"] or t("mod.reference_missing_name")
                 row["version_text"] = referenced_missing_status_text(status)
         return rows
+
+    def _mod_format(self, workshop_id: str, workshop_root) -> str | None:
+        """列表和导出图片共用的 V1/V2 判断：有 Steam 状态时以它为准，否则看工坊目录内容。"""
+        from dstools.features.mod.parser import detect_mod_format
+
+        numeric = str(workshop_id).removeprefix("workshop-")
+        status = self._workshop_status_cache.get(int(numeric)) if numeric.isdigit() else None
+        steam = status.evidence.steam_state if status is not None and status.evidence is not None else None
+        return detect_mod_format(numeric, workshop_root, steam)
 
     def _row_filter_args(self) -> dict:
         """当前筛选页签与搜索词对应的 build_mod_rows 参数（界面线程读取，可交给后台线程用）。"""
@@ -1257,7 +1265,11 @@ class ModPage(Page):
         cluster = self.get_cluster()
         if cluster is None or self._loading:
             return
-        entries = build_export_entries(self._mod_data, self._mod_infos)
+        from dstools.features.mod.parser import find_workshop_dir
+
+        workshop_root = find_workshop_dir()
+        formats = {wid: self._mod_format(wid, workshop_root) for wid, mod in self._mod_data.items() if mod.enabled}
+        entries = build_export_entries(self._mod_data, self._mod_infos, formats)
         if not entries:
             dialogs.show_info(self, t("mod.export_preview_title"), t("mod.export_empty"))
             return
