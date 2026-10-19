@@ -12,8 +12,8 @@ import time
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QToolTip, QVBoxLayout,
-    QWidget,
+    QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QToolTip,
+    QVBoxLayout, QWidget,
 )
 
 from dstools.features.mod.config_memory import load_memory
@@ -21,10 +21,11 @@ from dstools.features.mod.list_model import localize_mod_name
 from dstools.i18n import t
 from dstools.qt import dialogs
 from dstools.qt.imaging import pil_to_pixmap
-from dstools.qt.mod_config_sync import last_states, sync_available, sync_off_text
+from dstools.qt.mod_config_sync import last_states, steamcmd_channel, sync_available, sync_off_text
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
 from dstools.qt.widgets import Card, PillTabBar
+from dstools.shared.app_settings import get_mod_config_sync_enabled, set_mod_config_sync_enabled
 from dstools.shared.resource_paths import bundled_resource_dir
 
 _FILTER_DEBOUNCE_MS = 150
@@ -203,6 +204,12 @@ class GlobalDefaultsDialog(dialogs.Dialog):
         hint.setWordWrap(True)
         hint.setFont(theme.font("FONT_SIZE_SM"))
         intro_box.addWidget(hint)
+        # 与游戏双向同步的开关（原在设置菜单）；SteamCMD 通道没有游戏客户端，置灰并悬停说明
+        self._sync_check = QCheckBox(t("mod.default_config_sync_toggle"))
+        self._sync_check.setFont(theme.font("FONT_SIZE_SM"))
+        self._sync_check.setChecked(get_mod_config_sync_enabled())
+        self._sync_check.toggled.connect(self._on_sync_toggled)
+        intro_box.addWidget(self._sync_check)
         self._sync_line = QLabel()
         self._sync_line.setWordWrap(True)
         self._sync_line.setFont(theme.font("FONT_SIZE_XS", bold=True))
@@ -317,7 +324,18 @@ class GlobalDefaultsDialog(dialogs.Dialog):
                 except Exception:
                     continue
 
+    def _on_sync_toggled(self, checked: bool) -> None:
+        set_mod_config_sync_enabled(checked)
+        self._refresh_sync_line()
+        self.refresh_states()
+        if checked:
+            self.page._start_config_sync(notify=False)  # 刚开启就同步一次，不用再点「立即同步」
+
     def _refresh_sync_line(self) -> None:
+        steamcmd = steamcmd_channel()
+        self._sync_check.setEnabled(not steamcmd)
+        self._sync_check.setToolTip(t("mod.default_config_sync_steamcmd" if steamcmd
+                                      else "mod.default_config_sync_toggle_hint"))
         enabled = sync_available(self.page.ctx)
         self._sync_line.setText(t("mod.global_defaults_sync_on") if enabled else sync_off_text())
         self._sync_line.setStyleSheet(f"color: {theme.hex('SUCCESS' if enabled else 'TEXT_MUTED')};")
