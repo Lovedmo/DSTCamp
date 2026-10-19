@@ -4,8 +4,9 @@
 用内网穿透映射的世界不能改文件夹或删除：映射记录按分片名保存，先由用户在内网穿透页关闭。
 """
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import QCheckBox, QGridLayout, QLabel, QLineEdit, QPushButton, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from dstools.features.local_service.backup_manager import create_backup
 from dstools.features.world import shard_management
@@ -16,7 +17,7 @@ from dstools.qt import dialogs
 from dstools.qt.lan_mapping_guard import shard_mapping_name
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
-from dstools.qt.widgets import Banner
+from dstools.qt.widgets import Banner, Card
 from dstools.shared import app_settings
 
 MAX_PLAYER_LIMIT = 64  # cluster.ini max_players 的上限
@@ -72,37 +73,32 @@ class WorldEditDialog(dialogs.Dialog):
 
 
 class ManageWorldsDialog(dialogs.Dialog):
-    """世界列表加每行的编辑/改文件夹/删除按钮；exec() 返回 ADD 表示用户点了「新增世界」。"""
-
-    ADD = 2
+    """世界列表：每个世界一张卡片（名称与标签、文件夹/类型/编号、编辑/改文件夹/删除按钮）。
+    各项修改点下去就生效，底部只有「确认」关闭弹窗；新增世界在世界页的按钮里。"""
 
     def __init__(self, parent, ctx):
         super().__init__(parent, t("world.manage_btn"), "lg")
         self.ctx = ctx
         self._busy = False
-        self._intro = self.text_label("", size_key="FONT_SIZE_BASE")
+        self._intro = self.text_label("", muted=True)
         self.body.addWidget(self._intro)
         self._banner = Banner()
         self.body.addWidget(self._banner)
         host = QWidget()
-        self._grid = QGridLayout(host)
-        self._grid.setContentsMargins(0, 4, 0, 4)
-        self._grid.setHorizontalSpacing(16)
-        self._grid.setVerticalSpacing(8)
-        self._grid.setColumnStretch(1, 1)  # 名称列吃掉多余宽度，按钮靠右
+        self._list = QVBoxLayout(host)
+        self._list.setContentsMargins(0, 2, 0, 2)
+        self._list.setSpacing(8)
         self.body.addWidget(host)
-        close = dialogs.style_button(QPushButton(t("dlg.close_btn")), "secondary")
-        close.clicked.connect(self.reject)
-        close.setAutoDefault(False)
-        self._add_button = QPushButton(t("world.add_shard_btn"))
-        self._add_button.clicked.connect(lambda: self.done(self.ADD))
-        self.add_footer([close], [self._add_button])
+        confirm = QPushButton(t("dlg.confirm_btn"))
+        confirm.clicked.connect(self.accept)
+        confirm.setDefault(True)
+        self.add_footer([], [confirm])
         self.reload()
 
     # ── 列表 ────────────────────────────────────────────────────────────
     def reload(self) -> None:
-        while self._grid.count():
-            widget = self._grid.takeAt(0).widget()
+        while self._list.count():
+            widget = self._list.takeAt(0).widget()
             if widget is not None:
                 widget.deleteLater()
         cluster = self.ctx.selected_cluster()
@@ -115,43 +111,60 @@ class ManageWorldsDialog(dialogs.Dialog):
         except (OSError, ValueError) as exc:  # modoverrides.lua 或 server.ini 读不了
             self._intro.setText("")
             self._banner.set_text(str(exc))
-            self._add_button.setEnabled(False)
             return
         running = self.ctx.cluster_running(cluster)
         self._intro.setText(t("world.manage_intro", cluster=cluster.name, count=len(entries)))
         self._banner.set_text(t("world.manage_running") if running else
                               "" if worldgate else t("world.manage_no_worldgate"))
-        self._add_button.setEnabled(not running and not self._busy)
-        for column, key in enumerate(("world.manage_col_folder", "world.manage_col_name",
-                                      "world.manage_col_type", "world.manage_col_id")):
-            self._grid.addWidget(self._label(t(key), muted=True), 0, column)
         editable = not running and not self._busy
-        for row, entry in enumerate(entries, start=1):
-            self._add_row(cluster, row, entry, editable, worldgate)
+        for entry in entries:
+            self._list.addWidget(self._world_card(cluster, entry, editable, worldgate))
 
-    def _label(self, text: str, muted: bool = False) -> QLabel:
-        label = QLabel(text)
-        label.setFont(theme.font("FONT_SIZE_SM"))
-        label.setProperty("muted", muted)
-        return label
+    @staticmethod
+    def _tag(text: str, color_key: str) -> QLabel:
+        """名称后面的小圆角标签（主世界/已隐藏/人数上限）。"""
+        tag = QLabel(text)
+        tag.setFont(theme.font("FONT_SIZE_XS"))
+        color = theme.hex(color_key)
+        # 样式用对象名限定：悬停提示框会继承控件样式表，否则提示框也画成圆角、四角露出黑点
+        tag.setObjectName("worldTag")
+        tag.setStyleSheet(f"QLabel#worldTag {{ color: {color}; border: 1px solid {color}; "
+                          "border-radius: 8px; padding: 0px 7px; }")
+        return tag
 
-    def _add_row(self, cluster, row: int, entry, editable: bool, worldgate: bool) -> None:
-        tags = [entry.name or t("world.manage_unnamed")]
+    def _world_card(self, cluster, entry, editable: bool, worldgate: bool) -> Card:
+        card = Card(radius=12, alpha=128, fill_key="CARD_BG_ALT")
+        row = QHBoxLayout(card)
+        row.setContentsMargins(16, 10, 12, 10)
+        row.setSpacing(8)
+        info = QVBoxLayout()
+        info.setSpacing(4)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        title = QLabel(entry.name or t("world.manage_unnamed"))
+        title.setFont(theme.font("FONT_SIZE_BASE", bold=bool(entry.name)))
+        title.setProperty("muted", not entry.name)
+        title_row.addWidget(title)
         if entry.is_master:
-            tags.append(t("world.manage_master_tag"))
+            title_row.addWidget(self._tag(t("world.manage_master_tag"), "PRIMARY"))
         if entry.hidden:
-            tags.append(t("world.manage_hidden_tag"))
+            title_row.addWidget(self._tag(t("world.manage_hidden_tag"), "TEXT_MUTED"))
         if entry.limit:
-            tags.append(t("world.manage_limit_tag", limit=entry.limit))
-        self._grid.addWidget(self._label(entry.shard_name), row, 0)
-        self._grid.addWidget(self._label(" · ".join(tags), muted=not entry.name), row, 1)
-        self._grid.addWidget(self._label(self._location_text(entry.location)), row, 2)
-        self._grid.addWidget(self._label(str(entry.shard_id) if entry.shard_id is not None else "-"), row, 3)
+            title_row.addWidget(self._tag(t("world.manage_limit_tag", limit=entry.limit), "ACCENT"))
+        title_row.addStretch()
+        info.addLayout(title_row)
+        shard_id = str(entry.shard_id) if entry.shard_id is not None else "-"
+        detail = QLabel(t("world.manage_detail", folder=entry.shard_name,
+                          location=self._location_text(entry.location), id=shard_id))
+        detail.setFont(theme.font("FONT_SIZE_XS"))
+        detail.setProperty("muted", True)
+        info.addWidget(detail)
+        row.addLayout(info, 1)
 
-        edit = QPushButton(t("world.manage_edit_btn"))
+        edit = dialogs.style_button(QPushButton(t("world.manage_edit_btn")), "secondary")
         edit.setEnabled(editable and worldgate)
         edit.clicked.connect(lambda _c=False, e=entry: self._on_edit(e))
-        folder_btn = QPushButton(t("world.manage_folder_btn"))
+        folder_btn = dialogs.style_button(QPushButton(t("world.manage_folder_btn")), "secondary")
         protected = shard_management.rename_shard_error(cluster, entry.shard_name, entry.shard_name)
         folder_btn.setEnabled(editable and not protected)
         folder_btn.setToolTip(protected)
@@ -159,9 +172,11 @@ class ManageWorldsDialog(dialogs.Dialog):
         delete = dialogs.style_button(QPushButton(t("world.manage_delete_btn")), "danger")
         delete.setEnabled(editable and not entry.is_master)
         delete.clicked.connect(lambda _c=False, e=entry: self._on_delete(e))
-        for column, button in enumerate((edit, folder_btn, delete), start=4):
+        for button in (edit, folder_btn, delete):
+            button.setFont(theme.font("FONT_SIZE_SM"))
             button.setAutoDefault(False)
-            self._grid.addWidget(button, row, column)
+            row.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+        return card
 
     @staticmethod
     def _location_text(location: str | None) -> str:

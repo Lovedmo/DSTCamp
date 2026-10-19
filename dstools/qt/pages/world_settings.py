@@ -299,11 +299,8 @@ class WorldSettingsPage(Page):
         run_async(work, done, failed)
 
     def _on_manage_worlds(self) -> None:
-        """管理世界弹窗；在里面点「新增世界」时关闭弹窗，走新增世界流程。"""
-        if not self._selected_is_server():
-            return
-        if ManageWorldsDialog(self.window(), self.ctx).exec() == ManageWorldsDialog.ADD:
-            self._on_add_shard()
+        if self._selected_is_server():
+            ManageWorldsDialog(self.window(), self.ctx).exec()
 
     def _guide_worldgate(self, title: str) -> None:
         """本机还没有万界之门：先引导订阅（SteamCMD 通道直接下载），装好后再新增世界。"""
