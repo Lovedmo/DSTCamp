@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from dstools.features.local_service.backup_manager import create_backup
 from dstools.features.local_service.steam_backend import SteamBackend, get_backend
-from dstools.features.world import page_data, shard_addition
+from dstools.features.world import page_data, shard_management
 from dstools.features.world.location_profiles import FOREST_LOCATION, get_location_definition
 from dstools.features.mod.shardindex import (
     LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
@@ -39,11 +39,11 @@ class AddShardDialog(dialogs.Dialog):
         self._language = language
         self.shard_name = ""
         self.world_name = ""
-        default_name, _others = shard_addition.planned_world_names(cluster, location, language)
+        default_name, _others = shard_management.planned_world_names(cluster, location, language)
         self.body.addWidget(self.text_label(t("world.add_shard_intro", cluster=cluster.name,
                                               location=location_label), size_key="FONT_SIZE_BASE"))
         self._folder_edit = self._field(t("world.add_shard_folder_label"),
-                                        shard_addition.next_shard_name(cluster, location),
+                                        shard_management.next_shard_name(cluster, location),
                                         t("world.add_shard_folder_hint"))
         self._name_edit = self._field(t("world.add_shard_name_label"), default_name, t("world.add_shard_name_hint"))
         self.body.addWidget(self.text_label(t("world.add_shard_notes"), muted=True))
@@ -64,8 +64,8 @@ class AddShardDialog(dialogs.Dialog):
     def accept_if_valid(self) -> None:
         shard_name = self._folder_edit.text().strip()
         world_name = self._name_edit.text().strip()
-        error = (shard_addition.shard_name_error(self._cluster, shard_name)
-                 or shard_addition.world_name_error(self._cluster, self._location, world_name, self._language))
+        error = (shard_management.shard_name_error(self._cluster, shard_name)
+                 or shard_management.world_name_error(self._cluster, self._location, world_name, self._language))
         if error:
             self._error.setText(error)
             return
@@ -233,11 +233,11 @@ class WorldSettingsPage(Page):
         if self.ctx.cluster_running(cluster):
             dialogs.show_warning(self.window(), title, t("world.add_shard_running"))
             return
-        if not shard_addition.worldgate_installed():
+        if not shard_management.worldgate_installed():
             self._guide_worldgate(title)
             return
         try:
-            locations = shard_addition.available_locations(cluster)
+            locations = shard_management.available_locations(cluster)
         except ValueError as exc:
             dialogs.show_error(self.window(), title, str(exc))
             return
@@ -264,12 +264,12 @@ class WorldSettingsPage(Page):
         self._add_shard_button.setEnabled(False)
 
         def work() -> None:
-            plan = shard_addition.initial_plan(cluster, location, klei_root)
+            plan = shard_management.initial_plan(cluster, location, klei_root)
             # 先校验再备份，避免明知不能加还留下一份备份
-            shard_addition.validate_new_shard(cluster, shard_name, plan)
+            shard_management.validate_new_shard(cluster, shard_name, plan)
             create_backup(cluster.path)
-            shard_addition.add_shard(cluster, shard_name, plan,
-                                     shard_addition.used_ports_elsewhere(clusters, cluster), language, world_name)
+            shard_management.add_shard(cluster, shard_name, plan,
+                                     shard_management.used_ports_elsewhere(clusters, cluster), language, world_name)
 
         def done(_result) -> None:
             self._add_shard_button.setEnabled(True)
@@ -297,10 +297,10 @@ class WorldSettingsPage(Page):
             return
         if steamcmd:
             from dstools.qt.steamcmd_mods import run_steamcmd_mod_update
-            run_steamcmd_mod_update(self.window(), [shard_addition.WORLDGATE_MOD_ID],
+            run_steamcmd_mod_update(self.window(), [shard_management.WORLDGATE_MOD_ID],
                                     on_finished=self.ctx.workshop_mods_changed.emit)
         else:
-            webbrowser.open(f"https://steamcommunity.com/sharedfiles/filedetails/?id={shard_addition.WORLDGATE_MOD_ID}")
+            webbrowser.open(f"https://steamcommunity.com/sharedfiles/filedetails/?id={shard_management.WORLDGATE_MOD_ID}")
 
     def _load_world(self) -> None:
         self._generation += 1

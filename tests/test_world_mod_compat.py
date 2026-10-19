@@ -745,7 +745,7 @@ def test_vanilla_world_without_task_set_is_rejected() -> None:
 
 def test_add_shard_to_existing_cluster() -> None:
     """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、各世界启用同一份万界之门配置（含自定义名称）、旧存档不动。"""
-    from dstools.features.world.shard_addition import (
+    from dstools.features.world.shard_management import (
         add_shard, planned_world_names, shard_name_error, world_name_error,
     )
     import shutil

@@ -1,8 +1,11 @@
-"""给已有专服存档新增一个世界分片：只新建分片目录、按需打开多世界设置，不碰已有世界的存档。
+"""管理已有专服存档的世界分片（新增等），调用方负责确认存档已停止。
 
-新分片在下次开服时由游戏生成；Mod 配置复制主世界的 modoverrides.lua，各世界保持一致。
+新增世界只新建分片目录、按需打开多世界设置，不碰已有世界的存档；新分片在下次开服时由游戏生成，
+Mod 配置复制主世界的 modoverrides.lua，各世界保持一致。万界之门的 worlds 配置（编号与名称）
+在所有世界里写同一份，多文件写入失败时整体恢复原样。
 """
 
+from contextlib import contextmanager
 import copy
 import os
 from pathlib import Path
@@ -236,6 +239,21 @@ def _write_lua(path: Path, data: dict) -> None:
     path.write_text(serialize_lua_table(data) + "\n", encoding="utf-8")
 
 
+@contextmanager
+def _restore_on_error(paths):
+    """块内出错时把 paths 恢复成进入前的内容（原本不存在的删掉），再把异常抛出去。"""
+    originals = {path: path.read_bytes() if path.is_file() else None for path in paths}
+    try:
+        yield
+    except Exception:
+        for path, content in originals.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
+        raise
+
+
 def worldgate_key(mods_list) -> str:
     """存档里已启用的万界之门条目键名（本机开发用的目录名优先保留），都没有时用工坊 ID。"""
     for mods in mods_list:
@@ -257,13 +275,27 @@ def _shard_id(shard, master) -> int | None:
         return None
 
 
+def _load_worldgate(cluster: Cluster, master) -> tuple[dict, str, dict]:
+    """各世界的 modoverrides（按分片名）、万界之门条目键名，以及以主世界为准的条目副本（已设为启用）。"""
+    mods_by_shard = {shard.name: _read_mods(shard.path / "modoverrides.lua") for shard in cluster.shards}
+    key = worldgate_key(mods_by_shard.values())
+    entry = mods_by_shard[master.name].get(key)
+    entry = copy.deepcopy(entry) if isinstance(entry, dict) else {}
+    entry["enabled"] = True
+    if not isinstance(entry.get("configuration_options"), dict):
+        entry["configuration_options"] = {}
+    return mods_by_shard, key, entry
+
+
+def _apply_worldgate(mods_by_shard: dict, key: str, entry: dict) -> None:
+    """所有世界写同一份万界之门条目：worlds、语言等配置各世界不一致时玩家换世界会看到不同内容。"""
+    for mods in mods_by_shard.values():
+        mods[key] = copy.deepcopy(entry)
+
+
 def _existing_worlds(cluster: Cluster, master) -> dict:
     """主世界万界之门配置里已有的 worlds；没有或不是表（Mod 页默认值是空字符串）时返回空。"""
-    mods_list = [_read_mods(shard.path / "modoverrides.lua") for shard in cluster.shards]
-    master_mods = _read_mods(master.path / "modoverrides.lua")
-    entry = master_mods.get(worldgate_key(mods_list))
-    options = entry.get("configuration_options") if isinstance(entry, dict) else None
-    worlds = options.get("worlds") if isinstance(options, dict) else None
+    worlds = _load_worldgate(cluster, master)[2]["configuration_options"].get("worlds")
     return worlds if isinstance(worlds, dict) else {}
 
 
@@ -335,17 +367,13 @@ def add_shard(cluster: Cluster, shard_name: str, plan: WorldShardPlan, used_port
         master_config.shard["is_master"] = True
 
     # 万界之门：所有世界（含新世界）启用同一份配置，worlds 列出每个世界的编号与名称
-    mods_by_shard = {shard.name: _read_mods(shard.path / "modoverrides.lua") for shard in cluster.shards}
-    key = worldgate_key(mods_by_shard.values())
-    entry = copy.deepcopy(mods_by_shard[master.name].get(key) or {})
-    entry["enabled"] = True
-    options = entry.setdefault("configuration_options", {})
+    mods_by_shard, key, entry = _load_worldgate(cluster, master)
+    options = entry["configuration_options"]
     options["worlds"] = _world_names(cluster, master, options.get("worlds"),
                                      (int(config.shard["id"]), plan.location, (world_name or "").strip() or None),
                                      language)
     options.setdefault("language", language)
-    for mods in mods_by_shard.values():
-        mods[key] = copy.deepcopy(entry)
+    _apply_worldgate(mods_by_shard, key, entry)
 
     # 先在存档目录里的临时目录写好，server.ini 最后写（没有 server.ini 的目录不会被识别成世界），再整体改名
     while True:
@@ -357,25 +385,20 @@ def add_shard(cluster: Cluster, shard_name: str, plan: WorldShardPlan, used_port
             continue
     destination = cluster.path / shard_name
     touched = [cluster_ini_path, master_ini_path, *(shard.path / "modoverrides.lua" for shard in cluster.shards)]
-    originals = {path: path.read_bytes() if path.is_file() else None for path in touched}
     try:
-        (temp_dir / "leveldataoverride.lua").write_text(
-            serialize_lua_table(shard_level_data(plan)) + "\n", encoding="utf-8")
-        _write_lua(temp_dir / "modoverrides.lua", mods_by_shard[master.name])
-        write_server_ini(config, temp_dir / "server.ini")
-        if new_cluster_config != cluster_config:
-            write_cluster_ini(new_cluster_config, cluster_ini_path)
-        if master_needs_flag:
-            write_server_ini(master_config, master_ini_path)
-        for shard in cluster.shards:
-            _write_lua(shard.path / "modoverrides.lua", mods_by_shard[shard.name])
-        os.replace(temp_dir, destination)
-        return destination
+        with _restore_on_error(touched):
+            (temp_dir / "leveldataoverride.lua").write_text(
+                serialize_lua_table(shard_level_data(plan)) + "\n", encoding="utf-8")
+            _write_lua(temp_dir / "modoverrides.lua", mods_by_shard[master.name])
+            write_server_ini(config, temp_dir / "server.ini")
+            if new_cluster_config != cluster_config:
+                write_cluster_ini(new_cluster_config, cluster_ini_path)
+            if master_needs_flag:
+                write_server_ini(master_config, master_ini_path)
+            for shard in cluster.shards:
+                _write_lua(shard.path / "modoverrides.lua", mods_by_shard[shard.name])
+            os.replace(temp_dir, destination)
     except Exception:
-        for path, content in originals.items():
-            if content is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_bytes(content)
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
+    return destination
