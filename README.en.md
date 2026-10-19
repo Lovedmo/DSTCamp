@@ -18,16 +18,17 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#170-changes">Changelog</a> ·
+  <a href="#171-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.7.0 highlights
+## ✨ 1.7.1 highlights
 
-- 🌍 **Add worlds to existing saves**: add a world in one click, wired up with WorldGate automatically, no new save needed.
-- ⚡ **Faster "Update Mods" window**: opens in about 0.35 s, with near-instant search and filters.
+- 🗺️ **Manage Worlds**: rename, hide, cap players, rename folders of, or delete worlds in dedicated-server saves, with an automatic backup first.
+- ⚡ **Faster Mod page**: warmed up in the background after launch, 211 Mods appear in about 0.2 s.
+- 💾 **Smarter backups**: 20 kept by default, no duplicate backups of an unchanged save, and manual backups are kept for good.
 
 ## 🧭 Features
 
@@ -111,9 +112,31 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.7.0 changes
+## 1.7.1 changes
 
 ### ✨ New features
+
+- **Manage Worlds**: "Manage Worlds" on the World page edits each world's WorldGate name, hidden flag, and player cap, renames world folders, and deletes non-master worlds in dedicated-server saves; a backup is made before every change.
+- **Faster Mod page**: the Mod cache is warmed up in the background after launch, so 211 Mods appear in about 0.2 s (was about 1.6 s) and switching to the Mod page no longer stutters; without the VC++ runtime only icons are skipped.
+- **Smarter backups**: 20 backups are kept by default; scheduled backups are skipped when the save has not changed; manual, pre-restore, and pre-Manage-Worlds backups are marked "Keep" and never deleted automatically.
+- **WorldGate reminders**: adding a world says WorldGate will be enabled for all worlds; starting is blocked when extra Forest/Caves worlds exist but WorldGate is turned off.
+- **V1/V2 tags in exported Mod images**: each card shows a V1/V2 tag after the version; exports from the console use the folder the server actually loaded.
+- **SteamCMD entry moved**: now under "Settings → Choose Steam Client...", so players hosting locally no longer see SteamCMD options; without a Steam client (e.g. on a cloud server) a banner suggests SteamCMD.
+- **UI and wording**: the "Two-way sync of mod default configs with the game" switch moves into the Global Default Configs window; the Settings menu is reordered; the "Choose Server Program" explanation is friendlier for newcomers; WorldGate in the recommended Mods gets a new icon and description.
+
+### 🐞 Fixes
+
+- After adding a world, Mod worlds such as Shipwrecked and Volcano failed to generate (`TaskSet has no data`).
+- Clicking "Apply" in a Mod's configuration cleared WorldGate's world names, hidden flags, and player caps.
+- After restoring a backup, world folders added or renamed after that backup were left behind as extra worlds.
+- After changing a local Mod's modinfo, options, or icon, refreshing the Mod page still showed the old content.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.7.0)</strong></summary>
+
+### 1.7.0
+
+#### ✨ New features
 
 - **SteamCMD channel**: the Local Server page's "Steam channel" switches between the Steam client and the bundled SteamCMD; SteamCMD can install and update the dedicated server and download, update, and clean up Workshop Mods, with Download by ID, a Mod update check before starting, and Steam account login (only the username is stored).
 - **Add worlds to existing saves**: "Add World" on the World Settings page (dedicated-server saves only) backs up the save first and wires in WorldGate automatically; WorldGate is added to the recommended Mods.
@@ -121,7 +144,7 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - **More accurate Mod icon runtime check**: when it is broken, the banner names the faulty file, and clicking it installs or repairs the runtime.
 - **UI details**: start buttons are disabled with a reason when no server program is found; the "Account" dropdown has a tooltip; long paths in dialogs wrap; the text outline over background images fades in only when needed.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - Vanilla Forest/Caves worlds added in the create-save wizard failed to generate (`Must specify the task set for a level!`).
 - With group-pause Mods or pause-when-empty turned off, the master world stayed "not ready" after it had started.
@@ -129,9 +152,6 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - When creating a save, single-world saves were wrongly reported as having port conflicts, and invalid ports skipped the conflict check.
 - The "Update Mods" window showed "file missing" Mods that could not be selected.
 - Direct-connect code tooltips disappeared; old 16-character Sakura access keys could not be entered; the "all loaded" Mod count left out the LuaJIT companion Mod.
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.6.5)</strong></summary>
 
 ### 1.6.5
 
