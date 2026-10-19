@@ -16,6 +16,14 @@ class LuaParseError(Exception):
         self.col = col
 
 
+class LuaStringKey(str):
+    """写回时保持带引号的数字字符串键（``["1"]``）。
+
+    解析结果的键统一是 str，``[1]`` 与 ``["1"]`` 在 Lua 里却是两个键：游戏把 Mod 配置传给世界生成线程时用
+    json 编码，键全是正整数的表按数组编码，键是 Shard ID 这类大数会耗尽内存，世界生成就拿不到任何 Mod。
+    """
+
+
 # ── 词法分析器 ──────────────────────────────────────────────────────────
 
 class TokenType(Enum):
@@ -460,7 +468,7 @@ class LuaTableParser:
                 self._expect(TokenType.RBRACKET, "Expected ']' after table key")
                 self._expect(TokenType.EQUALS, "Expected '=' after key")
                 value = self._parse_value()
-                result[str(key)] = value
+                result[LuaStringKey(key) if isinstance(key, str) and key.isdigit() else str(key)] = value
             elif token.type == TokenType.IDENTIFIER and isinstance(token.value, str):
                 # key = value（标识符形式的 key）
                 # 往前瞧一个 token：如果下一个是 '='，说明这是键值对
@@ -559,7 +567,7 @@ def serialize_lua_table(data: dict, indent: int = 4, _level: int = 0) -> str:
     # 判断是不是纯数组（所有 key 是不是从 "1" 开始的连续整数）
     keys = list(data.keys())
     is_array = all(
-        k.isdigit() or (isinstance(k, str) and k.lstrip('-').isdigit())
+        not isinstance(k, LuaStringKey) and (k.isdigit() or (isinstance(k, str) and k.lstrip('-').isdigit()))
         for k in keys
     )
 
@@ -601,7 +609,7 @@ def serialize_lua_table(data: dict, indent: int = 4, _level: int = 0) -> str:
 
 def _lua_key(key: Any) -> str:
     """把 key 格式化成 Lua 表语法。"""
-    if isinstance(key, str) and key.isdigit():
+    if isinstance(key, str) and key.isdigit() and not isinstance(key, LuaStringKey):
         return key
     return f'"{key}"'
 

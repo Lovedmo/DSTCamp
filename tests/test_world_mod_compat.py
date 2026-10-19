@@ -794,6 +794,8 @@ def test_add_shard_to_existing_cluster() -> None:
             gate = mods["workshop-3822260794"]
             assert gate["enabled"] is True
             assert gate["configuration_options"] == {"worlds": worlds, "language": "zh"}
+            # 数字键会让游戏把 worlds 当数组 json 编码，Shard ID 很大时新世界生成拿不到 Mod
+            assert '["3"] = {' in (output / name / "modoverrides.lua").read_text(encoding="utf-8")
         assert parse_lua_file(second / "leveldataoverride.lua")["overrides"]["task_set"] == "cave_default"
         assert save_file.read_bytes() == b"old world"
 

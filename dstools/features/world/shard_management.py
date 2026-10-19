@@ -36,7 +36,7 @@ from dstools.features.world.location_profiles import (
 from dstools.i18n import t
 from dstools.models import Cluster, Platform, SaveSource, ShardConfig
 from dstools.shared.ini_parser import parse_cluster_ini, parse_server_ini, write_cluster_ini, write_server_ini
-from dstools.shared.lua_parser import parse_lua_file, serialize_lua_table
+from dstools.shared.lua_parser import LuaStringKey, parse_lua_file, serialize_lua_table
 from dstools.shared.recycle_bin import move_to_recycle_bin
 from dstools.shared.server_ports import (
     DEFAULT_MASTER_PORT,
@@ -342,8 +342,9 @@ def _world_names(cluster: Cluster, master, existing, new_world: tuple[int, str, 
             name, index = f"{base} {index}", index + 1
         entry["name"] = name
         used_names.add(name)
-    # 没取到类型又没有名称的世界不写空条目，由 Mod 按分片名兜底显示
-    return {k: v for k, v in result.items() if v}
+    # 没取到类型又没有名称的世界不写空条目，由 Mod 按分片名兜底显示；
+    # 键必须写成字符串（["504115402"]），写成数字键会让新世界生成时加载不到任何 Mod
+    return {LuaStringKey(k): v for k, v in result.items() if v}
 
 
 def add_shard(cluster: Cluster, shard_name: str, plan: WorldShardPlan, used_ports=(), language: str = "zh",
