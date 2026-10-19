@@ -231,6 +231,7 @@ class MenuStrip(QWidget):
         self._minimize_action.setText(t("settings.minimize_on_close_label"))
         self._mod_sync_action.setText(t("settings.mod_config_sync_label"))
         self._mod_sync_action.setToolTip(t("settings.mod_config_sync_hint"))
+        self._steam_backend_action.setText(t("settings.steam_backend_label"))
         self._defender_action.setText(t("settings.defender_label"))
         self._cache_dir_action.setText(t("settings.cache_dir_label"))
         self._lang_menu.setTitle(t("settings.language_label"))
@@ -345,6 +346,10 @@ class MenuStrip(QWidget):
         self._mod_sync_action = mod_sync
         menu.aboutToShow.connect(self._refresh_mod_sync_action)
         menu.hovered.connect(self._on_settings_menu_hovered)
+        steam_backend = QAction(t("settings.steam_backend_label"), self)
+        steam_backend.triggered.connect(self._window.show_steam_backend_dialog)
+        menu.addAction(steam_backend)
+        self._steam_backend_action = steam_backend
         defender = QAction(t("settings.defender_label"), self)
         defender.triggered.connect(self._window.show_defender_dialog)
         menu.addAction(defender)
@@ -867,6 +872,10 @@ class MainWindow(QWidget):
         from dstools.qt.settings_dialogs import WindowsDefenderDialog
 
         WindowsDefenderDialog(self).exec()
+
+    def show_steam_backend_dialog(self) -> None:
+        # 通道切换牵涉开服程序和运行状态，交给本地服务页处理（页面构造时已检测好开服程序）
+        self.pages["local"].choose_backend()
 
     def show_cache_dir_dialog(self) -> None:
         from dstools.qt.settings_dialogs import CacheDirDialog
