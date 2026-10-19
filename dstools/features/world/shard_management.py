@@ -444,6 +444,20 @@ def worldgate_enabled(cluster: Cluster) -> bool:
                for mods in mods_list for key in _WORLDGATE_KEYS)
 
 
+def unreachable_shards(cluster: Cluster) -> list[str]:
+    """只能靠万界之门进入、存档却没启用它的世界，启用了时返回空：主世界与 Caves 以外的森林和洞穴
+    （原版洞口只按这两个名字连接；海难、猪镇等 Mod 世界由提供它的 Mod 自己连通，不算在内）。"""
+    if cluster.source != SaveSource.SERVER:
+        return []
+    master = _master_shard(cluster)
+    extra = [shard.name for shard in cluster.shards
+             if shard is not master and shard.name not in PROTECTED_SHARD_NAMES
+             and _shard_location(shard) in (FOREST_LOCATION, CAVE_LOCATION)]
+    if not extra or worldgate_enabled(cluster):
+        return []
+    return extra
+
+
 def list_worlds(cluster: Cluster) -> list[WorldEntry]:
     """存档里的全部世界，主世界在前，其余按编号排序；名称等取主世界的万界之门配置。"""
     master = _master_shard(cluster)

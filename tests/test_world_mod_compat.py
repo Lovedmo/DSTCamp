@@ -815,7 +815,7 @@ def test_manage_existing_shards() -> None:
     )
     from dstools.features.world.shard_management import (
         add_shard, delete_shard, list_worlds, rename_shard_error, rename_shard_folder,
-        renamed_world_error, update_world_entry,
+        renamed_world_error, unreachable_shards, update_world_entry,
     )
     import shutil
 
@@ -824,8 +824,18 @@ def test_manage_existing_shards() -> None:
     with TemporaryDirectory() as directory:
         two = WorldCreationPlan("two", _complete_plan(FOREST_LOCATION), _complete_plan(CAVE_LOCATION))
         output = create_world(two, Path(directory))
+        assert unreachable_shards(_build_cluster(output, SaveSource.SERVER)) == []  # Master/Caves 靠原版洞口
         add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2", _complete_plan(FOREST_LOCATION))
         cluster = _build_cluster(output, SaveSource.SERVER)
+        assert unreachable_shards(cluster) == []
+        originals = {name: (output / name / "modoverrides.lua").read_bytes() for name in ("Master", "Caves", "Forest2")}
+        for name in originals:  # 用户在 Mod 页关掉万界之门
+            path = output / name / "modoverrides.lua"
+            path.write_text(path.read_text(encoding="utf-8").replace('["enabled"] = true', '["enabled"] = false'),
+                            encoding="utf-8")
+        assert unreachable_shards(cluster) == ["Forest2"]
+        for name, content in originals.items():
+            (output / name / "modoverrides.lua").write_bytes(content)
 
         assert renamed_world_error(cluster, "Forest2", "森林")  # 和主世界重名
         update_world_entry(cluster, "Forest2", " 新大陆 ", hidden=True, limit=6)

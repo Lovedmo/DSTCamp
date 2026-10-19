@@ -41,6 +41,11 @@ class AddShardDialog(dialogs.Dialog):
         self.shard_name = ""
         self.world_name = ""
         default_name, _others = shard_management.planned_world_names(cluster, location, language)
+        if not shard_management.worldgate_enabled(cluster):
+            # 原本没用万界之门的存档（常见是没开任何 Mod）会多出一个 Mod，放在最上面醒目说明
+            banner = Banner()
+            banner.set_text(t("world.add_shard_enable_worldgate"))
+            self.body.addWidget(banner)
         self.body.addWidget(self.text_label(t("world.add_shard_intro", cluster=cluster.name,
                                               location=location_label), size_key="FONT_SIZE_BASE"))
         self._folder_edit = self._field(t("world.add_shard_folder_label"),

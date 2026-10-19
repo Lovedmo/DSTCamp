@@ -2117,6 +2117,8 @@ class LocalServicePage(Page):
                 return False
         if not self._confirm_missing_mods(cluster):
             return False
+        if not self._confirm_worldgate_enabled(cluster):
+            return False
         if not self._confirm_outdated_mods(cluster):
             return False
         if not restarting and not self._prepare_legacy_mods_for_start(cluster):
@@ -2261,6 +2263,24 @@ class LocalServicePage(Page):
         """开服程序实际读取的 mods 目录：独立专服或游戏客户端安装目录下的 mods。"""
         # 只用页面已探测到的结果：预检不应触发设置迁移等写操作。
         return self._runtime.mods_dir if self._runtime else None
+
+    def _confirm_worldgate_enabled(self, cluster) -> bool:
+        """新增的世界只能靠万界之门进入：存档里有这种世界、万界之门却被关掉时，启动前拦下。"""
+        from dstools.features.world.shard_management import unreachable_shards
+        try:
+            shards = unreachable_shards(cluster)
+        except (OSError, ValueError):  # modoverrides.lua 读不了，交给游戏自己报错，不在这里挡启动
+            return True
+        if not shards:
+            return True
+        choice = dialogs.ask_choice(
+            self.window(), t("local.worldgate_off_title"), t("local.worldgate_off_msg", shards="、".join(shards)),
+            [(t("dlg.cancel_btn"), "cancel"), (t("local.worldgate_off_mod_btn"), "mods"),
+             (t("local.missing_mods_start_anyway_btn"), "start")],
+            default="mods", danger_values=("start",))
+        if choice == "mods":
+            self.ctx.goto_tab("mods")
+        return choice == "start"
 
     def _confirm_missing_mods(self, cluster) -> bool:
         """存档启用、本机却没有文件的 Mod：专服会跳过它们照常启动，世界在缺 Mod 的
