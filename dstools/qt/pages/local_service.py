@@ -43,7 +43,9 @@ from dstools.features.local_service.server_runtime import (
     resolve_runtime, set_runtime_mode,
 )
 from dstools.features.local_service.log_bundle import create_log_bundle
-from dstools.features.local_service.steam_backend import SteamBackend, get_backend, set_backend, update_blocker
+from dstools.features.local_service.steam_backend import (
+    SteamBackend, get_backend, set_backend, should_suggest_steamcmd, update_blocker,
+)
 from dstools.features.local_service.shard_helpers import RUNNING_LIKE, STATUS_TEXT_KEYS, ordered_shards, max_rollback_days
 from dstools.features.local_service.auto_restart import TOKEN_HOLD_DURATION, TOKEN_WAIT_LIMIT
 from dstools.features.local_service.token_scheduler import TokenSelection, TokenUse, select_token_for_cluster
@@ -868,6 +870,11 @@ class LocalServicePage(Page):
 
         self._local_banner = Banner()
         self._other_running_banner = Banner()
+        # 没有 Steam 客户端时推荐 SteamCMD，点击打开通道窗口，在那里保存才切换
+        self._steamcmd_suggest_banner = Banner()
+        self._steamcmd_suggest_banner.set_clickable(True)
+        self._steamcmd_suggest_banner.clicked.connect(self.choose_backend)
+        root.addWidget(self._steamcmd_suggest_banner)
         root.addWidget(self._local_banner)
         root.addWidget(self._other_running_banner)
 
@@ -1091,6 +1098,7 @@ class LocalServicePage(Page):
         c = cluster if cluster is not None else self.get_cluster()
         is_server = bool(c and c.source == SaveSource.SERVER)
         is_wegame = bool(c and c.platform == Platform.WEGAME)
+        self._refresh_steamcmd_suggest()  # 切换 Steam/WeGame 平台也走这里
         self._start_all_btn.setEnabled(is_server and not is_wegame)
         self._update_runtime_btns_state(c)
         self._update_stop_all_btn_state(c)
@@ -1200,6 +1208,7 @@ class LocalServicePage(Page):
         self._install_dir = self._runtime.install_dir if self._runtime else None
         self._mode_label.setText(self._runtime_mode_text(resolution))
         self._refresh_backend_label()
+        self._refresh_steamcmd_suggest()  # 通道窗口保存后、刷新环境（可能刚装好 Steam）后都会经过这里
         self._install_path_label.setText(str(self._install_dir) if self._install_dir else t("local.install_not_found"))
         self._refresh_steam_update_button()
         self._refresh_steam_remote_build_async()
@@ -1229,6 +1238,12 @@ class LocalServicePage(Page):
             self._refresh_backend_label()  # 后台准备可能发现账号登录已失效
 
         run_async(work, finished, finished)
+
+    def _refresh_steamcmd_suggest(self) -> None:
+        """从没选过 Steam 通道、本机又没有 Steam 客户端时显示 SteamCMD 推荐横幅；选过一次（哪边都算）就不再出现。
+        WeGame 用户本来就没有 Steam 客户端，通道也不影响 WeGame 开服，不提示。"""
+        show = self.ctx.platform == Platform.STEAM and should_suggest_steamcmd()
+        self._steamcmd_suggest_banner.set_text(t("local.steamcmd_suggest_banner") if show else "")
 
     def _set_steamcmd_prepare_active(self, active: bool) -> None:
         self._steamcmd_prepare_active = active
