@@ -807,6 +807,69 @@ def test_add_shard_to_existing_cluster() -> None:
             "森林 2", {"森林", "地下城"})
 
 
+def test_manage_existing_shards() -> None:
+    """管理世界：改万界之门名称/隐藏/上限各世界同步；Master/Caves 不能改文件夹；改名后还原旧备份
+    不留下多余世界；删除世界从 worlds 去掉它，目录移不走时配置恢复原样。"""
+    from dstools.features.local_service.backup_manager import (
+        create_backup, restore_backup, shards_missing_from_backup,
+    )
+    from dstools.features.world.shard_management import (
+        add_shard, delete_shard, list_worlds, rename_shard_error, rename_shard_folder,
+        renamed_world_error, update_world_entry,
+    )
+    import shutil
+
+    from dstools.shared.discovery import _build_cluster
+
+    with TemporaryDirectory() as directory:
+        two = WorldCreationPlan("two", _complete_plan(FOREST_LOCATION), _complete_plan(CAVE_LOCATION))
+        output = create_world(two, Path(directory))
+        add_shard(_build_cluster(output, SaveSource.SERVER), "Forest2", _complete_plan(FOREST_LOCATION))
+        cluster = _build_cluster(output, SaveSource.SERVER)
+
+        assert renamed_world_error(cluster, "Forest2", "森林")  # 和主世界重名
+        update_world_entry(cluster, "Forest2", " 新大陆 ", hidden=True, limit=6)
+        for name in ("Master", "Caves", "Forest2"):
+            worlds = parse_lua_file(output / name / "modoverrides.lua")["workshop-3822260794"][
+                "configuration_options"]["worlds"]
+            assert worlds["3"] == {"name": "新大陆", "hidden": True, "limit": 6}
+        update_world_entry(_build_cluster(output, SaveSource.SERVER), "Forest2", "新大陆", hidden=False, limit=0)
+        entry = next(e for e in list_worlds(_build_cluster(output, SaveSource.SERVER)) if e.shard_name == "Forest2")
+        assert (entry.shard_id, entry.name, entry.hidden, entry.limit) == (3, "新大陆", False, 0)
+
+        assert rename_shard_error(cluster, "Master", "Home") and rename_shard_error(cluster, "Caves", "Under")
+        assert rename_shard_error(cluster, "Forest2", "caves")  # 不能占用原版洞口用的名字
+        backup = create_backup(output)
+        rename_shard_folder(cluster, "Forest2", "NewLand")
+        assert load_shard_config(output / "NewLand").shard["name"] == "NewLand"
+        assert not (output / "Forest2").exists()
+        assert [e.name for e in list_worlds(_build_cluster(output, SaveSource.SERVER))
+                if e.shard_name == "NewLand"] == ["新大陆"]  # 编号不变，名称跟着走
+        assert shards_missing_from_backup(output, backup) == ["NewLand"]
+        restore_backup(output, backup)
+        assert sorted(p.name for p in output.iterdir() if p.is_dir()) == ["Caves", "Forest2", "Master"]
+
+        cluster = _build_cluster(output, SaveSource.SERVER)
+        _expect_value_error(lambda: delete_shard(cluster, "Master", remove=shutil.rmtree), "主世界不应能删除")
+        before = (output / "Master" / "modoverrides.lua").read_bytes()
+
+        def locked(_path):
+            raise OSError("文件被占用")
+
+        try:
+            delete_shard(cluster, "Forest2", remove=locked)
+            raise AssertionError("目录移不走时应抛出异常")
+        except OSError:
+            pass
+        assert (output / "Master" / "modoverrides.lua").read_bytes() == before
+        delete_shard(cluster, "Forest2", remove=shutil.rmtree)
+        assert not (output / "Forest2").exists()
+        for name in ("Master", "Caves"):
+            worlds = parse_lua_file(output / name / "modoverrides.lua")["workshop-3822260794"][
+                "configuration_options"]["worlds"]
+            assert sorted(worlds) == ["1", "2"]
+
+
 def test_multi_shard_mod_templates_require_enabled_mods() -> None:
     extras = {
         "Shipwrecked": _complete_plan(SHIPWRECKED_LOCATION),

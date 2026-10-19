@@ -51,6 +51,12 @@ def ensure_no_other_mapping(parent, ctx, cluster, own: str, title: str) -> bool:
     return False
 
 
+def shard_mapping_name(ctx, cluster, shard) -> str:
+    """这个世界正在用的映射方式名称，没有映射时为空字符串。"""
+    owner = ctx.mapping_owner(cluster, shard)
+    return t(_OWNER_LABEL_KEYS[owner]) if owner else ""
+
+
 def mapping_method_names(ctx, cluster) -> list[str]:
     """这个存档各世界正在用的映射方式名称（去重，按世界顺序）。"""
     owners = (ctx.mapping_owner(cluster, s) for s in cluster.shards)

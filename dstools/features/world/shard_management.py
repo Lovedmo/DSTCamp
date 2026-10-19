@@ -7,6 +7,7 @@ Mod 配置复制主世界的 modoverrides.lua，各世界保持一致。万界�
 
 from contextlib import contextmanager
 import copy
+from dataclasses import dataclass, replace
 import os
 from pathlib import Path
 import re
@@ -36,6 +37,7 @@ from dstools.i18n import t
 from dstools.models import Cluster, Platform, SaveSource, ShardConfig
 from dstools.shared.ini_parser import parse_cluster_ini, parse_server_ini, write_cluster_ini, write_server_ini
 from dstools.shared.lua_parser import parse_lua_file, serialize_lua_table
+from dstools.shared.recycle_bin import move_to_recycle_bin
 from dstools.shared.server_ports import (
     DEFAULT_MASTER_PORT,
     DEFAULT_STEAM_AUTH_PORT,
@@ -146,17 +148,22 @@ def next_shard_id(cluster: Cluster) -> int:
     return max(used) + 1
 
 
-def shard_name_error(cluster: Cluster, shard_name: str) -> str:
-    """新世界文件夹名（也是 server.ini 的分片名）的问题，没问题返回空字符串。"""
+def shard_name_error(cluster: Cluster, shard_name: str, current: str = "") -> str:
+    """世界文件夹名（也是 server.ini 的分片名）的问题，没问题返回空字符串。
+
+    ``current`` 为正在改名的世界，查重时跳过它自己（允许只改大小写）。"""
     # 只放行 ASCII：分片名会出现在启动参数、日志和端口映射里，非 ASCII 是否处处可用没有核实过
     if not _SHARD_NAME_RE.fullmatch(shard_name):
         return t("world.add_shard_folder_invalid")
+    folded, skip = shard_name.casefold(), current.casefold()
     # Windows 目录名不区分大小写；server.ini 里的分片名同样要唯一
-    if any(path.name.casefold() == shard_name.casefold() for path in cluster.path.iterdir()):
+    if any(path.name.casefold() == folded != skip for path in cluster.path.iterdir()):
         return t("world.add_shard_folder_exists", name=shard_name)
     for shard in cluster.shards:
         path = shard.path / "server.ini"
-        if path.is_file() and str(parse_server_ini(path).shard.get("name", "")).casefold() == shard_name.casefold():
+        if shard.name.casefold() == skip or not path.is_file():
+            continue
+        if str(parse_server_ini(path).shard.get("name", "")).casefold() == folded:
             return t("world.add_shard_folder_exists", name=shard_name)
     return ""
 
@@ -299,25 +306,31 @@ def _existing_worlds(cluster: Cluster, master) -> dict:
     return worlds if isinstance(worlds, dict) else {}
 
 
-def _world_names(cluster: Cluster, master, existing, new_world: tuple[int, str, str | None], language: str) -> dict:
+def _shard_location(shard) -> str | None:
+    """世界类型（leveldataoverride.lua 的 location），读不出时返回 None。"""
+    try:
+        return shard_plan_from_template(shard.leveldata_path).location if shard.leveldata_path else None
+    except (OSError, ValueError):
+        return None
+
+
+def _world_names(cluster: Cluster, master, existing, new_world: tuple[int, str, str | None] | None,
+                 language: str) -> dict:
     """万界之门的 worlds 配置：保留现有世界的条目（含名称、人数上限）；新世界用指定名称，
     没指定的世界按类型取名，同名时加序号。"""
     locations: dict[int, str | None] = {}
     for shard in cluster.shards:
         shard_id = _shard_id(shard, master)
-        if shard_id is None:
-            continue
-        try:
-            locations[shard_id] = shard_plan_from_template(shard.leveldata_path).location if shard.leveldata_path else None
-        except ValueError:
-            locations[shard_id] = None
+        if shard_id is not None:
+            locations[shard_id] = _shard_location(shard)
     # 只留存档里还在的世界：删掉的世界留下的条目会占着名字，新世界复用它的编号时还会继承旧名称
     current = {str(shard_id) for shard_id in locations}
     result = {str(k): copy.deepcopy(v) for k, v in existing.items() if isinstance(v, dict) and str(k) in current} \
         if isinstance(existing, dict) else {}
-    locations[new_world[0]] = new_world[1]
-    if new_world[2]:
-        result[str(new_world[0])] = {"name": new_world[2]}
+    if new_world is not None:
+        locations[new_world[0]] = new_world[1]
+        if new_world[2]:
+            result[str(new_world[0])] = {"name": new_world[2]}
     used_names = {v.get("name") for v in result.values()}
     for shard_id in sorted(locations):
         entry = result.setdefault(str(shard_id), {})
@@ -401,4 +414,170 @@ def add_shard(cluster: Cluster, shard_name: str, plan: WorldShardPlan, used_port
     except Exception:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
+    return destination
+
+
+# ── 管理已有世界 ─────────────────────────────────────────────────────
+
+# 原版洞口与大漩涡按这两个分片名绑定世界（cave_entrance/cave_exit/oceanwhirlbigportal 的 shard_name，
+# 每次世界连上时由 Shard_UpdateWorldState 按名字重新绑定），改了名原版通道会断，新名字也不能占用它们
+PROTECTED_SHARD_NAMES = ("Master", "Caves")
+
+
+@dataclass(frozen=True)
+class WorldEntry:
+    """管理世界列表里的一行：分片目录信息加上万界之门 worlds 里的设置。"""
+
+    shard_name: str
+    shard_id: int | None
+    location: str | None
+    is_master: bool
+    name: str        # 万界之门面板上的名称，没设置时为空（Mod 用分片名兜底）
+    hidden: bool
+    limit: int       # 人数上限，0 为不限
+
+
+def worldgate_enabled(cluster: Cluster) -> bool:
+    """存档里有世界启用了万界之门（名称、隐藏、人数上限只对它有意义）。"""
+    mods_list = [_read_mods(shard.path / "modoverrides.lua") for shard in cluster.shards]
+    return any(isinstance(mods.get(key), dict) and mods[key].get("enabled", True)
+               for mods in mods_list for key in _WORLDGATE_KEYS)
+
+
+def list_worlds(cluster: Cluster) -> list[WorldEntry]:
+    """存档里的全部世界，主世界在前，其余按编号排序；名称等取主世界的万界之门配置。"""
+    master = _master_shard(cluster)
+    worlds = _existing_worlds(cluster, master) if master is not None else {}
+    entries = []
+    for shard in cluster.shards:
+        shard_id = _shard_id(shard, master)
+        entry = worlds.get(str(shard_id)) if shard_id is not None else None
+        entry = entry if isinstance(entry, dict) else {}
+        try:
+            limit = max(0, int(entry.get("limit") or 0))
+        except (TypeError, ValueError):
+            limit = 0
+        entries.append(WorldEntry(shard.name, shard_id, _shard_location(shard), shard is master,
+                                  str(entry.get("name") or ""), entry.get("hidden") is True, limit))
+    return sorted(entries, key=lambda e: (not e.is_master, e.shard_id is None, e.shard_id or 0, e.shard_name))
+
+
+def _find_shard(cluster: Cluster, shard_name: str):
+    shard = next((s for s in cluster.shards if s.name == shard_name), None)
+    if shard is None:
+        raise ValueError(f"存档里找不到世界 {shard_name}")
+    return shard
+
+
+def _require_server(cluster: Cluster):
+    """管理操作的公共前提：专服存档、能找到主世界；返回主世界分片。"""
+    if cluster.source != SaveSource.SERVER:
+        raise ValueError("只有专服存档可以管理世界，本地存档请在游戏内操作")
+    master = _master_shard(cluster)
+    if master is None:
+        raise ValueError("存档里找不到主世界")
+    return master
+
+
+def renamed_world_error(cluster: Cluster, shard_name: str, world_name: str) -> str:
+    """改世界名称的问题，没问题返回空字符串：不能为空，也不能和其他世界重名。"""
+    name = world_name.strip()
+    if not name:
+        return t("world.add_shard_name_empty")
+    if any(e.name == name for e in list_worlds(cluster) if e.shard_name != shard_name):
+        return t("world.add_shard_name_exists", name=name)
+    return ""
+
+
+def update_world_entry(cluster: Cluster, shard_name: str, world_name: str, hidden: bool, limit: int,
+                       language: str = "zh") -> None:
+    """改一个世界在万界之门里的名称、是否隐藏和人数上限，所有世界的 modoverrides 同步写入。
+
+    只在存档已启用万界之门时可用：给没用它的存档写配置等于悄悄替用户启用了一个 Mod。"""
+    master = _require_server(cluster)
+    shard = _find_shard(cluster, shard_name)
+    if not worldgate_enabled(cluster):
+        raise ValueError("这个存档没有启用万界之门，名称、隐藏和人数上限不会生效")
+    error = renamed_world_error(cluster, shard_name, world_name)
+    if error:
+        raise ValueError(error)
+    shard_id = _shard_id(shard, master)
+    if shard_id is None:
+        raise ValueError(f"{shard_name} 的 server.ini 没有世界编号（[SHARD] id）")
+    mods_by_shard, key, entry = _load_worldgate(cluster, master)
+    options = entry["configuration_options"]
+    worlds = _world_names(cluster, master, options.get("worlds"), None, language)
+    item = worlds.setdefault(str(shard_id), {})
+    item["name"] = world_name.strip()
+    # 默认值不写，配置保持精简（Mod 缺省即不隐藏、不限人数）
+    if hidden:
+        item["hidden"] = True
+    else:
+        item.pop("hidden", None)
+    if limit > 0:
+        item["limit"] = int(limit)
+    else:
+        item.pop("limit", None)
+    options["worlds"] = worlds
+    options.setdefault("language", language)
+    _apply_worldgate(mods_by_shard, key, entry)
+    paths = [s.path / "modoverrides.lua" for s in cluster.shards]
+    with _restore_on_error(paths):
+        for s in cluster.shards:
+            _write_lua(s.path / "modoverrides.lua", mods_by_shard[s.name])
+
+
+def delete_shard(cluster: Cluster, shard_name: str, language: str = "zh", remove=move_to_recycle_bin) -> None:
+    """删除一个非主世界：先把其余世界的万界之门 worlds 去掉它，再把目录交给 ``remove``（默认移到回收站），
+    移不走时（文件被占用等）配置恢复原样。cluster.ini 的多世界设置不动，只剩主世界也能照常开服。"""
+    master = _require_server(cluster)
+    shard = _find_shard(cluster, shard_name)
+    if shard is master:
+        raise ValueError("主世界不能删除")
+    remaining = replace(cluster, shards=[s for s in cluster.shards if s is not shard])
+    paths = []
+    writes = {}
+    if worldgate_enabled(remaining):
+        mods_by_shard, key, entry = _load_worldgate(remaining, master)
+        options = entry["configuration_options"]
+        options["worlds"] = _world_names(remaining, master, options.get("worlds"), None, language)
+        _apply_worldgate(mods_by_shard, key, entry)
+        writes = {s.path / "modoverrides.lua": mods_by_shard[s.name] for s in remaining.shards}
+        paths = list(writes)
+    with _restore_on_error(paths):
+        for path, mods in writes.items():
+            _write_lua(path, mods)
+        remove(shard.path)
+
+
+def rename_shard_error(cluster: Cluster, shard_name: str, new_name: str) -> str:
+    """改世界文件夹名的问题，没问题返回空字符串。"""
+    master = _master_shard(cluster)
+    if shard_name in PROTECTED_SHARD_NAMES or (master is not None and master.name == shard_name):
+        return t("world.manage_folder_protected", name=shard_name)
+    if new_name.casefold() in (name.casefold() for name in PROTECTED_SHARD_NAMES):
+        return t("world.manage_folder_reserved", name=new_name)
+    if new_name == shard_name:
+        return ""
+    return shard_name_error(cluster, new_name, current=shard_name)
+
+
+def rename_shard_folder(cluster: Cluster, shard_name: str, new_name: str) -> Path:
+    """改一个世界的文件夹名，server.ini [SHARD] name 同步改成新名字，返回新目录。
+
+    世界编号不变，万界之门 worlds 按编号索引，不用改；DSTCamp 里按分片名记录的内网穿透映射由调用方处理。"""
+    _require_server(cluster)
+    shard = _find_shard(cluster, shard_name)
+    error = rename_shard_error(cluster, shard_name, new_name)
+    if error:
+        raise ValueError(error)
+    if new_name == shard_name:
+        return shard.path
+    ini_path = shard.path / "server.ini"
+    config = parse_server_ini(ini_path)
+    config.shard["name"] = new_name
+    destination = cluster.path / new_name
+    with _restore_on_error([ini_path]):
+        write_server_ini(config, ini_path)
+        os.replace(shard.path, destination)
     return destination

@@ -4,6 +4,7 @@
 """
 
 import os
+import zipfile
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QPixmap
@@ -11,7 +12,9 @@ from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget, QWidgetAction,
 )
 
-from dstools.features.local_service.backup_manager import create_backup, list_backups, restore_backup
+from dstools.features.local_service.backup_manager import (
+    create_backup, list_backups, restore_backup, shards_missing_from_backup,
+)
 from dstools.features.local_service.dedicated_server import detect_external_shard_processes
 from dstools.features.save_browser import view_data
 from dstools.shared.cluster_names import validate_cluster_folder_name
@@ -456,9 +459,17 @@ class SaveInfoPage(Page):
         if running:
             dialogs.show_warning(self._window(), title, t("save.restore_shards_running", shards="、".join(running)))
             return
-        if not dialogs.ask_yes_no(self._window(), title, t("save.restore_confirm"), danger=True):
-            return
         backup = picker.result_backup
+        try:
+            extra = shards_missing_from_backup(cluster.path, backup)
+        except (OSError, zipfile.BadZipFile) as exc:
+            dialogs.show_error(self._window(), title, t("save.restore_failed", error=str(exc)))
+            return
+        confirm = t("save.restore_confirm")
+        if extra:
+            confirm += "\n\n" + t("save.restore_removes_shards", shards="、".join(extra))
+        if not dialogs.ask_yes_no(self._window(), title, confirm, danger=True):
+            return
 
         def work():
             create_backup(cluster.path)  # 恢复前先保险备份一次当前状态，恢复本身也能撤销

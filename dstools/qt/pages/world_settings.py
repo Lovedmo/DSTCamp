@@ -24,6 +24,7 @@ from dstools.qt.pages.base import Page
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
 from dstools.qt.widgets import Banner, Card, PillTabBar
+from dstools.qt.world_manage import ManageWorldsDialog
 from dstools.qt.world_panel import WorldPanel
 
 FLASH_MS = 200  # 被点的箭头短暂画成"按下"效果，模仿游戏 UI 的点击反馈
@@ -98,12 +99,15 @@ class WorldSettingsPage(Page):
         self._shard_combo = QComboBox()
         self._shard_combo.setMinimumWidth(180)
         self._shard_combo.activated.connect(self._on_shard_picked)
-        # 只对专服存档显示（本地存档由游戏前端管理世界），见 on_cluster_changed
+        # 新增、管理两个按钮只对专服存档显示（本地存档由游戏前端管理世界），见 on_cluster_changed
         self._add_shard_button = QPushButton()
         self._add_shard_button.clicked.connect(self._on_add_shard)
+        self._manage_button = QPushButton()
+        self._manage_button.clicked.connect(self._on_manage_worlds)
         shard_row.addWidget(self._shard_label)
         shard_row.addWidget(self._shard_combo)
         shard_row.addWidget(self._add_shard_button)
+        shard_row.addWidget(self._manage_button)
         shard_row.addStretch()
         layout.addLayout(shard_row)
 
@@ -159,6 +163,8 @@ class WorldSettingsPage(Page):
         self._shard_label.setText(t("world.shard"))
         self._add_shard_button.setText(t("world.add_shard_btn"))
         self._add_shard_button.setToolTip(t("world.add_shard_tip"))
+        self._manage_button.setText(t("world.manage_btn"))
+        self._manage_button.setToolTip(t("world.manage_tip"))
         self._save_button.setText(t("world.save_rules"))
         self._update_tab_labels()
         self._update_banner()
@@ -218,6 +224,7 @@ class WorldSettingsPage(Page):
             self._shard = ""
         self._shard_combo.blockSignals(False)
         self._add_shard_button.setVisible(self._selected_is_server())
+        self._manage_button.setVisible(self._selected_is_server())
         self._load_world()
 
     def _on_shard_picked(self, _index: int) -> None:
@@ -285,6 +292,13 @@ class WorldSettingsPage(Page):
             dialogs.show_error(self.window(), title, str(exc))
 
         run_async(work, done, failed)
+
+    def _on_manage_worlds(self) -> None:
+        """管理世界弹窗；在里面点「新增世界」时关闭弹窗，走新增世界流程。"""
+        if not self._selected_is_server():
+            return
+        if ManageWorldsDialog(self.window(), self.ctx).exec() == ManageWorldsDialog.ADD:
+            self._on_add_shard()
 
     def _guide_worldgate(self, title: str) -> None:
         """本机还没有万界之门：先引导订阅（SteamCMD 通道直接下载），装好后再新增世界。"""

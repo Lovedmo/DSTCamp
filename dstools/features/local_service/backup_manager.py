@@ -66,11 +66,22 @@ def create_backup(cluster_path: Path) -> Path:
     return zip_path
 
 
+def shards_missing_from_backup(cluster_path: Path, backup_zip: Path) -> list[str]:
+    """当前存档里有、备份里没有的世界目录（备份之后新增或改名的世界），恢复时会整个删掉。"""
+    with zipfile.ZipFile(backup_zip) as zf:
+        backed_up = {Path(name).parts[0].casefold() for name in zf.namelist()
+                     if len(Path(name).parts) == 2 and Path(name).name == "server.ini"}
+    return [shard.name for shard in list_shards(cluster_path) if shard.name.casefold() not in backed_up]
+
+
 def restore_backup(cluster_path: Path, backup_zip: Path) -> None:
     """用备份 zip 覆盖存档当前状态（调用方须确认相关世界已停止）。
 
     坑：必须先删掉备份涉及的每一项再解压，否则比备份更新的存档槽会残留，游戏仍会加载最新槽位。
+    备份里没有的世界目录整个删掉：留着会变成多出来的世界，改过文件夹名时还会和备份里的旧目录编号相同。
     """
+    for name in shards_missing_from_backup(cluster_path, backup_zip):
+        shutil.rmtree(cluster_path / name)
     for name in _CLUSTER_ITEMS:
         target = cluster_path / name
         if target.exists():
