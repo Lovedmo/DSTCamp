@@ -712,6 +712,34 @@ def test_modinfo_cache_invalidates_on_edit_and_skips_lossy_results():
                        for p in (Path(temp) / "cache").glob("*.json"))
 
 
+def test_mod_page_uses_preload_snapshot_then_detects_changes():
+    """Mod 页按启动预热的快照显示时不再扫盘；Mod 在预热之后被改过，事后重扫的指纹必须对不上。"""
+    from dstools.features.mod.preload import warm_mod_caches
+
+    with tempfile.TemporaryDirectory() as temp:
+        mods_dir = Path(temp) / "mods"
+        folder = mods_dir / "my_mod"
+        folder.mkdir(parents=True)
+        (folder / "modinfo.lua").write_text('name = "A"\nversion = "1.0"\n', encoding="utf-8")
+        tab = ModPage.__new__(ModPage)
+        tab.ctx = SimpleNamespace(mod_catalog=ModCatalogStore())
+        args = (Path(temp) / "modoverrides.lua", False, Platform.STEAM, None, mods_dir, None, {}, None, None)
+        with (
+            patch("dstools.features.mod.parser.find_workshop_dir", return_value=None),
+            patch("dstools.features.mod.preload.find_legacy_packages", return_value={}),
+            patch("dstools.qt.pages.mod.find_legacy_packages", return_value={}),
+        ):
+            snapshot = warm_mod_caches(Platform.STEAM, None, mods_dir).snapshot
+            assert snapshot.infos["my_mod"].version == "1.0"
+            with patch("dstools.qt.pages.mod.list_installed_mod_ids", side_effect=AssertionError("不应扫盘")):
+                shown = tab._load_mods_worker(*args, snapshot=snapshot)
+            assert list(shown["mod_data"]) == ["my_mod"] and shown["mod_infos"]["my_mod"].name == "A"
+            assert tab._load_mods_worker(*args)["stamps"] == shown["stamps"]
+
+            (folder / "modinfo.lua").write_text('name = "A"\nversion = "2.0.0"\n', encoding="utf-8")
+            assert tab._load_mods_worker(*args)["stamps"] != shown["stamps"]
+
+
 def test_parse_workshop_ids_from_links():
     from dstools.features.mod.workshop_webapi import parse_workshop_ids
     text = ("https://steamcommunity.com/workshop/filedetails/?l=schinese&id=375850593#comments，"

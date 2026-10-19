@@ -22,19 +22,20 @@ from dstools.features.local_service.dedicated_server import detect_external_shar
 from dstools.features.mod.cache import load_cached_result, save_result
 from dstools.features.mod.config_memory import recall, recall_for, remember
 from dstools.features.mod.icons import get_cached_mod_icon_path, get_mod_icon_path, load_mod_icon_image
-from dstools.features.mod.legacy_v1 import find_legacy_packages, materialize_legacy_package_for_read
+from dstools.features.mod.legacy_v1 import find_legacy_packages
 from dstools.features.mod.list_model import (
     build_mod_rows, localize_mod_name, merge_visible_mod_ids, referenced_missing_status_text, sort_mod_data,
 )
-from dstools.features.mod.local_version import resolve_local_version_target
+from dstools.features.mod.local_version import apply_local_version, resolve_local_version_target
 from dstools.features.mod.locations import resolve_mod_open_location
 from dstools.features.mod.manager import enable_mod, load_mod_overrides, save_mod_overrides, sync_mods
 from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 from dstools.features.mod.parser import (
-    find_game_mods_dir, find_mod_folder, find_wegame_client_dir, find_wegame_server_dir,
+    find_game_mods_dir, find_wegame_client_dir, find_wegame_server_dir,
     is_dedicated_server_mods_dir, list_installed_mod_ids, resolve_full_modinfo,
     resolve_wegame_client_mods_dir,
 )
+from dstools.features.mod.preload import modinfo_stamp, resolve_readable_mod_folder
 from dstools.features.mod.sandbox_apply import apply_full_sandbox_result
 from dstools.features.mod.shardindex import ShardIndexError, load_shardindex_mods, save_shardindex_mods, shardindex_path
 from dstools.features.mod.sync import apply_mod_sync, detach_mod_sync_junction, get_enabled_mod_ids, plan_mod_sync
@@ -46,6 +47,7 @@ from dstools.qt.mod_config_dialog import open_mod_config
 from dstools.qt.mod_config_sync import start_sync as start_config_sync
 from dstools.qt.mod_panel import ModListPanel
 from dstools.qt.mod_preload import cancel as cancel_mod_preload
+from dstools.qt.mod_preload import take_snapshot as take_mod_preload_snapshot
 from dstools.qt.mod_defaults_dialog import GlobalDefaultsDialog
 from dstools.qt.mod_presets_dialogs import ApplyPresetDialog, SavePresetDialog
 from dstools.qt.mod_recommend_dialog import RecommendModsDialog
@@ -628,13 +630,18 @@ class ModPage(Page):
         overrides_path = shard.mod_overrides_path
         first_screen = (self._row_filter_args(), self._first_screen_count())
 
+        worker_args = (overrides_path, full, platform, wegame_client_mods_dir, steam_runtime_mods_dir,
+                       luajit_bin64_dir, full_resolved_cache, local_index, first_screen)
+        snapshot = None if full else take_mod_preload_snapshot(
+            (platform, wegame_client_mods_dir, steam_runtime_mods_dir))
+
         def work():
-            return self._load_mods_worker(
-                overrides_path, full, platform, wegame_client_mods_dir, steam_runtime_mods_dir,
-                luajit_bin64_dir, full_resolved_cache, local_index, first_screen)
+            return self._load_mods_worker(*worker_args, snapshot=snapshot)
 
         def done(result) -> None:
             self._apply_loaded_mods(gen, result)
+            if snapshot is not None:
+                self._verify_preloaded_mods(gen, worker_args, result["stamps"])
 
         def error(exc: Exception) -> None:
             self._loading = False
@@ -646,11 +653,28 @@ class ModPage(Page):
         cancel_mod_preload()  # 本页接手转换图标和读版本，停掉启动预热，免得两边同时起沙箱子进程
         run_async(work, done, error)
 
+    def _verify_preloaded_mods(self, gen: int, worker_args: tuple, shown_stamps: dict) -> None:
+        """按预热快照显示后，后台照常重扫一遍；Mod 在启动后有增删改时以重扫结果重新显示。
+        用户已改了勾选（有未保存改动）时不覆盖，下次加载自然纠正。"""
+        def work():
+            return self._load_mods_worker(*worker_args)
+
+        def done(result) -> None:
+            if gen != self._refresh_gen or self._dirty or result["stamps"] == shown_stamps:
+                return
+            self._refresh_gen += 1  # 作废按快照启动的图标、版本后台任务
+            self._apply_loaded_mods(self._refresh_gen, result)
+
+        run_async(work, done, lambda _exc: None)
+
     def _load_mods_worker(self, overrides_path, full, platform, wegame_client_mods_dir,
                           steam_runtime_mods_dir, luajit_bin64_dir, full_resolved_cache, local_index=None,
-                          first_screen=None):
-        """跑在线程池里——不能碰任何 Qt 对象。本地存档以 Master/save/shardindex 为准（游戏开服时据此重写 modoverrides.lua）。"""
-        mod_data, mod_infos, mod_paths, icon_imgs = {}, {}, {}, {}
+                          first_screen=None, snapshot=None):
+        """跑在线程池里——不能碰任何 Qt 对象。本地存档以 Master/save/shardindex 为准（游戏开服时据此重写 modoverrides.lua）。
+
+        给了启动预热的 snapshot 时，快照里的 Mod 直接用其目录、解析结果和图标路径，不再扫盘；
+        stamps 记录各 Mod 的 modinfo 指纹（快照里的取预热时的值），供事后核对。"""
+        mod_data, mod_infos, mod_paths, icon_imgs, stamps = {}, {}, {}, {}, {}
         icon_targets = []
         cached_icon_targets = []
         version_targets = []
@@ -671,23 +695,26 @@ class ModPage(Page):
         if overrides_dirty:
             save_mod_overrides(overrides)
 
-        legacy_packages = find_legacy_packages() if platform == Platform.STEAM else {}
-        ids = merge_visible_mod_ids(
-            list_installed_mod_ids(platform, wegame_client_mods_dir, legacy_packages=legacy_packages,
-                                   steam_runtime_mods_dir=steam_runtime_mods_dir),
-            overrides.mods)
+        if snapshot is not None:
+            # 快照已含 V1 Legacy 包；不在快照里的只会是存档启用、本机没有内容的引用
+            legacy_packages = {}
+            installed_ids = snapshot.ids
+        else:
+            legacy_packages = find_legacy_packages() if platform == Platform.STEAM else {}
+            installed_ids = list_installed_mod_ids(platform, wegame_client_mods_dir, legacy_packages=legacy_packages,
+                                                   steam_runtime_mods_dir=steam_runtime_mods_dir)
+        ids = merge_visible_mod_ids(installed_ids, overrides.mods)
         for wid in ids:
             entry = overrides.mods.get(wid) or ModEntry(workshop_id=wid, enabled=False, configuration_options={})
             mod_data[wid] = entry
+            known = snapshot is not None and wid in snapshot.infos
+            mod_folder = None
             try:
-                text_id = str(wid).removeprefix("workshop-")
-                archive = legacy_packages.get(int(text_id)) if text_id.isdigit() else None
-                if archive is not None:
-                    mod_folder = find_mod_folder(wid, platform, wegame_client_mods_dir, steam_runtime_mods_dir)
-                    if mod_folder is None:
-                        mod_folder = materialize_legacy_package_for_read(int(text_id), archive)
+                if known:
+                    mod_folder = snapshot.paths.get(wid)
                 else:
-                    mod_folder = find_mod_folder(wid, platform, wegame_client_mods_dir, steam_runtime_mods_dir)
+                    mod_folder = resolve_readable_mod_folder(wid, platform, wegame_client_mods_dir,
+                                                             steam_runtime_mods_dir, legacy_packages)
                 if mod_folder is not None:
                     mod_paths[wid] = mod_folder
                 if mod_folder is None:
@@ -695,6 +722,8 @@ class ModPage(Page):
                 cached = full_resolved_cache.get(wid)
                 if cached is not None:
                     mod_info = cached
+                elif known:
+                    mod_info = snapshot.infos[wid]
                 else:
                     mod_info = parse_modinfo_cached(mod_folder) if mod_folder else None
                     if full and mod_info and mod_folder:
@@ -712,13 +741,17 @@ class ModPage(Page):
                     version_targets.append((wid, mod_folder, mod_info.workshop_id))
                 if mod_info and mod_folder:
                     # 这里只判断缓存是否有效；读图放到列表显示之后，Mod 多时能少挡几百毫秒
-                    cached_icon = get_cached_mod_icon_path(mod_info, mod_folder, platform)
+                    if known:
+                        cached_icon = snapshot.icon_paths.get(wid)
+                    else:
+                        cached_icon = get_cached_mod_icon_path(mod_info, mod_folder, platform)
                     if cached_icon is not None:
                         cached_icon_targets.append((wid, cached_icon, mod_info, mod_folder))
                     else:
                         icon_targets.append((wid, mod_info, mod_folder))
             except Exception:
                 mod_infos.setdefault(wid, None)
+            stamps[wid] = snapshot.stamps.get(wid) if known else modinfo_stamp(mod_folder)
         if first_screen is not None and cached_icon_targets:
             self._preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
                                              icon_imgs, cached_icon_targets)
@@ -728,7 +761,7 @@ class ModPage(Page):
                    version_targets=version_targets,
                    full_resolved_cache=full_resolved_cache,
                    luajit_active=luajit_active, platform=platform,
-                   wegame_client_mods_dir=wegame_client_mods_dir)
+                   wegame_client_mods_dir=wegame_client_mods_dir, stamps=stamps)
 
     @staticmethod
     def _preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
@@ -824,19 +857,8 @@ class ModPage(Page):
                     return
                 for wid, normalized in resolved.items():
                     info = self._mod_infos.get(wid)
-                    if info is None:
-                        continue
-                    if normalized.name_status == "confirmed":
-                        info.name = normalized.name
-                    if normalized.icon_status == "confirmed":
-                        info.icon = normalized.icon
-                    if normalized.icon_atlas_status == "confirmed":
-                        info.icon_atlas = normalized.icon_atlas
-                    info.version = normalized.version
-                    info.version_status = normalized.status
-                    info.version_source = normalized.source
-                    info.version_compatible = normalized.version_compatible
-                    info.version_compatible_status = normalized.compatible_status
+                    if info is not None:
+                        apply_local_version(info, normalized)
                 self.ctx.mod_catalog.publish(platform, self._mod_infos, self._mod_paths, self._icon_imgs, wegame_dir)
                 self._render_list()
 

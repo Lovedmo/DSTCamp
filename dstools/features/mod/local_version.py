@@ -119,3 +119,18 @@ def resolve_local_version_target(target) -> tuple[str, LocalModVersion]:
     return workshop_id, resolve_local_mod_version(
         str(workshop_id), Path(mod_folder), str(folder_name)
     )
+
+
+def apply_local_version(info, version: LocalModVersion) -> None:
+    """把沙箱确认的名称、图标声明和版本写回 ModInfo（Mod 页与启动预热共用）。"""
+    if version.name_status == VERSION_CONFIRMED:
+        info.name = version.name
+    if version.icon_status == VERSION_CONFIRMED:
+        info.icon = version.icon
+    if version.icon_atlas_status == VERSION_CONFIRMED:
+        info.icon_atlas = version.icon_atlas
+    info.version = version.version
+    info.version_status = version.status
+    info.version_source = version.source
+    info.version_compatible = version.version_compatible
+    info.version_compatible_status = version.compatible_status
