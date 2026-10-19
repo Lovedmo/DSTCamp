@@ -84,6 +84,7 @@ class ModPage(Page):
         self._loading_full = False
         self._mods_loaded = False
         self._refresh_gen = 0
+        self._sync_check_gen = 0
         self._filter_timer = QTimer(self, singleShot=True, interval=_FILTER_DEBOUNCE_MS)
         self._filter_timer.timeout.connect(self._render_list)
         self._current_shard_name = ""
@@ -401,6 +402,11 @@ class ModPage(Page):
             return False
         if any(p.cluster_path == cluster.path for p in self.ctx.manager.running()):
             return True
+        return self._external_server_running(cluster)
+
+    @staticmethod
+    def _external_server_running(cluster) -> bool:
+        """本程序之外启动的专服进程；要起子进程查进程和端口（约 0.4 秒），界面刷新时放后台调用。"""
         try:
             external = detect_external_shard_processes(cluster)
             return any(info.get("running") for info in external.values())
@@ -446,18 +452,29 @@ class ModPage(Page):
     def refresh_sync_button_state(self) -> None:
         c = self.get_cluster()
         is_server = bool(c and c.source == SaveSource.SERVER)
-        running = self._server_running_for(c) if is_server else False
         install_dir, client_mods_dir = self._passive_sync_dirs(c)
         target_is_junction = bool(install_dir and os.path.isjunction(Path(install_dir) / "mods"))
         self._sync_already_linked = bool(
             target_is_junction or (install_dir and client_mods_dir and plan_mod_sync(install_dir, client_mods_dir).already_linked))
         can_create = bool(client_mods_dir and client_mods_dir.is_dir())
-        enabled = is_server and not running and can_create
         runtime = self._runtime() if c and c.platform != Platform.WEGAME else None
         client_runtime = bool(runtime and runtime.is_client)
-        self._sync_btn.setEnabled(enabled and not client_runtime)
         self._sync_btn.setToolTip(t("mod.sync_client_runtime_hint") if client_runtime else "")
         self._sync_btn.setText(t("local.remove_junction_btn") if self._sync_already_linked else t("local.sync_mods_btn"))
+        self._sync_check_gen += 1
+        gen = self._sync_check_gen
+        self._sync_btn.setEnabled(False)
+        if not (is_server and can_create and not client_runtime):
+            return
+        if any(p.cluster_path == c.path for p in self.ctx.manager.running()):
+            return
+
+        # 外部专服进程检测放后台，切到本页不再卡界面；查完之前按钮保持禁用，不会在专服运行时误开
+        def done(running: bool) -> None:
+            if gen == self._sync_check_gen:
+                self._sync_btn.setEnabled(not running)
+
+        run_async(lambda: self._external_server_running(c), done, lambda _exc: None)
 
     def _sync_mods_to_server(self) -> None:
         c = self.get_cluster()
