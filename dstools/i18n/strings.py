@@ -2121,7 +2121,7 @@ STRINGS = {
         "world.manage_col_name": "World name",
         "world.manage_col_type": "Type",
         "world.manage_col_id": "ID",
-        "world.manage_master_tag": "Master",
+        "world.manage_master_tag": "Master world",
         "world.manage_hidden_tag": "Hidden",
         "world.manage_limit_tag": "Limit {limit}",
         "world.manage_unnamed": "Not set",

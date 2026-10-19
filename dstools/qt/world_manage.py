@@ -136,13 +136,14 @@ class ManageWorldsDialog(dialogs.Dialog):
         return label
 
     def _add_row(self, cluster, row: int, entry, editable: bool, worldgate: bool) -> None:
-        folder = entry.shard_name + (f"（{t('world.manage_master_tag')}）" if entry.is_master else "")
         tags = [entry.name or t("world.manage_unnamed")]
+        if entry.is_master:
+            tags.append(t("world.manage_master_tag"))
         if entry.hidden:
             tags.append(t("world.manage_hidden_tag"))
         if entry.limit:
             tags.append(t("world.manage_limit_tag", limit=entry.limit))
-        self._grid.addWidget(self._label(folder), row, 0)
+        self._grid.addWidget(self._label(entry.shard_name), row, 0)
         self._grid.addWidget(self._label(" · ".join(tags), muted=not entry.name), row, 1)
         self._grid.addWidget(self._label(self._location_text(entry.location)), row, 2)
         self._grid.addWidget(self._label(str(entry.shard_id) if entry.shard_id is not None else "-"), row, 3)
