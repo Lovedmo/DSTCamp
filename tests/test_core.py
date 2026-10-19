@@ -2760,6 +2760,22 @@ def test_ktech_broken_runtime_fails_without_dialog():
         tex_convert._runtime_broken = False
 
 
+def test_ktech_not_launched_when_runtime_missing():
+    """没装 VC++ 2013 的新用户：启动预热和 Mod 页都不能去启动 ktech，直接当作没有图标。"""
+    from unittest.mock import patch
+
+    from dstools.shared import tex_convert
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tex_path = Path(tmp) / "icon.tex"
+        tex_path.write_bytes(b"fake-tex")
+        with (
+            patch.object(tex_convert, "ktech_runtime_problem", return_value=("missing", "")),
+            patch.object(tex_convert, "_run_ktech", side_effect=AssertionError("不应启动 ktech")),
+        ):
+            assert tex_convert.tex_to_png(tex_path, Path(tmp) / "out.png") is False
+
+
 def test_ktech_ascii_runtime_conversion():
     """中文安装/输入路径下，ktech 仍须从纯 ASCII 缓存副本中运行。"""
     from types import SimpleNamespace
@@ -2799,6 +2815,7 @@ def test_ktech_ascii_runtime_conversion():
                 patch.object(tex_convert, "_TOOLS_DIR", source_dir),
                 patch.object(tex_convert, "_KTECH_EXE", source_dir / "ktech.exe"),
                 patch.object(tex_convert, "cache_root_dir", return_value=cache_root),
+                patch.object(tex_convert, "ktech_runtime_problem", return_value=("", "")),
                 patch.object(tex_convert, "_run_ktech", side_effect=fake_run),
             ):
                 assert tex_convert.tex_to_png(tex_path, out_path) is True

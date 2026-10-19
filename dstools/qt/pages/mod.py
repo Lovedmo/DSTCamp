@@ -45,6 +45,7 @@ from dstools.qt import dialogs
 from dstools.qt.mod_config_dialog import open_mod_config
 from dstools.qt.mod_config_sync import start_sync as start_config_sync
 from dstools.qt.mod_panel import ModListPanel
+from dstools.qt.mod_preload import cancel as cancel_mod_preload
 from dstools.qt.mod_defaults_dialog import GlobalDefaultsDialog
 from dstools.qt.mod_presets_dialogs import ApplyPresetDialog, SavePresetDialog
 from dstools.qt.mod_recommend_dialog import RecommendModsDialog
@@ -625,6 +626,7 @@ class ModPage(Page):
             self._scan_status_label.setText(str(exc))
             self._render_list()
 
+        cancel_mod_preload()  # 本页接手转换图标和读版本，停掉启动预热，免得两边同时起沙箱子进程
         run_async(work, done, error)
 
     def _load_mods_worker(self, overrides_path, full, platform, wegame_client_mods_dir,

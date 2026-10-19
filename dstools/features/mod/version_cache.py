@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -107,9 +109,15 @@ def _save(cache_key: str, fingerprint: str, source_path: str, folder_name: str,
         "folder_name": folder_name,
         "result": result,
     }
+    target = _cache_path(cache_key)
+    # 先写临时文件再替换：启动预加载和 Mod 页可能同时写同一个 Mod 的缓存
+    staged = target.with_name(f".{target.stem}.{os.getpid()}.{threading.get_ident()}.json")
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _cache_path(cache_key).write_text(
-            json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        staged.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(staged, target)
     except (OSError, TypeError, ValueError):
-        pass
+        try:
+            staged.unlink(missing_ok=True)
+        except OSError:
+            pass

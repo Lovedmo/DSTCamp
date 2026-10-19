@@ -342,7 +342,8 @@ def _run_ktech(exe: Path, args: list[str], cwd: Path) -> subprocess.CompletedPro
 def tex_to_png(tex_path: Path, out_path: Path) -> bool:
     """把单个 .tex 转成 PNG，成功返回 True；工具缺失或转换失败返回 False（视为没有图标），不抛异常。"""
     tex_path = Path(tex_path)
-    if _runtime_broken or not _KTECH_EXE.exists() or not tex_path.exists():
+    # 运行库缺失或损坏时不启动 ktech：省掉一次注定失败的进程启动，也不依赖错误模式去压系统弹框
+    if ktech_runtime_problem()[0] or not _KTECH_EXE.exists() or not tex_path.exists():
         return False
     runtime_dir = _prepare_ktools_runtime()
     if runtime_dir is None:

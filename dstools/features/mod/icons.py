@@ -3,6 +3,8 @@
 每个 Mod 只转换裁剪一次，按 workshop id 落盘缓存，源 .tex 的 mtime 变化时失效，避免反复调用 ktech。
 """
 
+import os
+import threading
 from pathlib import Path
 
 from PIL import Image
@@ -87,8 +89,17 @@ def get_mod_icon_path(mod_info: ModInfo, mod_folder: Path,
         if not target:
             return None
 
+        # 先写临时文件再替换：启动预加载和 Mod 页可能同时转换同一个图标，读方不能读到写了一半的 PNG
+        staged = cache_dir_path / f".{mod_info.workshop_id}.{os.getpid()}.{threading.get_ident()}.png"
         with Image.open(atlas_png) as img:
-            crop_by_uv(img.convert("RGBA"), target[1:]).save(cache_path)
+            crop_by_uv(img.convert("RGBA"), target[1:]).save(staged)
+        try:
+            os.replace(staged, cache_path)
+        except OSError:
+            # 另一方刚替换完、文件正被读取时 Windows 会拒绝替换，用对方的结果即可
+            staged.unlink(missing_ok=True)
+            if not cache_path.is_file():
+                return None
     except Exception:
         return None
     finally:
