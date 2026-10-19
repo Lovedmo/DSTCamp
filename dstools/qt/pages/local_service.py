@@ -310,11 +310,13 @@ class _ModeTableCell(QFrame):
 
 
 class _RuntimeModeDialog(dialogs.Dialog):
-    """"切换程序"窗口：当前程序 / 三种模式单选 / 安装状态，点"保存"才生效。"""
+    """"切换程序"窗口：当前程序 / 三种模式 + SteamCMD 单选 / 安装状态，点"保存"才生效。
+    SteamCMD 一项是 Steam 通道的入口（只在 Steam 客户端通道下打开本窗口），选中后 result_mode 为 SteamBackend.STEAMCMD。"""
 
     _MODES = ((RuntimeMode.AUTO, "local.runtime_mode_desc_auto"),
               (RuntimeMode.CLIENT, "local.runtime_mode_desc_client"),
-              (RuntimeMode.DEDICATED, "local.runtime_mode_desc_dedicated"))
+              (RuntimeMode.DEDICATED, "local.runtime_mode_desc_dedicated"),
+              (SteamBackend.STEAMCMD, "local.runtime_mode_desc_steamcmd"))
 
     def __init__(self, parent, current: RuntimeMode, current_text: str, names: dict, installed: dict):
         super().__init__(parent, t("local.runtime_mode_title"), "lg", confirm_text=t("local.runtime_mode_save_btn"))
@@ -344,7 +346,7 @@ class _RuntimeModeDialog(dialogs.Dialog):
             grid.addWidget(header, 0, col)
 
         group = QButtonGroup(self)
-        self._rows: dict[RuntimeMode, tuple[QRadioButton, list[_ModeTableCell]]] = {}
+        self._rows: dict[RuntimeMode | SteamBackend, tuple[QRadioButton, list[_ModeTableCell]]] = {}
         for index, (mode, desc_key) in enumerate(self._MODES, start=1):
             last = index == len(self._MODES)
             radio = QRadioButton(names[mode])
@@ -1292,12 +1294,12 @@ class LocalServicePage(Page):
         self._update_runtime_btns_state(self.get_cluster())
         self.ctx.server_runtime_changed.emit()
 
-    def _choose_backend(self) -> None:
+    def _choose_backend(self, preselect: SteamBackend | None = None) -> None:
         # 换通道会换开服程序（SteamCMD 固定用独立专服），和「切换程序」一样运行中不允许
         if self._runtime_switch_blocked():
             return
-        dialog = _SteamBackendDialog(self.window(), get_backend(), steamcmd_updater.custom_steamcmd_path(),
-                                     get_steamcmd_account())
+        dialog = _SteamBackendDialog(self.window(), preselect or get_backend(),
+                                     steamcmd_updater.custom_steamcmd_path(), get_steamcmd_account())
         if not dialog.exec():
             return
         from dstools.features.mod.parser import find_workshop_dir
@@ -1388,8 +1390,10 @@ class LocalServicePage(Page):
                 text += t("local.backend_steamcmd_preparing")
         self._backend_label.setText(text)
         self._backend_label.setStyleSheet(f"color: {theme.hex('ERROR')};" if expired else "")
-        # SteamCMD 通道固定用独立专服，「开服程序」一行没有可选的，隐藏
+        # SteamCMD 通道固定用独立专服，「开服程序」一行没有可选的，隐藏；
+        # Steam 客户端通道隐藏「Steam 通道」一行，SteamCMD 收在「切换程序」窗口里，本地开服用户不用看到它
         self._mode_row.setVisible(not steamcmd)
+        self._backend_row.setVisible(steamcmd)
 
     def _choose_runtime_mode(self) -> None:
         if self._runtime_switch_blocked():
@@ -1398,10 +1402,15 @@ class LocalServicePage(Page):
         current = self._runtime_resolution.mode if self._runtime_resolution else RuntimeMode.AUTO
         names = {RuntimeMode.AUTO: t("local.runtime_mode_auto"),
                  RuntimeMode.CLIENT: t("local.runtime_mode_client"),
-                 RuntimeMode.DEDICATED: t("local.runtime_mode_dedicated")}
+                 RuntimeMode.DEDICATED: t("local.runtime_mode_dedicated"),
+                 SteamBackend.STEAMCMD: t("local.runtime_mode_steamcmd")}
         current_text = self._runtime_mode_text(self._runtime_resolution) if self._runtime_resolution else names[current]
         dialog = _RuntimeModeDialog(self.window(), current, current_text, names, installed)
         if not dialog.exec() or dialog.result_mode is current:
+            return
+        if dialog.result_mode is SteamBackend.STEAMCMD:
+            # 接着打开 Steam 通道窗口（已选好 SteamCMD）设置程序和账号，在那里点保存才切换
+            self._choose_backend(SteamBackend.STEAMCMD)
             return
         set_runtime_mode(dialog.result_mode)
         self._on_runtime_changed()
