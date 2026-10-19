@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dstools.features.local_service.backup_manager import get_backup_summary
+from dstools.features.local_service.backup_manager import get_backup_summary, is_kept_backup
 from dstools.i18n import t
 from dstools.qt.theme import theme
 from dstools.qt.threads import run_async
@@ -557,7 +557,8 @@ class RestoreBackupDialog(Dialog):
         self._list.setMinimumHeight(260)
         self._list.setFont(theme.font("FONT_SIZE_BASE"))
         for backup in backups:
-            self._list.addItem(format_backup_label(backup, cluster.path.name))
+            label = format_backup_label(backup, cluster.path.name)
+            self._list.addItem(label + t("save.backup_kept_tag") if is_kept_backup(backup) else label)
         self.body.addWidget(self._list, 1)
         self._detail = self.text_label("", muted=True, size_key="FONT_SIZE_SM")
         self.body.addWidget(self._detail)

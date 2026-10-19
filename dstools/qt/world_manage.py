@@ -216,7 +216,7 @@ class ManageWorldsDialog(dialogs.Dialog):
         name, hidden, limit, language = dialog.world_name, dialog.hidden, dialog.limit, get_lang()
 
         def work() -> None:
-            create_backup(cluster.path)
+            create_backup(cluster.path, keep=True)
             shard_management.update_world_entry(cluster, entry.shard_name, name, hidden, limit, language)
 
         self._run(work, lambda: t("world.manage_saved"))
@@ -234,7 +234,7 @@ class ManageWorldsDialog(dialogs.Dialog):
         new = dialog.result_text
 
         def work() -> None:
-            create_backup(cluster.path)
+            create_backup(cluster.path, keep=True)
             shard_management.rename_shard_folder(cluster, old, new)
 
         def after() -> str:
@@ -260,7 +260,7 @@ class ManageWorldsDialog(dialogs.Dialog):
         language = get_lang()
 
         def work() -> None:
-            create_backup(cluster.path)
+            create_backup(cluster.path, keep=True)
             shard_management.delete_shard(cluster, shard_name, language)
 
         def after() -> str:

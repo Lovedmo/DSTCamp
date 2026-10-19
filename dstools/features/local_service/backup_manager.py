@@ -3,11 +3,14 @@
 内容：各世界 save/ 与 modoverrides.lua/leveldataoverride.lua/server.ini，以及存档级 cluster.ini/
 cluster_token.txt/adminlist.txt/blocklist.txt；跳过游戏自己滚动维护的 backup/ 与日志。
 备份放在与存档同级的 ``<Klei根>/dstcamp_backups/<存档名>/``，打包分享存档时不会带上。
-保留份数见 get_backup_retention()（超出删最旧的，手动/自动一视同仁）；自动备份受
-get_backup_auto_enabled() 控制，"立即备份"和"恢复前保险备份"不受影响。
+保留份数见 get_backup_retention()，只计自动备份（关服、运行中定时），超出删最旧的；"立即备份"、恢复前的
+保险备份和世界管理操作前的备份文件名带 _keep 标记，不参与自动清理，免得关键的回退点被定时备份挤掉。
+自动备份受 get_backup_auto_enabled() 控制，带标记的备份不受影响。
 """
 
+import os
 import shutil
+import time
 import tempfile
 import zipfile
 from datetime import datetime
@@ -19,6 +22,7 @@ from dstools.shared.discovery import list_shards
 _BACKUP_DIR_NAME = "dstcamp_backups"
 _SHARD_ITEMS = ("save", "modoverrides.lua", "leveldataoverride.lua", "server.ini")
 _CLUSTER_ITEMS = ("cluster.ini", "cluster_token.txt", "adminlist.txt", "blocklist.txt")
+_KEEP_SUFFIX = "_keep"  # 不参与自动清理的备份：文件名（不含扩展名）以它结尾
 
 
 def backup_dir(cluster_path: Path) -> Path:
@@ -34,33 +38,62 @@ def list_backups(cluster_path: Path) -> list[Path]:
     return sorted(d.glob("*.zip"), key=lambda p: p.name, reverse=True)
 
 
-def create_backup(cluster_path: Path) -> Path:
-    """打包 cluster_path 当前状态，返回新建的 zip 路径。"""
+def is_kept_backup(path: Path) -> bool:
+    """手动类备份（立即备份、恢复前、世界管理），不参与自动清理。"""
+    return path.stem.endswith(_KEEP_SUFFIX)
+
+
+def _backup_files(cluster_path: Path):
+    """备份要收的文件：逐个给出 (源文件, zip 内路径)。"""
+    for name in _CLUSTER_ITEMS:
+        src = cluster_path / name
+        if src.is_file():
+            yield src, name
+    for shard_dir in list_shards(cluster_path):
+        for name in _SHARD_ITEMS:
+            src = shard_dir / name
+            if src.is_dir():
+                for f in src.rglob("*"):
+                    if f.is_file():
+                        yield f, str(Path(shard_dir.name) / name / f.relative_to(src))
+            elif src.is_file():
+                yield src, str(Path(shard_dir.name) / name)
+
+
+def changed_since_last_backup(cluster_path: Path) -> bool:
+    """最近一份备份之后存档有没有变化（备份要收的文件里有更新的），没有备份时算有变化。
+
+    定时备份据此跳过：没人在线时世界暂停不存盘，或者卡在启动阶段，都不该一份份重复备份把旧备份挤掉。"""
+    backups = list_backups(cluster_path)
+    if not backups:
+        return True
+    try:
+        since = max(path.stat().st_mtime for path in backups)
+        return any(src.stat().st_mtime > since for src, _arcname in _backup_files(cluster_path))
+    except OSError:  # 文件正被游戏改写等，宁可多备份一份
+        return True
+
+
+def create_backup(cluster_path: Path, keep: bool = False) -> Path:
+    """打包 cluster_path 当前状态，返回新建的 zip 路径。keep=True 的备份不参与自动清理。"""
     dest_dir = backup_dir(cluster_path)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_path = dest_dir / f"{cluster_path.name}_{stamp}.zip"
+    started = time.time()
+    stamp = datetime.fromtimestamp(started).strftime("%Y%m%d_%H%M%S")
+    suffix = _KEEP_SUFFIX if keep else ""
+    zip_path = dest_dir / f"{cluster_path.name}_{stamp}{suffix}.zip"
     # 同一秒内被连续调用两次（比如"全部停止"时两个世界几乎同时停下，各
     # 自触发一次自动备份）不该让后一份静默覆盖前一份。
     n = 2
     while zip_path.exists():
-        zip_path = dest_dir / f"{cluster_path.name}_{stamp}_{n}.zip"
+        zip_path = dest_dir / f"{cluster_path.name}_{stamp}_{n}{suffix}.zip"
         n += 1
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name in _CLUSTER_ITEMS:
-            src = cluster_path / name
-            if src.is_file():
-                zf.write(src, arcname=name)
-        for shard_dir in list_shards(cluster_path):
-            for name in _SHARD_ITEMS:
-                src = shard_dir / name
-                if src.is_dir():
-                    for f in src.rglob("*"):
-                        if f.is_file():
-                            zf.write(f, arcname=str(Path(shard_dir.name) / name / f.relative_to(src)))
-                elif src.is_file():
-                    zf.write(src, arcname=str(Path(shard_dir.name) / name))
+        for src, arcname in _backup_files(cluster_path):
+            zf.write(src, arcname=arcname)
+    # 修改时间记成开始打包的时刻：打包期间游戏又存的盘，下次 changed_since_last_backup 能看出来
+    os.utime(zip_path, (started, started))
 
     _prune_old_backups(dest_dir)
     return zip_path
@@ -99,7 +132,8 @@ def restore_backup(cluster_path: Path, backup_zip: Path) -> None:
 
 
 def _prune_old_backups(dest_dir: Path) -> None:
-    backups = sorted(dest_dir.glob("*.zip"), key=lambda p: p.name, reverse=True)
+    """自动备份超过保留份数时删最旧的；带 _keep 标记的手动类备份不计数也不删。"""
+    backups = sorted((p for p in dest_dir.glob("*.zip") if not is_kept_backup(p)), key=lambda p: p.name, reverse=True)
     for old in backups[get_backup_retention():]:
         old.unlink()
 

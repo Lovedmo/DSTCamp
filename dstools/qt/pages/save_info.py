@@ -434,7 +434,7 @@ class SaveInfoPage(Page):
             return
         title = t("save.backup_title")
         run_async(
-            lambda: create_backup(cluster.path),
+            lambda: create_backup(cluster.path, keep=True),
             lambda _result: dialogs.show_info(self._window(), title, t("save.backup_ok")),
             lambda exc: dialogs.show_error(self._window(), title, t("save.backup_failed", error=str(exc))),
         )
@@ -472,7 +472,7 @@ class SaveInfoPage(Page):
             return
 
         def work():
-            create_backup(cluster.path)  # 恢复前先保险备份一次当前状态，恢复本身也能撤销
+            create_backup(cluster.path, keep=True)  # 恢复前先保险备份一次当前状态，恢复本身也能撤销
             restore_backup(cluster.path, backup)
 
         def done(_result) -> None:

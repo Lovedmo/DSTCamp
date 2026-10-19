@@ -65,6 +65,7 @@ from dstools.shared.app_settings import (
 )
 from dstools.features.local_service.backup_manager import (
     backup_dir,
+    changed_since_last_backup,
     create_backup,
     restore_backup,
     list_backups,
@@ -2050,13 +2051,23 @@ def test_backup_manager_prune_retention_boundary():
             dest.mkdir(parents=True)
             for i in range(1, 8):
                 (dest / f"Cluster_2_2026010{i}_000000.zip").write_bytes(b"")
+            kept = dest / "Cluster_2_20250101_000000_keep.zip"  # 比所有自动备份都旧的手动类备份
+            kept.write_bytes(b"")
 
             newest = create_backup(cluster)  # 第 8 份，真实时间戳，必然是最新的
             backups = list_backups(cluster)
-            assert len(backups) == 5, f"应该只保留 5 份，实际 {len(backups)} 份"
+            assert len(backups) == 6, f"应该保留 5 份自动备份加 1 份手动类备份，实际 {len(backups)} 份"
+            assert kept in backups, "带 _keep 标记的备份不参与自动清理"
 
             assert backups[0] == newest, "最新的一份必须排在最前面"
             assert backups == sorted(backups, key=lambda p: p.name, reverse=True)
+
+            # 定时备份：存档没变就不需要再备份，之后任意一个文件被改写才需要
+            assert not changed_since_last_backup(cluster)
+            later = newest.stat().st_mtime + 5
+            os.utime(cluster / "cluster.ini", (later, later))
+            assert changed_since_last_backup(cluster)
+            assert create_backup(cluster, keep=True).name.endswith("_keep.zip")
 
 
 def test_backfill_cluster_defaults_only_fills_missing():

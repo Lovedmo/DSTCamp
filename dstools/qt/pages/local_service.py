@@ -31,7 +31,7 @@ from dstools.features.cluster_config.config_manager import (
     get_cluster_option, get_shard_option, load_cluster_config, load_shard_config,
 )
 from dstools.features.local_service import luajit_injector, steam_client_updater, steamcmd_updater
-from dstools.features.local_service.backup_manager import create_backup
+from dstools.features.local_service.backup_manager import changed_since_last_backup, create_backup
 from dstools.features.local_service.dedicated_server import (
     ConfDirCrossDriveError, ServerStatus, detect_external_running_clusters,
     detect_external_shard_processes, find_bin64_dir, is_client_install_dir, is_valid_install_dir,
@@ -3379,7 +3379,9 @@ class LocalServicePage(Page):
                 continue
             if now - last >= interval_s:
                 try:
-                    create_backup(Path(path_str))
+                    # 存档没变（没人在线时世界暂停不存盘等）就不备份，免得重复的备份把有用的旧备份挤掉
+                    if changed_since_last_backup(Path(path_str)):
+                        create_backup(Path(path_str))
                 except OSError:
                     pass
                 self._last_auto_backup_ts[path_str] = now

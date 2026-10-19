@@ -279,7 +279,7 @@ class WorldSettingsPage(Page):
             plan = shard_management.initial_plan(cluster, location, klei_root)
             # 先校验再备份，避免明知不能加还留下一份备份
             shard_management.validate_new_shard(cluster, shard_name, plan)
-            create_backup(cluster.path)
+            create_backup(cluster.path, keep=True)
             shard_management.add_shard(cluster, shard_name, plan,
                                      shard_management.used_ports_elsewhere(clusters, cluster), language, world_name)
 
