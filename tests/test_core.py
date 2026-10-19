@@ -1302,11 +1302,11 @@ def test_world_ocean_frequency_labels():
 
 
 def test_mod_resolve_cache():
-    """resolve_full_modinfo() 结果的磁盘缓存：mtime 失效、格式版本校验与 ModConfigOption 的 JSON 往返。"""
+    """resolve_full_modinfo() 结果的磁盘缓存：按内容哈希与目录失效、格式版本校验与 ModConfigOption 的 JSON 往返。"""
 
     # 必须在导入 mod.cache 之前进入隔离目录：其 _CACHE_DIR 在导入时就已确定
     with _isolated_settings_dir():
-        from dstools.features.mod.cache import load_cached_result, save_result
+        from dstools.features.mod.cache import _cache_path, load_cached_result, save_result
         from dstools.features.mod.parser import ModConfigOption
 
         workshop_id = "test-workshop-resolve-cache"
@@ -1322,38 +1322,62 @@ def test_mod_resolve_cache():
                     ModConfigOption(name="opt1", label="选项1", default="a")
                 ],
             }
-            save_result(workshop_id, result)
+            save_result(workshop_id, modinfo_path, result)
             cached = load_cached_result(workshop_id, modinfo_path)
             assert cached is not None and cached["name"] == "测试Mod"
             assert isinstance(cached["config_options"][0], ModConfigOption)
             assert cached["config_options"][0].name == "opt1"
 
-            # modinfo.lua 比缓存新——缓存失效，返回 None，跟 icons.py
-            # 图标缓存同一套 mtime 判断逻辑。
-            future = time.time() + 100
-            os.utime(modinfo_path, (future, future))
+            # 同步脚本（robocopy）保留源文件的旧时间：内容变了、修改时间却比缓存早，也必须失效
+            modinfo_path.write_text("name = 'y'", encoding="utf-8")
+            past = time.time() - 3600
+            os.utime(modinfo_path, (past, past))
             assert load_cached_result(workshop_id, modinfo_path) is None
 
-            # 缺 _cache_format_version 的旧缓存即使 mtime 未过期也必须失效（mtime 故意设得更新，只测版本判断）
-            from dstools.features.mod.cache import _cache_path
+            # 同一 ID 换了目录（如 Steam/WeGame 各有一份）不能共用缓存
+            save_result(workshop_id, modinfo_path, result)
+            other = Path(tmp) / "other" / "modinfo.lua"
+            other.parent.mkdir()
+            other.write_text("name = 'y'", encoding="utf-8")
+            assert load_cached_result(workshop_id, other) is None
 
-            stale_path = _cache_path(workshop_id)
-            stale_path.write_text(
-                json.dumps(
-                    {
-                        "name": "旧格式测试Mod",
-                        "config_options": [
-                            {"name": "opt1", "label": "选项1", "default": "a"}
-                        ],
-                    }
-                ),
+            # 缺 _cache_format_version 的旧缓存必须失效
+            _cache_path(workshop_id).write_text(
+                json.dumps({"name": "旧格式测试Mod", "config_options": [{"name": "opt1", "label": "选项1", "default": "a"}]}),
                 encoding="utf-8",
             )
-            newer = time.time() + 200
-            os.utime(stale_path, (newer, newer))
             assert load_cached_result(workshop_id, modinfo_path) is None, (
                 "没有 _cache_format_version 的旧格式缓存应该被当成失效"
             )
+
+
+def test_mod_icon_cache_stamp():
+    """图标缓存按源文件指纹命中：换了 .tex 但修改时间更旧（robocopy 保留源时间）也要失效。"""
+
+    with _isolated_settings_dir():
+        from dstools.features.mod.icons import _cache_dir_for, get_cached_mod_icon_path
+        from dstools.features.mod.parser import ModInfo
+        from dstools.models import Platform
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "modicon.xml").write_text("<Atlas/>", encoding="utf-8")
+            tex = folder / "modicon.tex"
+            tex.write_bytes(b"old")
+            info = ModInfo(workshop_id="IconStampTest", icon="modicon.tex", icon_atlas="modicon.xml")
+            cache_path = _cache_dir_for(Platform.STEAM) / "IconStampTest.png"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_bytes(b"png")
+
+            # 没有指纹的旧缓存按原规则接管并补记指纹
+            assert get_cached_mod_icon_path(info, folder) == cache_path
+            assert cache_path.with_suffix(".json").is_file()
+            assert get_cached_mod_icon_path(info, folder) == cache_path
+
+            tex.write_bytes(b"new!")
+            past = time.time() - 3600
+            os.utime(tex, (past, past))
+            assert get_cached_mod_icon_path(info, folder) is None
 
 
 def test_mod_version_resolution():

@@ -79,6 +79,7 @@ class ModPage(Page):
         self._mod_paths: dict[str, Path] = {}
         self._icon_imgs: dict = {}
         self._full_resolved_cache: dict = {}
+        self._mod_stamps: dict = {}  # 上次加载时各 Mod 的 modinfo 指纹，变了就丢掉内存里的完整解析结果
         self._luajit_mod_locked = False
         self._dirty = False
         self._loading = False
@@ -600,6 +601,7 @@ class ModPage(Page):
             self._mod_infos.clear()
             self._icon_imgs.clear()
             self._full_resolved_cache.clear()
+            self._mod_stamps.clear()
             self._loading = False
             self._loading_key = None
             self._mods_loaded = True
@@ -626,12 +628,13 @@ class ModPage(Page):
             install_dir = self._local_install_dir()
             if install_dir:
                 luajit_bin64_dir = find_bin64_dir(install_dir)
-        full_resolved_cache = dict(self._full_resolved_cache)
+        # 「重新扫描」不信内存里的完整解析结果，按磁盘缓存（内容哈希校验）重来
+        full_resolved_cache = {} if full else dict(self._full_resolved_cache)
         overrides_path = shard.mod_overrides_path
         first_screen = (self._row_filter_args(), self._first_screen_count())
 
         worker_args = (overrides_path, full, platform, wegame_client_mods_dir, steam_runtime_mods_dir,
-                       luajit_bin64_dir, full_resolved_cache, local_index, first_screen)
+                       luajit_bin64_dir, full_resolved_cache, local_index, first_screen, dict(self._mod_stamps))
         snapshot = None if full else take_mod_preload_snapshot(
             (platform, wegame_client_mods_dir, steam_runtime_mods_dir))
 
@@ -669,11 +672,13 @@ class ModPage(Page):
 
     def _load_mods_worker(self, overrides_path, full, platform, wegame_client_mods_dir,
                           steam_runtime_mods_dir, luajit_bin64_dir, full_resolved_cache, local_index=None,
-                          first_screen=None, snapshot=None):
+                          first_screen=None, known_stamps=None, snapshot=None):
         """跑在线程池里——不能碰任何 Qt 对象。本地存档以 Master/save/shardindex 为准（游戏开服时据此重写 modoverrides.lua）。
 
         给了启动预热的 snapshot 时，快照里的 Mod 直接用其目录、解析结果和图标路径，不再扫盘；
-        stamps 记录各 Mod 的 modinfo 指纹（快照里的取预热时的值），供事后核对。"""
+        stamps 记录各 Mod 的 modinfo 指纹（快照里的取预热时的值），供事后核对。
+        known_stamps 为上次加载时的指纹：与本次不同的 Mod（本地 Mod 改了 modinfo）不用内存里的完整解析结果。"""
+        full_resolved_cache = dict(full_resolved_cache)  # 预热核对会用同一份参数再跑一遍，不改调用方的字典
         mod_data, mod_infos, mod_paths, icon_imgs, stamps = {}, {}, {}, {}, {}
         icon_targets = []
         cached_icon_targets = []
@@ -717,7 +722,8 @@ class ModPage(Page):
                                                              steam_runtime_mods_dir, legacy_packages)
                 if mod_folder is not None:
                     mod_paths[wid] = mod_folder
-                if mod_folder is None:
+                stamps[wid] = snapshot.stamps.get(wid) if known else modinfo_stamp(mod_folder)
+                if mod_folder is None or (known_stamps is not None and known_stamps.get(wid) != stamps[wid]):
                     full_resolved_cache.pop(wid, None)
                 cached = full_resolved_cache.get(wid)
                 if cached is not None:
@@ -731,7 +737,7 @@ class ModPage(Page):
                         result = load_cached_result(wid, modinfo_path)
                         if result is None:
                             result = resolve_full_modinfo(mod_folder)
-                            save_result(wid, result)
+                            save_result(wid, modinfo_path, result)
                         apply_full_sandbox_result(mod_info, result)
                         full_resolved_cache[wid] = mod_info
                 mod_infos[wid] = mod_info
@@ -751,7 +757,7 @@ class ModPage(Page):
                         icon_targets.append((wid, mod_info, mod_folder))
             except Exception:
                 mod_infos.setdefault(wid, None)
-            stamps[wid] = snapshot.stamps.get(wid) if known else modinfo_stamp(mod_folder)
+                stamps.setdefault(wid, modinfo_stamp(mod_folder))
         if first_screen is not None and cached_icon_targets:
             self._preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
                                              icon_imgs, cached_icon_targets)
@@ -795,6 +801,7 @@ class ModPage(Page):
         self._mod_paths = result["mod_paths"]
         self._icon_imgs = result["icon_imgs"]
         self._full_resolved_cache = result["full_resolved_cache"]
+        self._mod_stamps = result["stamps"]
         self._luajit_mod_locked = result["luajit_active"]
         self._loading = False
         self._loading_key = None

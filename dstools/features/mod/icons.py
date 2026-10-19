@@ -1,8 +1,11 @@
 """解析并缓存每个 Mod 的图标（Klei atlas：.tex 贴图 + UV 的 .xml）。
 
-每个 Mod 只转换裁剪一次，按 workshop id 落盘缓存，源 .tex 的 mtime 变化时失效，避免反复调用 ktech。
+每个 Mod 只转换裁剪一次，按 workshop id 落盘缓存，避免反复调用 ktech。缓存旁记一份源文件指纹
+（.tex/.xml 的路径、修改时间、大小与图标名），完全一致才命中：同步脚本会保留源文件的旧时间，
+只比较"缓存是否更新"会把换过的图标当成没变。
 """
 
+import json
 import os
 import threading
 from pathlib import Path
@@ -36,6 +39,21 @@ def _cache_dir_for(platform: Platform) -> Path:
     return cache_dir("mod_icons") / platform.value
 
 
+def _source_stamp(mod_info: ModInfo, xml_path: Path, tex_path: Path) -> list | None:
+    try:
+        return [mod_info.icon] + [[str(path.resolve()), stat.st_mtime_ns, stat.st_size]
+                                  for path, stat in ((xml_path, xml_path.stat()), (tex_path, tex_path.stat()))]
+    except OSError:
+        return None
+
+
+def _write_stamp(cache_path: Path, stamp: list) -> None:
+    try:
+        cache_path.with_suffix(".json").write_text(json.dumps(stamp, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def get_cached_mod_icon_path(
     mod_info: ModInfo,
     mod_folder: Path,
@@ -49,11 +67,20 @@ def get_cached_mod_icon_path(
     if not xml_path.is_file() or not tex_path.is_file():
         return None
     cache_path = _cache_dir_for(platform) / f"{mod_info.workshop_id}.png"
+    stamp = _source_stamp(mod_info, xml_path, tex_path)
+    if stamp is None or not cache_path.is_file():
+        return None
     try:
-        if cache_path.is_file() and cache_path.stat().st_mtime >= tex_path.stat().st_mtime:
+        return cache_path if json.loads(cache_path.with_suffix(".json").read_text(encoding="utf-8")) == stamp else None
+    except (OSError, ValueError):
+        pass
+    # 没有指纹的旧缓存按原规则（不比源 .tex 旧）接管一次并补记指纹，免得升级后全部重新转换
+    try:
+        if cache_path.stat().st_mtime >= tex_path.stat().st_mtime:
+            _write_stamp(cache_path, stamp)
             return cache_path
     except OSError:
-        return None
+        pass
     return None
 
 
@@ -73,9 +100,8 @@ def get_mod_icon_path(mod_info: ModInfo, mod_folder: Path,
 
     cache_dir_path = _cache_dir_for(platform)
     cache_path = cache_dir_path / f"{mod_info.workshop_id}.png"
-    src_mtime = tex_path.stat().st_mtime
-    if cache_path.exists() and cache_path.stat().st_mtime >= src_mtime:
-        return cache_path
+    # 转换前取指纹：转换中途源文件又变了，下次照样失效；转换失败时旧指纹不匹配，下次继续重试
+    stamp = _source_stamp(mod_info, xml_path, tex_path)
 
     cache_dir_path.mkdir(parents=True, exist_ok=True)
     atlas_png = cache_dir_path / f"_atlas_{mod_info.workshop_id}.png"
@@ -100,6 +126,8 @@ def get_mod_icon_path(mod_info: ModInfo, mod_folder: Path,
             staged.unlink(missing_ok=True)
             if not cache_path.is_file():
                 return None
+        if stamp is not None:
+            _write_stamp(cache_path, stamp)
     except Exception:
         return None
     finally:

@@ -40,7 +40,7 @@ def _resolve_mod_config(page, workshop_id: str, mod_info) -> bool:
             result = load_cached_result(workshop_id, modinfo_path)
             if result is None:
                 result = resolve_full_modinfo(mod_folder)
-                save_result(workshop_id, result)
+                save_result(workshop_id, modinfo_path, result)
             if result:
                 apply_full_sandbox_result(mod_info, result)
                 page._full_resolved_cache[workshop_id] = mod_info
