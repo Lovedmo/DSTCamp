@@ -7,6 +7,7 @@
 
 import json
 import os
+import stat
 import threading
 from pathlib import Path
 
@@ -39,12 +40,19 @@ def _cache_dir_for(platform: Platform) -> Path:
     return cache_dir("mod_icons") / platform.value
 
 
-def _source_stamp(mod_info: ModInfo, xml_path: Path, tex_path: Path) -> list | None:
+def _source_stamp(mod_info: ModInfo, xml_path: Path, tex_path: Path) -> tuple[list, int] | None:
+    """源 .xml/.tex 的指纹与 .tex 的修改时间；任一不是文件时返回 None。
+
+    每次加载 Mod 页都要对全部 Mod 调用：只 stat 一次，不用 resolve()（Windows 上很慢，路径本来就是绝对的）。"""
     try:
-        return [mod_info.icon] + [[str(path.resolve()), stat.st_mtime_ns, stat.st_size]
-                                  for path, stat in ((xml_path, xml_path.stat()), (tex_path, tex_path.stat()))]
+        xml_stat, tex_stat = xml_path.stat(), tex_path.stat()
     except OSError:
         return None
+    if not (stat.S_ISREG(xml_stat.st_mode) and stat.S_ISREG(tex_stat.st_mode)):
+        return None
+    stamp = [mod_info.icon, [str(xml_path), xml_stat.st_mtime_ns, xml_stat.st_size],
+             [str(tex_path), tex_stat.st_mtime_ns, tex_stat.st_size]]
+    return stamp, tex_stat.st_mtime
 
 
 def _write_stamp(cache_path: Path, stamp: list) -> None:
@@ -63,20 +71,20 @@ def get_cached_mod_icon_path(
     if not mod_info.icon or not mod_info.icon_atlas:
         return None
     xml_path = Path(mod_folder) / mod_info.icon_atlas
-    tex_path = xml_path.parent / mod_info.icon
-    if not xml_path.is_file() or not tex_path.is_file():
+    source = _source_stamp(mod_info, xml_path, xml_path.parent / mod_info.icon)
+    if source is None:
         return None
+    stamp, tex_mtime = source
     cache_path = _cache_dir_for(platform) / f"{mod_info.workshop_id}.png"
-    stamp = _source_stamp(mod_info, xml_path, tex_path)
-    if stamp is None or not cache_path.is_file():
-        return None
     try:
-        return cache_path if json.loads(cache_path.with_suffix(".json").read_text(encoding="utf-8")) == stamp else None
+        if json.loads(cache_path.with_suffix(".json").read_text(encoding="utf-8")) != stamp:
+            return None
+        return cache_path if cache_path.is_file() else None
     except (OSError, ValueError):
         pass
     # 没有指纹的旧缓存按原规则（不比源 .tex 旧）接管一次并补记指纹，免得升级后全部重新转换
     try:
-        if cache_path.stat().st_mtime >= tex_path.stat().st_mtime:
+        if cache_path.stat().st_mtime >= tex_mtime:
             _write_stamp(cache_path, stamp)
             return cache_path
     except OSError:
@@ -101,7 +109,7 @@ def get_mod_icon_path(mod_info: ModInfo, mod_folder: Path,
     cache_dir_path = _cache_dir_for(platform)
     cache_path = cache_dir_path / f"{mod_info.workshop_id}.png"
     # 转换前取指纹：转换中途源文件又变了，下次照样失效；转换失败时旧指纹不匹配，下次继续重试
-    stamp = _source_stamp(mod_info, xml_path, tex_path)
+    source = _source_stamp(mod_info, xml_path, tex_path)
 
     cache_dir_path.mkdir(parents=True, exist_ok=True)
     atlas_png = cache_dir_path / f"_atlas_{mod_info.workshop_id}.png"
@@ -126,8 +134,8 @@ def get_mod_icon_path(mod_info: ModInfo, mod_folder: Path,
             staged.unlink(missing_ok=True)
             if not cache_path.is_file():
                 return None
-        if stamp is not None:
-            _write_stamp(cache_path, stamp)
+        if source is not None:
+            _write_stamp(cache_path, source[0])
     except Exception:
         return None
     finally:
