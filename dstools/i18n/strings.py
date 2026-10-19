@@ -1246,10 +1246,10 @@ STRINGS = {
         "local.runtime_mode_desc_auto": "装了独立专服就用它，否则用游戏专服。",
         "local.runtime_mode_desc_client": "只用《饥荒联机版》游戏本体自带的开服程序，不需要另装工具。",
         "local.runtime_mode_desc_dedicated": "只用 Steam 工具「Don't Starve Together Dedicated Server」。",
-        "local.runtime_mode_note": "不知道选哪个，选「自动」就行。两种程序开的是同一份存档，切换不影响存档。\n"
-                                   "· 游戏专服：装了《饥荒联机版》就有，随游戏一起更新，不用另外下载。\n"
-                                   "· 独立专服：Steam 上的免费工具，要在 Steam「库 → 工具」里另外安装，单独更新。\n"
-                                   "选「自动」时优先用独立专服；指定某一种后就只用那一种，没装时会提示安装，不会自动换成另一种。",
+        "local.runtime_mode_note": "一般装了《饥荒联机版》就够了，选「自动」或「游戏专服」都行，不用另外装工具。两种程序开的是同一份存档，切换不影响存档。\n"
+                                   "· 游戏专服：游戏本体自带，随游戏一起更新。\n"
+                                   "· 独立专服：Steam「库 → 工具」里的免费工具，要另外安装、单独更新，一般用不到。\n"
+                                   "「自动」会优先用已经装好的独立专服；指定某一种后就只用那一种，没装时会提示安装，不会自动换成另一种。",
         "local.runtime_wegame_hint": "WeGame 存档由 WeGame 客户端开服，不使用这里的开服程序设置",
         "local.luajit_busy_hint": "正在安装/更新/卸载 LuaJIT，请等待完成",
         "local.luajit_uninstall_not_installed_hint": "尚未安装 LuaJIT，无需卸载",
@@ -2905,10 +2905,10 @@ STRINGS = {
         "local.runtime_mode_desc_auto": "Use the Dedicated Server tool if installed, otherwise the Bundled Server.",
         "local.runtime_mode_desc_client": "Only use the server program bundled with Don't Starve Together itself -- no extra tool needed.",
         "local.runtime_mode_desc_dedicated": "Only use the Steam tool “Don't Starve Together Dedicated Server”.",
-        "local.runtime_mode_note": "Not sure? Just pick “Auto”. Both programs host the same saves, so switching doesn't affect your worlds.\n"
-                                   "· Bundled Server: comes with Don't Starve Together and updates with the game -- nothing extra to download.\n"
-                                   "· Dedicated Server: a free Steam tool you install separately from Steam “Library → Tools”; it updates on its own.\n"
-                                   "Auto prefers the Dedicated Server. If you pick a specific one, only that one is used; if it's missing you'll be prompted to install it instead of silently switching to the other one.",
+        "local.runtime_mode_note": "Having Don't Starve Together installed is usually enough: pick “Auto” or “Bundled Server”, no extra tool needed. Both programs host the same saves, so switching doesn't affect your worlds.\n"
+                                   "· Bundled Server: comes with the game and updates with it.\n"
+                                   "· Dedicated Server: a free tool under Steam “Library → Tools”, installed and updated separately; most players don't need it.\n"
+                                   "Auto prefers the Dedicated Server if it's installed. If you pick a specific one, only that one is used; if it's missing you'll be prompted to install it instead of silently switching to the other one.",
         "local.runtime_wegame_hint": "WeGame saves are hosted by the WeGame client and don't use these server program settings",
         "local.luajit_busy_hint": "Installing/updating/uninstalling LuaJIT -- please wait for it to finish",
         "local.luajit_uninstall_not_installed_hint": "LuaJIT isn't installed -- nothing to uninstall",
