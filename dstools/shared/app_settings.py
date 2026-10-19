@@ -33,7 +33,7 @@ _KEY_WINDOW_POS = "window_pos"
 _KEY_WINDOW_SIZE = "window_size"
 _KEY_CREATION_WIZARD_SIZE = "creation_wizard_size"
 _KEY_BACKUP_RETENTION = "backup_retention"
-_DEFAULT_BACKUP_RETENTION = 10
+_DEFAULT_BACKUP_RETENTION = 20
 _KEY_BACKUP_INTERVAL_MIN = "backup_interval_minutes"
 _DEFAULT_BACKUP_INTERVAL_MIN = 10
 _KEY_BACKUP_AUTO_ENABLED = "backup_auto_enabled"
@@ -473,7 +473,7 @@ def set_custom_bg_filename(name: str | None) -> None:
 
 
 def get_backup_retention() -> int:
-    """存档备份最多保留份数（5~99，默认 10），全局设置；读取时再夹一次范围防止手改配置文件。"""
+    """存档备份最多保留份数（5~99，默认 20），全局设置；读取时再夹一次范围防止手改配置文件。"""
     value = load_settings().get(_KEY_BACKUP_RETENTION, _DEFAULT_BACKUP_RETENTION)
     try:
         value = int(value)
