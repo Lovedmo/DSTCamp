@@ -4,7 +4,7 @@
 用内网穿透映射的世界不能改文件夹或删除：映射记录按分片名保存，先由用户在内网穿透页关闭。
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
@@ -100,7 +100,20 @@ class ManageWorldsDialog(dialogs.Dialog):
         while self._list.count():
             widget = self._list.takeAt(0).widget()
             if widget is not None:
+                # 先摘掉父控件：只 deleteLater 的话旧卡片要等回到事件循环才消失，期间还占着尺寸
+                widget.setParent(None)
                 widget.deleteLater()
+        try:
+            self._fill_list()
+        finally:
+            # 世界数变了（删除等）要按新内容重算高度，否则多出的高度被摊到各控件之间；
+            # 新卡片的尺寸要等事件循环处理完布局请求才算得出，所以放到下一轮再调
+            QTimer.singleShot(0, self._fit_height)
+
+    def _fit_height(self) -> None:
+        self.resize(self.width(), self.sizeHint().height())
+
+    def _fill_list(self) -> None:
         cluster = self.ctx.selected_cluster()
         if cluster is None or cluster.source != SaveSource.SERVER:
             self.reject()

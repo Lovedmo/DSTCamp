@@ -746,7 +746,7 @@ def test_vanilla_world_without_task_set_is_rejected() -> None:
 def test_add_shard_to_existing_cluster() -> None:
     """单世界旧存档连加两个世界：打开多世界、编号与端口不撞、各世界启用同一份万界之门配置（含自定义名称）、旧存档不动。"""
     from dstools.features.world.shard_management import (
-        add_shard, planned_world_names, shard_name_error, world_name_error,
+        add_shard, list_worlds, planned_world_names, shard_name_error, world_name_error,
     )
     import shutil
 
@@ -773,6 +773,9 @@ def test_add_shard_to_existing_cluster() -> None:
         assert world_name_error(cluster, CAVE_LOCATION, "森林 2", "zh")  # 和已有世界重名
         assert world_name_error(cluster, CAVE_LOCATION, "  ", "zh")
         second = add_shard(cluster, "Caves", _complete_plan(CAVE_LOCATION), world_name="地下城")
+        # 编号 3 的 Caves 也排在编号 2 的 Forest2 前面：不能改文件夹的原版世界放最前
+        assert [e.shard_name for e in list_worlds(_build_cluster(output, SaveSource.SERVER))] == [
+            "Master", "Caves", "Forest2"]
 
         cluster_ini = parse_cluster_ini(output / "cluster.ini")
         assert cluster_ini.shard["shard_enabled"] is True

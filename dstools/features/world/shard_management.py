@@ -459,7 +459,8 @@ def unreachable_shards(cluster: Cluster) -> list[str]:
 
 
 def list_worlds(cluster: Cluster) -> list[WorldEntry]:
-    """存档里的全部世界，主世界在前，其余按编号排序；名称等取主世界的万界之门配置。"""
+    """存档里的全部世界：主世界、Caves（原版洞口绑定、不能改文件夹）在前，其余按编号排序；
+    名称等取主世界的万界之门配置。"""
     master = _master_shard(cluster)
     worlds = _existing_worlds(cluster, master) if master is not None else {}
     entries = []
@@ -473,7 +474,8 @@ def list_worlds(cluster: Cluster) -> list[WorldEntry]:
             limit = 0
         entries.append(WorldEntry(shard.name, shard_id, _shard_location(shard), shard is master,
                                   str(entry.get("name") or ""), entry.get("hidden") is True, limit))
-    return sorted(entries, key=lambda e: (not e.is_master, e.shard_id is None, e.shard_id or 0, e.shard_name))
+    return sorted(entries, key=lambda e: (not e.is_master, e.shard_name not in PROTECTED_SHARD_NAMES,
+                                          e.shard_id is None, e.shard_id or 0, e.shard_name))
 
 
 def _find_shard(cluster: Cluster, shard_name: str):
