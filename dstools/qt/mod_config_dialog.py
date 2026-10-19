@@ -258,6 +258,12 @@ class ModConfigDialog(QDialog):
 
         # 显示文本去掉首尾空格（部分 Mod 补空格做等宽对齐，比例字体下显得奇怪）；写回的仍是 data 值
         items = [(str(c["description"]).strip(), c["data"]) for c in choices]
+        hovers = [str(c.get("hover", "") or "") for c in choices]
+        # 当前值不在可选项里（如万界之门的 worlds 表由 DSTCamp 写入）时，最前面加一项原样保留，
+        # 否则下拉框落到第一项，一点"应用"就把原值冲掉
+        if items and not any(same_value(data, current_value) for _desc, data in items):
+            items.insert(0, (t("mod.keep_custom_value"), current_value))
+            hovers.insert(0, t("mod.keep_custom_value_hover"))
 
         if not items:
             reason = t("mod.dynamic_option") if opt.is_dynamic else t("mod.no_choices")
@@ -272,7 +278,6 @@ class ModConfigDialog(QDialog):
         # 按下拉项顺序记录 data/hover 并用索引取值：显示文本可能重复（如 "启用" 对应 true 和 -1），
         # 用文本当键会丢掉其中一项
         self.choice_maps[opt.name] = [data for _desc, data in items]
-        hovers = [str(c.get("hover", "") or "") for c in choices]
         combo = QComboBox()
         combo.setMinimumWidth(260)
         combo.setEnabled(not self.read_only)
@@ -286,7 +291,7 @@ class ModConfigDialog(QDialog):
         # 按已保存的 data 值定位初始项，不能用 findText（显示文本可能重复，只会命中第一个）
         initial = 0
         for idx, (_desc, data) in enumerate(items):
-            if data == current_value:
+            if same_value(data, current_value):
                 initial = idx
                 break
         combo.setCurrentIndex(initial)

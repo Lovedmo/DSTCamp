@@ -604,6 +604,37 @@ def test_modinfo_reader():
         ]
 
 
+def test_mod_config_choice_keeps_unlisted_value():
+    """下拉项里没有当前值（万界之门 worlds 表由 DSTCamp 写入）时，不动它直接"应用"要原样保留。"""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from dstools.features.mod.parser import ModConfigOption, ModInfo
+    from dstools.qt.mod_config_dialog import ModConfigDialog
+
+    app = QApplication.instance() or QApplication([])
+    worlds = {"1": {"name": "森林"}, "3": {"name": "猪镇", "style": "porkland"}}
+    options = [
+        ModConfigOption(name="worlds", default="", choices=[{"description": "自动", "data": ""}]),
+        ModConfigOption(name="cave_portal_shard", default="Caves",
+                        choices=[{"description": "原洞穴", "data": "Caves"}, {"description": "不固定", "data": ""}]),
+        ModConfigOption(name="hud_button", default=False,
+                        choices=[{"description": "关闭", "data": False}, {"description": "开启", "data": True}]),
+    ]
+    dialog = ModConfigDialog.__new__(ModConfigDialog)
+    dialog.mod = ModEntry(workshop_id="workshop-3822260794", enabled=True,
+                          configuration_options={"worlds": worlds, "cave_portal_shard": "Forest2"})
+    dialog.mod_info = ModInfo(config_options=options)
+    dialog.read_only, dialog.vars, dialog.choice_maps, dialog.raw_widgets = False, {}, {}, {}
+    rows = [dialog._render_choice_row(opt) for opt in options]  # 留住引用，否则下拉框随行控件被回收
+    assert dialog._collect_values() == {"worlds": worlds, "cave_portal_shard": "Forest2", "hud_button": False}
+    # 值在可选项里时不加"保持当前值"项；用户选了别的项照常覆盖
+    assert dialog.choice_maps["hud_button"] == [False, True]
+    dialog.vars["worlds"].setCurrentIndex(1)
+    assert dialog._collect_values()["worlds"] == ""
+    del rows, app
+
+
 def test_workshop_content_directory_filter():
     """Steam UGC 内容目录只接受标准 PublishedFileId_t 文件夹名。"""
 
