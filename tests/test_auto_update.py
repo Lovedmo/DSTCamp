@@ -325,6 +325,35 @@ def test_helper_migrates_over_existing_standard_exe() -> None:
         time.sleep(1)  # 等拉起的进程退出再删临时目录
 
 
+def test_helper_retries_while_old_exe_is_still_in_use() -> None:
+    """旧 EXE 退出前后还被占用（onefile 启动器清理临时目录）时，助手重试移动，而不是直接失败。"""
+    import threading
+
+    system32 = Path(r"C:\Windows\System32")
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        current = root / auto_update.STANDARD_EXE_NAME
+        staged = root / ".DSTCamp.update-1.exe"
+        shutil.copy(system32 / "hostname.exe", current)
+        shutil.copy(system32 / "whoami.exe", staged)
+        expected = staged.read_bytes()
+        holder = current.open("rb")  # Python 打开的句柄不允许重命名，模拟占用
+        threading.Timer(1.5, holder.close).start()
+        finished = subprocess.Popen(["cmd", "/c", "exit"], creationflags=subprocess.CREATE_NO_WINDOW)
+        finished.wait()
+        with patch.object(auto_update, "data_dir", return_value=root / "data"):
+            script = auto_update._helper_script()
+        subprocess.run([
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+            "-ParentPid", str(finished.pid), "-CurrentExe", str(current), "-NewExe", str(staged),
+            "-TargetExe", str(current), "-BackupExe", str(root / "DSTCamp.exe.old"),
+            "-TargetBackupExe", str(root / "DSTCamp.exe.old"),
+        ], check=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        assert not (root / "apply_update.log").exists()
+        assert current.read_bytes() == expected and not staged.exists()
+        time.sleep(1)  # 等拉起的进程退出再删临时目录
+
+
 def test_standard_exe_name_is_fixed_but_custom_name_is_preserved() -> None:
     root = Path("C:/DSTCamp")
     staged = root / "cache" / "DSTCamp-1.3.6.exe"

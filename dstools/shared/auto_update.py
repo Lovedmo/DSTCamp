@@ -207,7 +207,17 @@ def _helper_script() -> Path:
 )
 $ErrorActionPreference = 'Stop'
 $LogFile = Join-Path (Split-Path -Parent $NewExe) 'apply_update.log'
-Wait-Process -Id $ParentPid -ErrorAction SilentlyContinue
+# 坑：旧进程恰在本脚本启动时退出、而 onefile 启动器还握着它的句柄时，Wait-Process 抛出
+# "进程已退出，因此无法处理请求"（InvalidOperationException）。这类异常不受 -ErrorAction 控制，
+# 在 Stop 下会直接终止整个脚本：不替换、不写日志、也不重启（1.7.2 测试实测）。所以包在 try 里，出错即视为已退出。
+try { Wait-Process -Id $ParentPid -Timeout 60 -ErrorAction Stop } catch { }
+function Move-WithRetry([string]$Path, [string]$Destination) {
+    # 旧程序的 onefile 启动器退出前还在清理临时目录，可能短暂占用 EXE：最多重试约 10 秒
+    for ($attempt = 1; ; $attempt++) {
+        try { Move-Item -LiteralPath $Path -Destination $Destination; return }
+        catch { if ($attempt -ge 40) { throw }; Start-Sleep -Milliseconds 250 }
+    }
+}
 # PyInstaller 6.9+ 默认让同一 onefile EXE 的子进程复用父进程 _MEI。
 # 更新后的程序必须独立解压；否则旧进程清理临时目录后会找不到 python DLL。
 $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
@@ -219,11 +229,11 @@ try {
     # 先备份成 .old（下次启动清理），失败时还原
     if (($TargetExe -ne $CurrentExe) -and (Test-Path -LiteralPath $TargetExe)) {
         if (Test-Path -LiteralPath $TargetBackupExe) { Remove-Item -LiteralPath $TargetBackupExe -Force }
-        Move-Item -LiteralPath $TargetExe -Destination $TargetBackupExe
+        Move-WithRetry $TargetExe $TargetBackupExe
         $MovedTarget = $true
     }
     if (Test-Path -LiteralPath $BackupExe) { Remove-Item -LiteralPath $BackupExe -Force }
-    Move-Item -LiteralPath $CurrentExe -Destination $BackupExe
+    Move-WithRetry $CurrentExe $BackupExe
     $MovedCurrent = $true
     Move-Item -LiteralPath $NewExe -Destination $TargetExe
     $InstalledTarget = $true
@@ -253,7 +263,8 @@ catch {
     }
 }
 '''
-    if not path.is_file() or path.read_text(encoding="utf-8") != content:
+    # 按 utf-8-sig 写入（Windows PowerShell 5.1 读无 BOM 的中文注释会乱码），比较时也要去掉 BOM
+    if not path.is_file() or path.read_text(encoding="utf-8-sig") != content:
         path.write_text(content, encoding="utf-8-sig")
     return path
 
