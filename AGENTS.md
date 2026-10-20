@@ -44,6 +44,9 @@ python scripts/build_exe.py
 - 版本号以 `pyproject.toml` 与 `dstools/__init__.py` 为准，发布时同步两处，文档不写死当前版本。
 - 构建只收固定资源白名单、在 `build/` 暂存，禁止包含缓存、持久数据、安全材料和 `reference/`。打包后实际启动 EXE；冒烟测试不能替代 GUI、Steam、frpc 或游戏内验证。验证 EXE 与 `sha256.json` 后再提交、推送、打 `vX.Y.Z` 标签并创建 Release。
 - 发布构建用 `python scripts/build_exe.py --patch-from <近几个正式版的 DSTCamp-X.Y.Z.exe>` 生成增量补丁（旧版 EXE 不能放在 `release/` 里，构建会清空它），`.hdiff` 与 EXE、`sha256.json` 一起上传为 Release 附件；没有对应补丁的旧版客户端自动下载整包。
+- `sha256.json` 必须用 `reference/update_signing_key.pem`（Ed25519，不进 Git，务必另行备份）签名，客户端只认带有效签名的清单；`--unsigned` 只用于自测。私钥丢失后已装客户端无法再自动更新。
+- `release/offline/` 下的完整包、补丁包（以及工具包）只传蓝奏云等网盘，不传 GitHub/Gitee；用户在「关于 → 手动更新 → 从文件导入」安装。
+- 按需下载的工具登记在 `shared/tool_store.py`（大小与 SHA-256 写死，有测试核对 `tools/`）。换工具版本时升 `TOOLS_RELEASE_TAG`，运行 `python scripts/make_tools_release.py`（在构建 EXE 之后），把 `release/tools-N/` 上传为 GitHub 标签 `tools-N` 的 Release 并标记为非 latest（`gh release create --latest=false`），且要在依赖它的版本发行版之前创建：1.7.1 及更早的客户端用 `releases/latest` 检查更新。
 
 ## 更新日志规则
 
@@ -58,6 +61,7 @@ python scripts/build_exe.py
 
 - 说明不能含表情符号（同步脚本已自动去掉）和"代理"等字样，否则整段被替换为"内容可能含有违规信息"；改用"TUN 虚拟网卡"等说法。
 - 同步后用 `GET /api/v5/repos/orange-blade/DSTCamp/releases/tags/vX.Y.Z` 回读说明与附件，被替换时改写后 `PATCH .../releases/{id}`。
+- 社区版附件单文件不超过 100 MB、单仓库附件总量 1 GB（同步脚本保留 3 个版本和最新的 `tools-N`），EXE 不能涨过 100 MB。
 - 本机没有 git 凭据，`git push gitee` 会卡住：用临时 `GIT_ASKPASS` 读 `reference/gitee_token.txt`（用户名 `orange-blade`），令牌不写进 URL、命令行或配置。
 
 ## 关键约束
@@ -79,7 +83,7 @@ python scripts/build_exe.py
 - Mod 目录联接用 `os.path.isjunction()` 判断、`os.rmdir()` 删除，禁止 `shutil.rmtree()`。
 - `CLUSTER_INI_DEFAULTS` 只补缺失字段；`NO_TYPE_COERCE_FIELDS` 中的密码等字段保持字符串。
 - 森林与洞穴配置独立；新增世界 key、取值或 Mod 支持前必须核对实际 Lua 源码。
-- 不联网下载 frp、vcredist、ktech；Linux 二进制用 `sftp.putfo()` 流式上传，本机不落地。
+- 自建/Lolia 用的 frpc 与 ktech 随包；frps、樱花 frpc、vcredist 不打包，首次使用时经 `tool_store` 从官网（vcredist）或 `tools-N` 发行版下载，按写死的 SHA-256 校验，存 `data/tools/` 并保持 `.xz`（裸 frp 落盘会被杀软隔离），也可从网盘工具包导入。Linux 二进制用 `sftp.putfo()` 流式上传，本机不落地解压。
 - 内置 SteamCMD（`tools/steamcmd/`，原样附 Valve 许可协议，不得修改程序）首次使用时释放到缓存目录；它不能在非 ASCII 路径下运行，联网自更新由它自己完成。
 - WeGame 不支持一键启动专服，不实现绕过方案。
 - 动态 Mod 名称、版本、图标和配置以受限 Lua 5.1 沙箱结果为准；缓存校验包含内容哈希、来源路径、`folder_name` 和协议版本。
