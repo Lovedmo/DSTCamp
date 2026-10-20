@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from dstools import __version__
 from dstools.shared.ssl_context import default_ssl_context
+from dstools.shared.update_signing import verify_manifest
 
 _TIMEOUT = 8
 _SOURCES = (
@@ -96,7 +97,8 @@ def _parse_release(data: dict, source: str) -> UpdateRelease | None:
         try:
             manifest = _request_json(manifest_url)
             file_info = (manifest.get("files") or {}).get(exe_name) or {}
-            if str(manifest.get("version") or "").lstrip("v") == version:
+            # 清单须带发布者签名：清单决定安装什么，被篡改的清单只能退回手动下载
+            if str(manifest.get("version") or "").lstrip("v") == version and verify_manifest(manifest):
                 sha256 = str(file_info.get("sha256") or "").lower()
                 size = int(file_info.get("size") or 0)
                 if not _is_sha256(sha256):

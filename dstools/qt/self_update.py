@@ -189,8 +189,25 @@ class SelfUpdater:
             self.download_and_install(release)
 
     def download_and_install(self, release: UpdateRelease) -> None:
+        from dstools.shared.auto_update import download_update
+
+        # 预下载还在进行时这里会等它结束再复用结果，等待期间进度照样显示
+        self._prepare_and_install(lambda: download_update(release, self._report_progress),
+                                  "update.failed_with_offline_hint")
+
+    def install_from_package(self, package) -> None:
+        """从网盘下载的离线包安装：校验签名并准备好新版 EXE 后先确认，再走同一套安装流程。"""
+        from dstools.shared.auto_update import import_update_package
+
+        def prepare():
+            version, path = import_update_package(package)
+            return path, version
+
+        self._prepare_and_install(prepare, "update.import_failed", confirm=True)
+
+    def _prepare_and_install(self, prepare, failed_key: str, *, confirm: bool = False) -> None:
+        """后台准备新版 EXE（prepare 返回路径，或 (路径, 版本号)）并做安装前检查，然后退出替换重启。"""
         from dstools.shared.auto_update import (
-            download_update,
             ensure_install_dir_writable,
             ensure_install_target_replaceable,
             validate_staged_executable,
@@ -203,32 +220,39 @@ class SelfUpdater:
         window.set_update_progress(0)
 
         def work():
-            # 预下载还在进行时这里会等它结束再复用结果，等待期间进度照样显示
-            path = download_update(release, self._report_progress)
+            prepared = prepare()
+            path, version = prepared if isinstance(prepared, tuple) else (prepared, "")
             validate_staged_executable(path)   # 实际启动一次新 EXE 的冒烟入口
             ensure_install_dir_writable()      # 退出前确认能替换 EXE 所在目录
             ensure_install_target_replaceable()  # 同目录已有的固定名字 EXE 不能正在运行
-            return path
+            return path, version
 
-        def failed(exc: Exception) -> None:
+        def cancel() -> None:
             self._busy = False
             window.set_update_progress(None)
-            dialogs.show_error(window, t("update.title"), t("update.failed", error=exc))
 
-        def downloaded(path) -> None:
+        def failed(exc: Exception) -> None:
+            cancel()
+            dialogs.show_error(window, t("update.title"), t(failed_key, error=exc))
+
+        def prepared(result) -> None:
+            path, version = result
             window.set_update_progress(100)
+            if confirm and not dialogs.ask_yes_no(window, t("update.title"),
+                                                  t("update.import_confirm", version=version)):
+                cancel()
+                return
             manager = window.ctx.manager
             if manager.running():
                 # 更新要退出程序：有专服在跑时先问，同意才安全关闭全部服务器再安装
                 if not dialogs.ask_yes_no(window, t("local.confirm_close_title"), t("update.close_servers")):
-                    self._busy = False
-                    window.set_update_progress(None)
+                    cancel()
                     return
                 manager.stop_all(on_all_done=lambda: post_to_ui(lambda _a: self._install(path)))
                 return
             self._install(path)
 
-        run_async(work, downloaded, failed)
+        run_async(work, prepared, failed)
 
     def _install(self, path) -> None:
         from dstools.shared.auto_update import launch_update_helper

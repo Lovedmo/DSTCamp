@@ -8,13 +8,34 @@ import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from dstools import __version__
-from dstools.shared import auto_update, update_check
+from dstools.shared import auto_update, update_check, update_signing
 from dstools.shared.update_check import UpdatePatch, UpdateRelease
+from scripts import build_exe
 from _harness import run  # noqa: E402
+
+TOOL_DIR = Path(__file__).resolve().parents[1] / "tools"
+
+# 测试用密钥：本文件在独立子进程里跑，直接替换内置公钥，不依赖发布机上的私钥
+_TEST_KEY = Ed25519PrivateKey.generate()
+update_signing.PUBLIC_KEY_HEX = _TEST_KEY.public_key().public_bytes(
+    serialization.Encoding.Raw, serialization.PublicFormat.Raw
+).hex()
+
+
+def _write_test_key(directory: Path) -> Path:
+    path = directory / "key.pem"
+    path.write_bytes(_TEST_KEY.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ))
+    return path
 
 
 class _Response(io.BytesIO):
@@ -48,6 +69,11 @@ def test_release_manifest_enables_auto_update() -> None:
             {"name": "p.hdiff", "browser_download_url": "https://example/patch"},
         ],
     }
+    # 没签名的清单不能自动更新
+    with patch.object(update_check, "_request_json", return_value=manifest):
+        assert not update_check._parse_release(release, "gitee").can_auto_update
+    with tempfile.TemporaryDirectory() as directory:
+        manifest = update_signing.sign_manifest(manifest, _write_test_key(Path(directory)))
     with patch.object(update_check, "_request_json", return_value=manifest):
         parsed = update_check._parse_release(release, "gitee")
     assert parsed is not None and parsed.can_auto_update
@@ -173,6 +199,66 @@ def test_patch_update_builds_exe_locally() -> None:
             old_exe.write_bytes(b"user-built-exe")
             assert auto_update.download_update(release).read_bytes() == new
             assert requested == [release.exe_url]
+
+
+def test_offline_package_import() -> None:
+    """构建脚本出的离线包能导入：完整包直接用，补丁包对当前 EXE 合成；签名不对、版本不新、起点不符都拒绝。"""
+    old = bytes(range(256)) * 400
+    new = old[:50000] + b"new-version-code" + old[50000:]
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        key = _write_test_key(root)
+        old_exe = root / "DSTCamp-current.exe"
+        old_exe.write_bytes(old)
+        dist = root / "dist"
+        dist.mkdir()
+        new_exe = dist / "DSTCamp-999.0.0.exe"
+        new_exe.write_bytes(new)
+        patch_file = dist / f"DSTCamp-{__version__}-to-999.0.0.hdiff"
+        subprocess.run([str(TOOL_DIR / "hdiffpatch" / "hdiffz.exe"), "-f", str(old_exe), str(new_exe),
+                        str(patch_file)], check=True, capture_output=True)
+        patches = {__version__: {"name": patch_file.name, **build_exe._file_info(patch_file),
+                                 "from_sha256": build_exe._file_info(old_exe)["sha256"]}}
+        manifest_path = dist / "DSTCamp-999.0.0.sha256.json"
+        build_exe._write_sha256_manifest(manifest_path, "999.0.0", (new_exe,), patches, key)
+        full_zip, patch_zip = build_exe._write_offline_packages(dist, manifest_path, new_exe, [patch_file])
+
+        updates = root / "updates"
+        with (
+            patch.object(auto_update.sys, "frozen", True, create=True),
+            patch.object(auto_update.sys, "executable", str(old_exe)),
+            patch.object(auto_update, "data_dir", return_value=updates),
+            patch.object(auto_update, "tool_binary_dir", return_value=TOOL_DIR),
+        ):
+            assert auto_update.is_update_package(patch_zip)
+            version, path = auto_update.import_update_package(patch_zip)
+            assert version == "999.0.0" and path.read_bytes() == new
+            assert sorted(item.name for item in path.parent.iterdir()) == [path.name]
+            path.unlink()
+            assert auto_update.import_update_package(full_zip)[1].read_bytes() == new
+
+            def expect_error(package: Path, text: str) -> None:
+                path.unlink(missing_ok=True)
+                try:
+                    auto_update.import_update_package(package)
+                except auto_update.UpdatePackageError as exc:
+                    assert text in str(exc), exc
+                else:
+                    raise AssertionError(f"应拒绝：{package.name}")
+
+            # 本机 EXE 不是补丁起点（如自己构建的版本）：补丁包不可用，完整包照常可用
+            old_exe.write_bytes(b"user-built-exe")
+            expect_error(patch_zip, "完整包")
+            # 清单被改过：签名不符
+            tampered = root / "tampered.zip"
+            with zipfile.ZipFile(full_zip) as source, zipfile.ZipFile(tampered, "w") as target:
+                for name in source.namelist():
+                    data = source.read(name)
+                    target.writestr(name, data.replace(b"999.0.0", b"999.0.1") if name.endswith(".json") else data)
+            expect_error(tampered, "签名")
+            # 版本不比当前新
+            with patch.object(auto_update, "__version__", "1000.0.0"):
+                expect_error(full_zip, "不比当前版本")
 
 
 def test_launch_helper_stages_on_exe_volume() -> None:

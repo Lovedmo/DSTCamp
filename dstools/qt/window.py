@@ -898,6 +898,10 @@ class MainWindow(QWidget):
             f'<a href="update" style="color: {theme.hex("PRIMARY")};">'
             f'{t("app.update_available", version=release.version)}</a>')
 
+    def import_offline_package(self, package) -> None:
+        """"关于 → 手动更新 → 从文件导入"选中的网盘离线包。"""
+        self._updater.install_from_package(package)
+
     def open_update_prompt(self, release) -> None:
         """"关于"里检查到新版本、或点状态栏提示时调用：弹出更新窗口。"""
         self.show_update_notice(release)

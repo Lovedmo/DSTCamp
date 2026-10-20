@@ -2,6 +2,10 @@
 
 用 ``--patch-from 旧版EXE ...`` 为这些正式发布过的旧版各生成一个增量补丁（HDiffPatch），
 一并写进 sha256 清单，旧版客户端自动更新时只需下载补丁。
+
+清单用 reference/update_signing_key.pem 签名（客户端只认带有效签名的清单）；开发自测可用 ``--unsigned``。
+release/offline/ 下另出供蓝奏云等网盘兜底的离线包：完整包（EXE + 清单）与补丁包（各补丁 + 清单），
+用户下载后在"关于 → 手动更新 → 从文件导入"安装。它们不上传到 GitHub/Gitee。
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 TOOL_FILES = (
@@ -142,17 +147,38 @@ def _make_patch(project_root: Path, old_exe: Path, new_exe: Path, version: str) 
 
 
 def _write_sha256_manifest(
-    manifest_path: Path, version: str, artifacts: tuple[Path, ...], patches: dict[str, dict] | None = None
+    manifest_path: Path, version: str, artifacts: tuple[Path, ...], patches: dict[str, dict] | None = None,
+    signing_key: Path | None = None,
 ) -> None:
-    """为自动更新写入可复核的文件大小与 SHA-256 清单；patches 按旧版本号列出可用补丁。"""
+    """为自动更新写入可复核的文件大小与 SHA-256 清单；patches 按旧版本号列出可用补丁，给了私钥就签名。"""
     manifest = {"version": version, "files": {}}
     for artifact in artifacts:
         manifest["files"][artifact.name] = _file_info(artifact)
     if patches:
         manifest["patches"] = patches
+    if signing_key is not None:
+        from dstools.shared.update_signing import sign_manifest
+
+        manifest = sign_manifest(manifest, signing_key)
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+
+def _write_offline_packages(dist_root: Path, manifest_path: Path, exe: Path, patch_files: list[Path]) -> list[Path]:
+    """生成网盘兜底用的离线包：完整包，有补丁时再出一个补丁包；每个包都带签名清单。"""
+    offline_dir = dist_root / "offline"
+    offline_dir.mkdir(exist_ok=True)
+    packages = [(offline_dir / f"{exe.stem}.zip", [exe])]
+    if patch_files:
+        packages.append((offline_dir / f"{exe.stem}-patches.zip", patch_files))
+    for package, members in packages:
+        # EXE 与补丁本身已压缩，不再压一遍
+        with zipfile.ZipFile(package, "w", zipfile.ZIP_STORED) as archive:
+            archive.write(manifest_path, manifest_path.name)
+            for member in members:
+                archive.write(member, member.name)
+    return [package for package, _members in packages]
 
 
 def _run_smoke_test(executable: Path) -> None:
@@ -244,8 +270,11 @@ exe = EXE(
 """
 
 
-def build(patch_from: list[Path]) -> None:
+def build(patch_from: list[Path], *, signed: bool = True) -> None:
     release_dir = Path(__file__).resolve().parents[1] / "release"
+    signing_key = release_dir.parent / "reference" / "update_signing_key.pem" if signed else None
+    if signing_key is not None and not signing_key.is_file():
+        raise SystemExit(f"找不到更新签名私钥：{signing_key}（开发自测可加 --unsigned，正式发布必须签名）")
     for old_exe in patch_from:
         if not old_exe.is_file():
             raise SystemExit(f"找不到旧版 EXE：{old_exe}")
@@ -306,9 +335,16 @@ def build(patch_from: list[Path]) -> None:
     patches = dict(_make_patch(project_root, old_exe.resolve(), onefile_exe, __version__)
                    for old_exe in patch_from)
     manifest_path = dist_root / f"{exe_name}.sha256.json"
-    _write_sha256_manifest(manifest_path, __version__, (onefile_exe,), patches)
+    _write_sha256_manifest(manifest_path, __version__, (onefile_exe,), patches, signing_key)
     for old_version, entry in patches.items():
         print(f"增量补丁：{old_version} -> {__version__}  {entry['name']}（{entry['size'] / 1e6:.1f} MB）")
+    if signing_key is None:
+        print("警告：清单未签名，客户端不会自动安装这个版本，只能用于自测")
+    offline = _write_offline_packages(
+        dist_root, manifest_path, onefile_exe, [dist_root / entry["name"] for entry in patches.values()]
+    )
+    for package in offline:
+        print(f"离线包（传蓝奏云，不传 GitHub/Gitee）：{package}（{package.stat().st_size / 1e6:.1f} MB）")
 
     print(f"构建及冒烟测试完成：{onefile_exe}")
     print(f"更新校验清单：{manifest_path}")
@@ -318,4 +354,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="构建 DSTCamp 单文件 EXE")
     parser.add_argument("--patch-from", nargs="*", type=Path, default=[],
                         help="正式发布过的旧版 EXE（文件名须为 DSTCamp-版本号.exe），为每个生成增量补丁")
-    build(parser.parse_args().patch_from)
+    parser.add_argument("--unsigned", action="store_true", help="不签名清单（仅开发自测）")
+    arguments = parser.parse_args()
+    build(arguments.patch_from, signed=not arguments.unsigned)

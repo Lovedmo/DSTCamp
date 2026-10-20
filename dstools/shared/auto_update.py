@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import json
 import logging
 import os
 import re
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Callable
 
@@ -19,6 +21,7 @@ from dstools.shared.resource_paths import data_dir, tool_binary_dir
 from dstools.shared.ssl_context import default_ssl_context
 from dstools import __version__
 from dstools.shared.update_check import UpdateRelease, is_newer_version
+from dstools.shared.update_signing import verify_manifest
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -119,35 +122,49 @@ def _download_verified(
     raise last_error
 
 
+def _hpatchz() -> Path | None:
+    """补丁合成工具；只有冻结版（正在运行的就是正式发布的 EXE）才能用补丁。"""
+    if not getattr(sys, "frozen", False):
+        return None
+    hpatchz = tool_binary_dir() / "hdiffpatch" / "hpatchz.exe"
+    return hpatchz if hpatchz.is_file() else None
+
+
+def _apply_patch(hpatchz: Path, patch_file: Path, target: Path, size: int, sha256: str) -> bool:
+    """用补丁把正在运行的 EXE 合成到 target，结果与清单一致才返回 True。"""
+    built = target.with_name(target.name + ".patched")
+    result = subprocess.run(
+        [str(hpatchz), "-f", sys.executable, str(patch_file), str(built)],
+        capture_output=True, text=True, timeout=300, check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode == 0 and _matches(built, size, sha256):
+        os.replace(built, target)
+        return True
+    _logger.warning("补丁合成失败（退出码 %s）：%s", result.returncode, (result.stdout + result.stderr).strip())
+    _safe_unlink(built)
+    return False
+
+
 def _build_from_patch(release: UpdateRelease, target: Path, progress: ProgressCallback | None) -> bool:
     """用补丁在本地合成新版 EXE，成功返回 True；不适用或任何一步失败返回 False，由调用方改下整包。
 
     补丁基于正式发布的旧版 EXE，只有正在运行的 EXE 与 from_sha256 一致时才用。
     """
     patch = release.patch
-    if patch is None or not getattr(sys, "frozen", False):
+    hpatchz = _hpatchz()
+    if patch is None or hpatchz is None:
         return False
-    current = Path(sys.executable)
-    hpatchz = tool_binary_dir() / "hdiffpatch" / "hpatchz.exe"
     try:
-        if not hpatchz.is_file() or _file_sha256(current) != patch.from_sha256:
+        if _file_sha256(Path(sys.executable)) != patch.from_sha256:
             return False
         patch_file = target.with_name(f"DSTCamp-{__version__}-to-{release.version}.hdiff")
         if not _matches(patch_file, patch.size, patch.sha256):
             _download_verified((patch.url, *patch.fallback_urls), patch_file, patch.size, patch.sha256, progress)
-        built = target.with_name(target.name + ".patched")
-        result = subprocess.run(
-            [str(hpatchz), "-f", str(current), str(patch_file), str(built)],
-            capture_output=True, text=True, timeout=300, check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        if result.returncode == 0 and _matches(built, release.size, release.sha256):
-            os.replace(built, target)
-            _safe_unlink(patch_file)
-            return True
-        _logger.warning("补丁合成失败（退出码 %s）：%s", result.returncode, (result.stdout + result.stderr).strip())
-        _safe_unlink(built)
-        _safe_unlink(patch_file)  # 补丁本身校验过，合成仍失败就别再复用它
+        try:
+            return _apply_patch(hpatchz, patch_file, target, release.size, release.sha256)
+        finally:
+            _safe_unlink(patch_file)  # 成功后用不到；补丁校验过仍合成失败也别再复用
     except (OSError, http.client.HTTPException, subprocess.SubprocessError):
         _logger.warning("补丁更新不可用，改为下载完整安装包", exc_info=True)
     return False
@@ -174,6 +191,83 @@ def download_update(release: UpdateRelease, progress: ProgressCallback | None = 
                 (release.exe_url, *release.fallback_urls), target, release.size, release.sha256, progress
             )
         return target
+
+
+class UpdatePackageError(Exception):
+    """离线更新包不可用；消息直接展示给用户。"""
+
+
+_PACKAGE_MANIFEST_RE = re.compile(r"DSTCamp-\d+(?:\.\d+)+\.sha256\.json")
+
+
+def is_update_package(package: Path) -> bool:
+    """zip 里带 DSTCamp 更新清单就是更新包（完整包或补丁包）。"""
+    try:
+        with zipfile.ZipFile(package) as archive:
+            return any(_PACKAGE_MANIFEST_RE.fullmatch(name) for name in archive.namelist())
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def _extract_verified(archive: zipfile.ZipFile, name: str, target: Path, size: int, sha256: str) -> None:
+    temporary = target.with_name(target.name + ".part")
+    with archive.open(name) as source, temporary.open("wb") as output:
+        shutil.copyfileobj(source, output, 1024 * 1024)
+    if not _matches(temporary, size, sha256):
+        temporary.unlink(missing_ok=True)
+        raise UpdatePackageError(f"{name} 校验失败，文件可能没下载完整，请重新下载")
+    os.replace(temporary, target)
+
+
+def import_update_package(package: Path) -> tuple[str, Path]:
+    """校验网盘下载的离线包，把新版 EXE 准备到更新目录，返回 (版本号, EXE 路径)。
+
+    清单必须带发布者签名（断网也能校验）。包里有完整 EXE 就直接用，否则找"从当前版本升级"的补丁合成。
+    之后与自动更新走同一套冒烟启动和替换流程。
+    """
+    try:
+        with zipfile.ZipFile(package) as archive:
+            names = set(archive.namelist())
+            manifest_names = [name for name in names if _PACKAGE_MANIFEST_RE.fullmatch(name)]
+            if len(manifest_names) != 1:
+                raise UpdatePackageError("这不是 DSTCamp 更新包")
+            manifest = json.loads(archive.read(manifest_names[0]).decode("utf-8"))
+            if not isinstance(manifest, dict) or not verify_manifest(manifest):
+                raise UpdatePackageError("更新包签名校验失败，可能被篡改，请从官方渠道重新下载")
+            version = str(manifest.get("version") or "")
+            if not is_newer_version(__version__, version):
+                raise UpdatePackageError(f"更新包版本 v{version} 不比当前版本 v{__version__} 新")
+            exe_name = f"DSTCamp-{version}.exe"
+            exe_info = manifest["files"][exe_name]
+            size, sha256 = int(exe_info["size"]), str(exe_info["sha256"])
+            target_dir = data_dir("updates") / version
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / exe_name
+            with _download_lock:
+                if _matches(target, size, sha256):
+                    return version, target
+                if exe_name in names:
+                    _extract_verified(archive, exe_name, target, size, sha256)
+                    return version, target
+                patch_info = (manifest.get("patches") or {}).get(__version__) or {}
+                patch_name = str(patch_info.get("name") or "")
+                if patch_name not in names:
+                    raise UpdatePackageError(f"这个补丁包里没有从当前版本 v{__version__} 升级的补丁，请下载完整包")
+                hpatchz = _hpatchz()
+                if hpatchz is None or _file_sha256(Path(sys.executable)) != str(patch_info.get("from_sha256")):
+                    raise UpdatePackageError("当前程序不是官方发布的原版文件，不能用补丁升级，请下载完整包")
+                patch_file = target_dir / patch_name
+                _extract_verified(archive, patch_name, patch_file, int(patch_info["size"]), str(patch_info["sha256"]))
+                try:
+                    if not _apply_patch(hpatchz, patch_file, target, size, sha256):
+                        raise UpdatePackageError("补丁合成失败，请下载完整包")
+                finally:
+                    _safe_unlink(patch_file)
+                return version, target
+    except zipfile.BadZipFile as exc:
+        raise UpdatePackageError("文件不是有效的 zip，可能没下载完整") from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise UpdatePackageError("更新包内容不完整") from exc
 
 
 def _helper_script() -> Path:

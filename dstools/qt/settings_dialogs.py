@@ -587,10 +587,12 @@ class CacheDirDialog(dialogs.Dialog):
 
 
 class ManualUpdateDialog(dialogs.Dialog):
-    """"关于"弹窗"手动更新"——展示三个下载地址，蓝奏云先复制提取码再跳转。"""
+    """"关于"弹窗"手动更新"——展示三个下载地址（蓝奏云先复制提取码再跳转），
+    以及"从文件导入"：选中网盘下载的离线包后记在 picked_package，由调用方安装。"""
 
     def __init__(self, parent):
         super().__init__(parent, t("about.manual_update_title"), 480)
+        self.picked_package: Path | None = None
         self.body.addWidget(self.text_label(t("about.manual_update_hint")))
         links = (
             (t("about.manual_update_baidu"), "https://pan.baidu.com/s/1hnyarybAGHjOsCCyUNlsmw?pwd=6666", None),
@@ -602,7 +604,17 @@ class ManualUpdateDialog(dialogs.Dialog):
             link.setFont(theme.font("FONT_SIZE_BASE"))
             link.linkActivated.connect(lambda _url, u=url, c=code: self._open_link(u, c))
             self.body.addWidget(link)
-        self.add_buttons()
+        import_btn = QPushButton(t("about.manual_update_import_btn"))
+        import_btn.clicked.connect(self._pick_package)
+        close_btn = dialogs.style_button(QPushButton(t("dlg.close_btn")), "secondary")
+        close_btn.clicked.connect(self.reject)
+        self.add_footer([import_btn], [close_btn])
+
+    def _pick_package(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(self, t("about.manual_update_import_pick"), "", "ZIP (*.zip)")
+        if path:
+            self.picked_package = Path(path)
+            self.accept()
 
     def _open_link(self, url: str, code: str | None) -> None:
         if code:
@@ -664,7 +676,7 @@ class AboutDialog(dialogs.Dialog):
         self._check_btn = QPushButton(t("about.check_update_btn"))
         self._check_btn.clicked.connect(self._check_update)
         manual_btn = QPushButton(t("about.manual_update_btn"))
-        manual_btn.clicked.connect(lambda: ManualUpdateDialog(self).exec())
+        manual_btn.clicked.connect(self._open_manual_update)
         close_btn = QPushButton(t("dlg.confirm_btn"))
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(self._check_btn)
@@ -672,6 +684,13 @@ class AboutDialog(dialogs.Dialog):
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
         self.body.addLayout(btn_row)
+
+    def _open_manual_update(self) -> None:
+        dialog = ManualUpdateDialog(self)
+        dialog.exec()
+        if dialog.picked_package is not None and hasattr(self._window, "import_offline_package"):
+            self.accept()  # 先关掉"关于"，导入过程的提示都挂在主窗口上
+            self._window.import_offline_package(dialog.picked_package)
 
     def _open_release_page(self, _url: str) -> None:
         if self._found_release is None:
