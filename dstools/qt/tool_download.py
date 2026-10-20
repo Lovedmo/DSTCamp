@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import webbrowser
 from pathlib import Path
 from typing import Callable
+
+from PySide6.QtGui import QGuiApplication
 
 from dstools.i18n import t
 from dstools.qt import dialogs
@@ -12,7 +15,7 @@ from dstools.shared import tool_store
 
 
 def download_tool_with_dialog(parent, relative: str, title: str, on_done: Callable[[Path], None]) -> None:
-    """后台下载 relative 登记的工具；失败时窗口留着，提示改用网盘工具包导入。"""
+    """后台下载 relative 登记的工具；失败时窗口留着，询问是否打开蓝奏云下载网盘工具包再导入。"""
     tool = tool_store.store_tool(relative)
     dialog = dialogs.LogDialog(parent, title)
     dialog.append(t("tools.download_start", name=tool.asset, size=f"{tool.size / 1e6:.1f}"), "section")
@@ -34,5 +37,10 @@ def download_tool_with_dialog(parent, relative: str, title: str, on_done: Callab
         dialog.append(t("tools.download_failed", error=exc), "result_error")
         dialog.append(t("tools.download_offline_hint", package=tool_store.TOOLS_PACKAGE_NAME), "note")
         dialog.finish()
+        if dialogs.ask_yes_no(dialog, title, t("tools.open_lanzou_confirm", password=tool_store.TOOLS_LANZOU_PASSWORD)):
+            # 先复制密码再跳转，免得用户在蓝奏页和程序之间来回找
+            QGuiApplication.clipboard().setText(tool_store.TOOLS_LANZOU_PASSWORD)
+            dialogs.show_toast(dialog, t("tools.lanzou_password_copied"))
+            webbrowser.open(tool_store.TOOLS_LANZOU_URL)
 
     run_async(lambda: tool_store.download_tool(relative, progress), finished, failed)

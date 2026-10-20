@@ -30,7 +30,9 @@ STRINGS = {
         "tools.download_start": "正在下载 {name}（约 {size} MB，只需下载一次）…",
         "tools.download_progress": "已下载 {percent}%",
         "tools.download_failed": "下载失败：{error}",
-        "tools.download_offline_hint": "可以在「关于 → 手动更新」里从网盘下载工具包 {package}，再点「从文件导入」。",
+        "tools.download_offline_hint": "可以从网盘下载工具包 {package}（「关于 → 手动更新」里的网盘也有），再在「关于 → 手动更新」里点「从文件导入」。",
+        "tools.open_lanzou_confirm": "下载失败。是否打开蓝奏云下载工具包？密码 {password} 会自动复制到剪贴板。\n\n下载后在「关于 → 手动更新」里点「从文件导入」即可。",
+        "tools.lanzou_password_copied": "密码已复制到剪贴板",
         "app.old_instance_title": "旧版本仍在运行",
         "app.old_instance_msg": "检测到旧版本 DSTCamp 仍在运行，其中有 {count} 个专服世界正在运行，无法自动安全关闭。\n\n请先在旧版本中关闭专服，再从托盘图标右键退出旧版本，然后重新打开新版本。",
         # 菜单
@@ -1712,7 +1714,9 @@ STRINGS = {
         "tools.download_start": "Downloading {name} (about {size} MB, only needed once)…",
         "tools.download_progress": "Downloaded {percent}%",
         "tools.download_failed": "Download failed: {error}",
-        "tools.download_offline_hint": "You can download the tools package {package} from a mirror in About -> Manual Update, then click Import from File.",
+        "tools.download_offline_hint": "You can download the tools package {package} from the cloud drive (also available from the mirrors in About -> Manual Update), then click Import from File in About -> Manual Update.",
+        "tools.open_lanzou_confirm": "Download failed. Open Lanzou to download the tools package? The password {password} will be copied to the clipboard.\n\nAfterwards, click Import from File in About -> Manual Update.",
+        "tools.lanzou_password_copied": "Password copied to clipboard",
         "app.old_instance_title": "Older Version Still Running",
         "app.old_instance_msg": "An older DSTCamp is still running with {count} dedicated server shard(s) and cannot be closed safely automatically.\n\nPlease stop the servers in the older version, exit it from the tray icon's right-click menu, then open this version again.",
         # 菜单
