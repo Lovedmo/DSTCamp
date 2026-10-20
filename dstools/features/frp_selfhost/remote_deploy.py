@@ -5,13 +5,13 @@
 
 坑：
 - 国内服务器访问 GitHub 很慢，amd64/arm64 直接 SFTP 推送打包的 frps，其他架构才让脚本自己下载；
-- frps 以 .gz 打包、现场解压流式上传，本机不落地 ELF 文件（裸文件每次启动解压到
+- frps 以 .xz 打包、现场解压流式上传，本机不落地 ELF 文件（裸文件每次启动解压到
   _MEI 临时目录、或落盘到临时文件，都会被杀软按 HackTool 特征秒隔离）。
 """
 
 from __future__ import annotations
 
-import gzip
+import lzma
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -195,8 +195,8 @@ def verify_key_login(
         client.close()
 
 
-def _bundled_frps_binary_gz_path(arch: str) -> Path:
-    return tool_binary_dir() / "frp_selfhost" / f"frps_linux_{arch}.gz"
+def _bundled_frps_binary_xz_path(arch: str) -> Path:
+    return tool_binary_dir() / "frp_selfhost" / f"frps_linux_{arch}.xz"
 
 
 def _detect_remote_arch(client: paramiko.SSHClient) -> str:
@@ -225,8 +225,8 @@ def _maybe_upload_frps_binary(client: paramiko.SSHClient, on_log: LogFn) -> str 
     if arch not in _BUNDLED_ARCHS:
         on_log(f"服务器架构（{arch or '未知'}）没有对应的本地打包二进制，改为让服务器自己下载。")
         return None
-    gz_path = _bundled_frps_binary_gz_path(arch)
-    if not gz_path.exists():
+    xz_path = _bundled_frps_binary_xz_path(arch)
+    if not xz_path.exists():
         return None
 
     remote_path = _cached_frps_binary_path(arch)
@@ -243,7 +243,7 @@ def _maybe_upload_frps_binary(client: paramiko.SSHClient, on_log: LogFn) -> str 
     import secrets
     tmp_path = f"/opt/dstcamp-frp/.frps_bin_upload_{secrets.token_hex(4)}"
     # 用 putfo 直接上传解压出的字节流：落盘到本地临时文件同样会被杀软按 frp 内容特征查杀
-    with gzip.open(gz_path, "rb") as fsrc:
+    with lzma.open(xz_path, "rb") as fsrc:
         sftp = client.open_sftp()
         try:
             sftp.putfo(fsrc, tmp_path)

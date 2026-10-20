@@ -17,8 +17,8 @@
                     lobby_accel_mihomo、lolia（OAuth 令牌）
 """
 
-import gzip
 import hashlib
+import lzma
 import os
 import secrets
 import sys
@@ -56,16 +56,16 @@ def tool_binary_dir() -> Path:
 def runtime_tool_path(relative: str | Path) -> Path:
     """返回长驻子进程可用的工具路径。
 
-    tools/ 中的可执行文件以 ``.gz`` 打包：onefile 每次启动都会把 tools/ 解压到新的 _MEI 临时目录，
-    裸 exe（尤其 frp 被杀软归为 HackTool）每次启动都会被隔离。所以优先读 ``.gz`` 现场解压，按内容
-    哈希落地到 data/runtime_tools（_MEI 目录随主程序退出回收，长驻进程不能用）；没有 ``.gz`` 才读裸文件。
-    源码/ZIP 版的裸文件存在时直接使用（仓库只提交了 .gz，源码模式同样要解压）。
+    tools/ 中的可执行文件以 ``.xz`` 打包（比 gzip 小约 25%）：onefile 每次启动都会把 tools/ 解压到新的
+    _MEI 临时目录，裸 exe（尤其 frp 被杀软归为 HackTool）每次启动都会被隔离。所以优先读 ``.xz`` 现场解压，
+    按内容哈希落地到 data/runtime_tools（_MEI 目录随主程序退出回收，长驻进程不能用）；没有 ``.xz`` 才读裸文件。
+    源码/ZIP 版的裸文件存在时直接使用（仓库只提交了 .xz，源码模式同样要解压）。
     """
     relative = Path(relative)
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError(f"工具路径必须相对 tools 目录：{relative}")
     source = tool_binary_dir() / relative
-    gz_source = source.with_name(source.name + ".gz")
+    xz_source = source.with_name(source.name + ".xz")
     bundled_root = Path(getattr(sys, "_MEIPASS", "")) / "tools"
     is_onefile_bundle = (
         getattr(sys, "frozen", False) and source.parent == bundled_root / relative.parent
@@ -73,9 +73,8 @@ def runtime_tool_path(relative: str | Path) -> Path:
     if source.is_file() and not is_onefile_bundle:
         return source
 
-    if gz_source.is_file():
-        with gzip.open(gz_source, "rb") as stream:
-            data = stream.read()
+    if xz_source.is_file():
+        data = lzma.decompress(xz_source.read_bytes())
     elif source.is_file():
         data = source.read_bytes()
     else:

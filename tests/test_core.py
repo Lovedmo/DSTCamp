@@ -870,31 +870,29 @@ def test_app_settings_toggles():
         assert stable_tool.parent.parent.parent == root / "data" / "runtime_tools"
         assert stable_tool.read_bytes() == b"frpc"
 
-        # 单文件版的 .gz 工具：真实压缩再解压，内容一致且落到哈希缓存目录，第二次命中缓存
-        import gzip
+        # 单文件版的 .xz 工具：真实压缩再解压，内容一致且落到哈希缓存目录，第二次命中缓存
+        import lzma
 
-        gz_bundled = root / "bundle" / "tools" / "frpc-gz" / "frpc.exe.gz"
-        gz_bundled.parent.mkdir(parents=True)
-        with gzip.open(gz_bundled, "wb") as stream:
-            stream.write(b"frpc-compressed-payload")
+        xz_bundled = root / "bundle" / "tools" / "frpc-xz" / "frpc.exe.xz"
+        xz_bundled.parent.mkdir(parents=True)
+        xz_bundled.write_bytes(lzma.compress(b"frpc-compressed-payload"))
         with (
             patch.object(sys, "frozen", True, create=True),
             patch.object(sys, "_MEIPASS", str(root / "bundle"), create=True),
         ):
-            gz_stable_tool = runtime_tool_path("frpc-gz/frpc.exe")
-            mtime_first = gz_stable_tool.stat().st_mtime_ns
-            gz_stable_tool_again = runtime_tool_path("frpc-gz/frpc.exe")
-        assert gz_stable_tool.parent.parent.parent == root / "data" / "runtime_tools"
-        assert gz_stable_tool.read_bytes() == b"frpc-compressed-payload"
-        assert gz_stable_tool_again == gz_stable_tool
-        assert gz_stable_tool_again.stat().st_mtime_ns == mtime_first
+            xz_stable_tool = runtime_tool_path("frpc-xz/frpc.exe")
+            mtime_first = xz_stable_tool.stat().st_mtime_ns
+            xz_stable_tool_again = runtime_tool_path("frpc-xz/frpc.exe")
+        assert xz_stable_tool.parent.parent.parent == root / "data" / "runtime_tools"
+        assert xz_stable_tool.read_bytes() == b"frpc-compressed-payload"
+        assert xz_stable_tool_again == xz_stable_tool
+        assert xz_stable_tool_again.stat().st_mtime_ns == mtime_first
 
-        # 源码模式下仓库只有 .gz 没有裸文件时也要解压落地（曾因此误报"客户端文件缺失"）
+        # 源码模式下仓库只有 .xz 没有裸文件时也要解压落地（曾因此误报"客户端文件缺失"）
         source_mode_tools = root / "source_mode_tools"
-        gz_only = source_mode_tools / "frpc-src" / "frpc.exe.gz"
-        gz_only.parent.mkdir(parents=True)
-        with gzip.open(gz_only, "wb") as stream:
-            stream.write(b"source-mode-frpc-payload")
+        xz_only = source_mode_tools / "frpc-src" / "frpc.exe.xz"
+        xz_only.parent.mkdir(parents=True)
+        xz_only.write_bytes(lzma.compress(b"source-mode-frpc-payload"))
         with (
             patch.object(sys, "frozen", False, create=True),
             patch.object(
