@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import logging
 import os
 import re
 import shutil
@@ -14,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from dstools.shared.resource_paths import data_dir
+from dstools.shared.resource_paths import data_dir, tool_binary_dir
 from dstools.shared.ssl_context import default_ssl_context
 from dstools import __version__
 from dstools.shared.update_check import UpdateRelease, is_newer_version
@@ -35,24 +36,29 @@ _UPDATE_LOG_NAME = "apply_update.log"
 # 与 _helper_script() 里的路径保持一致；清理下载缓存目录时需要跳过它。
 _HELPER_SCRIPT_NAME = "apply_update.ps1"
 _download_lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 
 def _hidden_staged_name(stem: str, pid: int) -> str:
     return f".{stem}.update-{pid}.exe"
 
 
-def _matches_release(path: Path, release: UpdateRelease) -> bool:
-    """已下载的文件长度和 SHA-256 都与清单一致时才可复用。"""
+def _matches(path: Path, size: int, sha256: str) -> bool:
+    """文件长度和 SHA-256 都与清单一致时才可复用。"""
     try:
-        if not path.is_file() or path.stat().st_size != release.size:
+        if not path.is_file() or path.stat().st_size != size:
             return False
-        digest = hashlib.sha256()
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
+        return _file_sha256(path) == sha256.lower()
     except OSError:
         return False
-    return digest.hexdigest().lower() == release.sha256.lower()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().lower()
 
 
 def _download_to_part(url: str, part: Path, total: int, progress: ProgressCallback | None) -> None:
@@ -92,10 +98,65 @@ def _download_to_part(url: str, part: Path, total: int, progress: ProgressCallba
         raise OSError(f"下载大小不符：{downloaded} != {total}")
 
 
-def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:
-    """下载到持久更新目录，并严格校验长度和 SHA-256；之前已下载且校验一致时直接复用。
+def _download_verified(
+    urls: tuple[str, ...], target: Path, size: int, sha256: str, progress: ProgressCallback | None
+) -> None:
+    """依次尝试各下载源，下到 target 并校验长度和 SHA-256；半截文件在源之间和程序重启后都能续传。"""
+    temporary = target.with_name(target.name + ".part")
+    last_error: Exception = OSError("没有可用的下载地址")
+    for url in urls:
+        try:
+            _download_to_part(url, temporary, size, progress)
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+            continue
+        if _matches(temporary, size, sha256):
+            os.replace(temporary, target)
+            return
+        # 内容不对（含续传拼出的坏文件）：丢掉半截，换下一个源从头下
+        temporary.unlink(missing_ok=True)
+        last_error = OSError("下载文件 SHA-256 校验失败")
+    raise last_error
 
-    主下载源失败时依次换备用源（同一版本、同一份文件），半截文件在源之间和程序重启后都能续传。
+
+def _build_from_patch(release: UpdateRelease, target: Path, progress: ProgressCallback | None) -> bool:
+    """用补丁在本地合成新版 EXE，成功返回 True；不适用或任何一步失败返回 False，由调用方改下整包。
+
+    补丁基于正式发布的旧版 EXE，只有正在运行的 EXE 与 from_sha256 一致时才用。
+    """
+    patch = release.patch
+    if patch is None or not getattr(sys, "frozen", False):
+        return False
+    current = Path(sys.executable)
+    hpatchz = tool_binary_dir() / "hdiffpatch" / "hpatchz.exe"
+    try:
+        if not hpatchz.is_file() or _file_sha256(current) != patch.from_sha256:
+            return False
+        patch_file = target.with_name(f"DSTCamp-{__version__}-to-{release.version}.hdiff")
+        if not _matches(patch_file, patch.size, patch.sha256):
+            _download_verified((patch.url, *patch.fallback_urls), patch_file, patch.size, patch.sha256, progress)
+        built = target.with_name(target.name + ".patched")
+        result = subprocess.run(
+            [str(hpatchz), "-f", str(current), str(patch_file), str(built)],
+            capture_output=True, text=True, timeout=300, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode == 0 and _matches(built, release.size, release.sha256):
+            os.replace(built, target)
+            _safe_unlink(patch_file)
+            return True
+        _logger.warning("补丁合成失败（退出码 %s）：%s", result.returncode, (result.stdout + result.stderr).strip())
+        _safe_unlink(built)
+        _safe_unlink(patch_file)  # 补丁本身校验过，合成仍失败就别再复用它
+    except (OSError, http.client.HTTPException, subprocess.SubprocessError):
+        _logger.warning("补丁更新不可用，改为下载完整安装包", exc_info=True)
+    return False
+
+
+def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:
+    """准备新版 EXE 到持久更新目录，严格校验长度和 SHA-256；之前已准备好时直接复用。
+
+    优先下载小补丁在本地合成（通常几 MB），不适用或失败时下载整包。主下载源失败时依次换备用源。
     后台预下载与"立即更新"可能同时调用，用锁串行：后到的等前一个结束后直接复用结果。
     """
     if not release.can_auto_update:
@@ -103,26 +164,16 @@ def download_update(release: UpdateRelease, progress: ProgressCallback | None = 
     target_dir = data_dir("updates") / release.version
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"DSTCamp-{release.version}.exe"
-    temporary = target.with_suffix(".exe.part")
     with _download_lock:
-        if _matches_release(target, release):
+        if _matches(target, release.size, release.sha256):
             if progress is not None:
                 progress(release.size, release.size)
             return target
-        last_error: Exception = OSError("没有可用的下载地址")
-        for url in (release.exe_url, *release.fallback_urls):
-            try:
-                _download_to_part(url, temporary, release.size, progress)
-            except (OSError, http.client.HTTPException) as exc:
-                last_error = exc
-                continue
-            if _matches_release(temporary, release):
-                os.replace(temporary, target)
-                return target
-            # 内容不对（含续传拼出的坏文件）：丢掉半截，换下一个源从头下
-            temporary.unlink(missing_ok=True)
-            last_error = OSError("下载文件 SHA-256 校验失败")
-        raise last_error
+        if not _build_from_patch(release, target, progress):
+            _download_verified(
+                (release.exe_url, *release.fallback_urls), target, release.size, release.sha256, progress
+            )
+        return target
 
 
 def _helper_script() -> Path:

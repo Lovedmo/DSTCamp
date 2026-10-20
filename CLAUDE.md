@@ -43,6 +43,7 @@ python scripts/build_exe.py
 - 测试不用 pytest/unittest 框架：`run_all.py` 自动发现 `tests/test_*.py` 并在隔离子进程执行，每个文件以 `run(globals())`（`tests/_harness.py`）按定义顺序运行全部 `test_*`。只测 Qt 版与纯逻辑模块；测试越少越好，不测静态数据、简单读写往返和实现细节字符串。
 - 版本号以 `pyproject.toml` 与 `dstools/__init__.py` 为准，发布时同步两处，文档不写死当前版本。
 - 构建只收固定资源白名单、在 `build/` 暂存，禁止包含缓存、持久数据、安全材料和 `reference/`。打包后实际启动 EXE；冒烟测试不能替代 GUI、Steam、frpc 或游戏内验证。验证 EXE 与 `sha256.json` 后再提交、推送、打 `vX.Y.Z` 标签并创建 Release。
+- 发布构建用 `python scripts/build_exe.py --patch-from <近几个正式版的 DSTCamp-X.Y.Z.exe>` 生成增量补丁（旧版 EXE 不能放在 `release/` 里，构建会清空它），`.hdiff` 与 EXE、`sha256.json` 一起上传为 Release 附件；没有对应补丁的旧版客户端自动下载整包。
 
 ## 更新日志规则
 

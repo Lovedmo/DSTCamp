@@ -11,8 +11,9 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from dstools import __version__
 from dstools.shared import auto_update, update_check
-from dstools.shared.update_check import UpdateRelease
+from dstools.shared.update_check import UpdatePatch, UpdateRelease
 from _harness import run  # noqa: E402
 
 
@@ -33,6 +34,10 @@ def test_release_manifest_enables_auto_update() -> None:
         "files": {
             "DSTCamp-1.4.0.exe": {"size": 4, "sha256": "a" * 64},
         },
+        "patches": {
+            __version__: {"name": "p.hdiff", "size": 2, "sha256": "b" * 64, "from_sha256": "c" * 64},
+            "0.0.1": {"name": "old.hdiff", "size": 2, "sha256": "d" * 64, "from_sha256": "e" * 64},
+        },
     }
     release = {
         "tag_name": "v1.4.0",
@@ -40,12 +45,15 @@ def test_release_manifest_enables_auto_update() -> None:
         "assets": [
             {"name": "DSTCamp-1.4.0.exe", "browser_download_url": "https://example/exe"},
             {"name": "DSTCamp-1.4.0.sha256.json", "browser_download_url": "https://example/manifest"},
+            {"name": "p.hdiff", "browser_download_url": "https://example/patch"},
         ],
     }
     with patch.object(update_check, "_request_json", return_value=manifest):
         parsed = update_check._parse_release(release, "gitee")
     assert parsed is not None and parsed.can_auto_update
     assert parsed.sha256 == "a" * 64 and parsed.size == 4
+    # 只取以当前运行版本为起点的补丁
+    assert parsed.patch == UpdatePatch("https://example/patch", 2, "b" * 64, "c" * 64)
 
 
 def test_download_requires_matching_hash_and_size() -> None:
@@ -124,6 +132,47 @@ def test_download_resumes_and_falls_back_to_mirror() -> None:
             auto_update.urllib.request, "urlopen", side_effect=lambda *_a, **_k: _Response(payload)
         ):
             assert auto_update.download_update(release).read_bytes() == payload
+
+
+def test_patch_update_builds_exe_locally() -> None:
+    """本机 EXE 与补丁起点一致时只下补丁并用真实 hpatchz 合成；不一致时不下补丁，直接下整包。"""
+    tool_dir = Path(__file__).resolve().parents[1] / "tools"
+    old = bytes(range(256)) * 400
+    new = old[:50000] + b"new-version-code" + old[50000:]
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        old_exe, new_exe, patch_file = root / "old.exe", root / "new.exe", root / "p.hdiff"
+        old_exe.write_bytes(old)
+        new_exe.write_bytes(new)
+        subprocess.run([str(tool_dir / "hdiffpatch" / "hdiffz.exe"), "-f", str(old_exe), str(new_exe),
+                        str(patch_file)], check=True, capture_output=True)
+        patch_bytes = patch_file.read_bytes()
+        update_patch = UpdatePatch("https://example/patch", len(patch_bytes),
+                                   hashlib.sha256(patch_bytes).hexdigest(), hashlib.sha256(old).hexdigest())
+        release = UpdateRelease("999.0.0", "https://example/release", "gitee", "https://example/exe",
+                                hashlib.sha256(new).hexdigest(), len(new), patch=update_patch)
+        requested = []
+
+        def urlopen(request, **_kwargs):
+            requested.append(request.full_url)
+            return _Response(patch_bytes if request.full_url == update_patch.url else new)
+
+        updates = root / "updates"
+        with (
+            patch.object(auto_update.sys, "frozen", True, create=True),
+            patch.object(auto_update.sys, "executable", str(old_exe)),
+            patch.object(auto_update, "data_dir", return_value=updates),
+            patch.object(auto_update, "tool_binary_dir", return_value=tool_dir),
+            patch.object(auto_update.urllib.request, "urlopen", side_effect=urlopen),
+        ):
+            assert auto_update.download_update(release).read_bytes() == new
+            assert requested == [update_patch.url]
+
+            requested.clear()
+            (updates / "999.0.0" / "DSTCamp-999.0.0.exe").unlink()
+            old_exe.write_bytes(b"user-built-exe")
+            assert auto_update.download_update(release).read_bytes() == new
+            assert requested == [release.exe_url]
 
 
 def test_launch_helper_stages_on_exe_volume() -> None:

@@ -1,9 +1,15 @@
-"""构建 DSTCamp 单文件 EXE（内嵌 tools/ 与 icons/），并执行产物冒烟测试。"""
+"""构建 DSTCamp 单文件 EXE（内嵌 tools/ 与 icons/），并执行产物冒烟测试。
+
+用 ``--patch-from 旧版EXE ...`` 为这些正式发布过的旧版各生成一个增量补丁（HDiffPatch），
+一并写进 sha256 清单，旧版客户端自动更新时只需下载补丁。
+"""
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +29,8 @@ TOOL_FILES = (
     "frp_selfhost/frps_linux_amd64.xz",
     "frp_selfhost/frps_linux_arm64.xz",
     "frpc-sakura/sakura-frpc.exe.xz",
+    "hdiffpatch/LICENSE",
+    "hdiffpatch/hpatchz.exe",  # 客户端合成增量补丁
     "ktools/CORE_RL_Magick++_.dll",
     "ktools/CORE_RL_bzlib_.dll",
     "ktools/CORE_RL_glib_.dll",
@@ -42,6 +50,11 @@ TOOL_FILES = (
     "steamcmd/LICENSE.txt",
     "steamcmd/steamcmd.exe.gz",
     "vcredist/VC++ 2013 x86.exe",
+)
+
+# tools/ 里只在构建时用、不打进 EXE 的工具
+BUILD_ONLY_TOOL_FILES = (
+    "hdiffpatch/hdiffz.exe",  # 生成增量补丁
 )
 
 ICON_PATTERNS = {
@@ -99,16 +112,44 @@ def _stage_icons(project_root: Path, cache_root: Path) -> Path:
     return target_root
 
 
+def _file_info(path: Path) -> dict:
+    return {"size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def _make_patch(project_root: Path, old_exe: Path, new_exe: Path, version: str) -> tuple[str, dict]:
+    """生成从旧版到新版的补丁，并实际合成一遍校验结果与新版逐字节一致。返回 (旧版本号, 清单条目)。"""
+    match = re.fullmatch(r"DSTCamp-(\d+(?:\.\d+)+)\.exe", old_exe.name)
+    if not match:
+        raise SystemExit(f"--patch-from 只接受正式发布的 DSTCamp-版本号.exe：{old_exe}")
+    old_version = match.group(1)
+    tool_dir = project_root / "tools" / "hdiffpatch"
+    patch = new_exe.with_name(f"DSTCamp-{old_version}-to-{version}.hdiff")
+    subprocess.run(
+        [str(tool_dir / "hdiffz.exe"), "-m-6", "-SD", "-c-lzma2-9-16m", "-f",
+         str(old_exe), str(new_exe), str(patch)],
+        check=True, capture_output=True,
+    )
+    rebuilt = patch.with_suffix(".check.exe")
+    try:
+        subprocess.run([str(tool_dir / "hpatchz.exe"), "-f", str(old_exe), str(patch), str(rebuilt)],
+                       check=True, capture_output=True)
+        if _file_info(rebuilt) != _file_info(new_exe):
+            raise RuntimeError(f"补丁合成结果与新版不一致：{patch.name}")
+    finally:
+        rebuilt.unlink(missing_ok=True)
+    entry = {"name": patch.name, **_file_info(patch), "from_sha256": _file_info(old_exe)["sha256"]}
+    return old_version, entry
+
+
 def _write_sha256_manifest(
-    manifest_path: Path, version: str, artifacts: tuple[Path, ...]
+    manifest_path: Path, version: str, artifacts: tuple[Path, ...], patches: dict[str, dict] | None = None
 ) -> None:
-    """为自动更新写入可复核的文件大小与 SHA-256 清单。"""
+    """为自动更新写入可复核的文件大小与 SHA-256 清单；patches 按旧版本号列出可用补丁。"""
     manifest = {"version": version, "files": {}}
     for artifact in artifacts:
-        manifest["files"][artifact.name] = {
-            "size": artifact.stat().st_size,
-            "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
-        }
+        manifest["files"][artifact.name] = _file_info(artifact)
+    if patches:
+        manifest["patches"] = patches
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -203,7 +244,13 @@ exe = EXE(
 """
 
 
-def build() -> None:
+def build(patch_from: list[Path]) -> None:
+    release_dir = Path(__file__).resolve().parents[1] / "release"
+    for old_exe in patch_from:
+        if not old_exe.is_file():
+            raise SystemExit(f"找不到旧版 EXE：{old_exe}")
+        if old_exe.resolve().is_relative_to(release_dir):
+            raise SystemExit(f"release/ 构建前会被清空，请先把旧版 EXE 移到别处：{old_exe}")
     try:
         import PyInstaller.__main__
     except ImportError as exc:
@@ -256,12 +303,19 @@ def build() -> None:
     onefile_exe = dist_root / f"{exe_name}.exe"
     _run_smoke_test(onefile_exe)
 
+    patches = dict(_make_patch(project_root, old_exe.resolve(), onefile_exe, __version__)
+                   for old_exe in patch_from)
     manifest_path = dist_root / f"{exe_name}.sha256.json"
-    _write_sha256_manifest(manifest_path, __version__, (onefile_exe,))
+    _write_sha256_manifest(manifest_path, __version__, (onefile_exe,), patches)
+    for old_version, entry in patches.items():
+        print(f"增量补丁：{old_version} -> {__version__}  {entry['name']}（{entry['size'] / 1e6:.1f} MB）")
 
     print(f"构建及冒烟测试完成：{onefile_exe}")
     print(f"更新校验清单：{manifest_path}")
 
 
 if __name__ == "__main__":
-    build()
+    parser = argparse.ArgumentParser(description="构建 DSTCamp 单文件 EXE")
+    parser.add_argument("--patch-from", nargs="*", type=Path, default=[],
+                        help="正式发布过的旧版 EXE（文件名须为 DSTCamp-版本号.exe），为每个生成增量补丁")
+    build(parser.parse_args().patch_from)

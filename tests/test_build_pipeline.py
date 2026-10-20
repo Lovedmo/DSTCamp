@@ -19,7 +19,7 @@ def test_fixed_resource_layout_matches_build_manifest() -> None:
         for path in (PROJECT_ROOT / "tools").rglob("*")
         if path.is_file()
     }
-    assert actual_tools == set(build_exe.TOOL_FILES)
+    assert actual_tools == set(build_exe.TOOL_FILES) | set(build_exe.BUILD_ONLY_TOOL_FILES)
 
     for relative in build_exe.REQUIRED_ICON_FILES:
         assert (PROJECT_ROOT / "icons" / relative).is_file(), relative

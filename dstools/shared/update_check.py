@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
+from dstools import __version__
 from dstools.shared.ssl_context import default_ssl_context
 
 _TIMEOUT = 8
@@ -30,6 +31,17 @@ def _release_sources() -> tuple[tuple[str, str], ...]:
 
 
 @dataclass(frozen=True)
+class UpdatePatch:
+    """从当前运行版本升级到新版本的二进制补丁（HDiffPatch），合成结果仍按新版 EXE 的 sha256 校验。"""
+
+    url: str
+    size: int
+    sha256: str
+    from_sha256: str  # 补丁基于的旧版 EXE；本机 EXE 内容不同就不用补丁，直接下载整包
+    fallback_urls: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class UpdateRelease:
     version: str
     page_url: str
@@ -39,6 +51,7 @@ class UpdateRelease:
     size: int = 0
     notes: str = ""  # Release 说明（Markdown），已去掉末尾的下载提示
     fallback_urls: tuple[str, ...] = ()  # 另一源上同版本 EXE 的地址，主源下载失败时换用（按 sha256 校验）
+    patch: UpdatePatch | None = None  # 清单里有"从当前版本升级"的补丁时才有
 
     @property
     def can_auto_update(self) -> bool:
@@ -77,6 +90,7 @@ def _parse_release(data: dict, source: str) -> UpdateRelease | None:
     exe_url = assets.get(exe_name, "")
     sha256 = ""
     size = 0
+    patch = None
     manifest_url = assets.get(manifest_name, "")
     if exe_url and manifest_url:
         try:
@@ -85,15 +99,31 @@ def _parse_release(data: dict, source: str) -> UpdateRelease | None:
             if str(manifest.get("version") or "").lstrip("v") == version:
                 sha256 = str(file_info.get("sha256") or "").lower()
                 size = int(file_info.get("size") or 0)
-                if len(sha256) != 64 or any(
-                    char not in "0123456789abcdef" for char in sha256
-                ):
+                if not _is_sha256(sha256):
                     sha256 = ""
                     size = 0
+                else:
+                    patch = _parse_patch(manifest, assets)
         except (urllib.error.URLError, TimeoutError, ValueError, TypeError, OSError):
             pass
     notes = _strip_download_footer(str(data.get("body") or ""))
-    return UpdateRelease(version, page_url, source, exe_url, sha256, size, notes)
+    return UpdateRelease(version, page_url, source, exe_url, sha256, size, notes, patch=patch)
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def _parse_patch(manifest: dict, assets: dict[str, str]) -> UpdatePatch | None:
+    """取清单 patches 里以当前运行版本为起点的补丁；字段不全或附件不存在时返回 None（走整包）。"""
+    info = (manifest.get("patches") or {}).get(__version__) or {}
+    url = assets.get(str(info.get("name") or ""), "")
+    sha256 = str(info.get("sha256") or "").lower()
+    from_sha256 = str(info.get("from_sha256") or "").lower()
+    size = int(info.get("size") or 0)
+    if not url or size <= 0 or not _is_sha256(sha256) or not _is_sha256(from_sha256):
+        return None
+    return UpdatePatch(url, size, sha256, from_sha256)
 
 
 def _strip_download_footer(body: str) -> str:
@@ -128,12 +158,16 @@ def check_latest_release() -> UpdateRelease | None:
             item.source == "gitee",
         ),
     )
-    mirrors = tuple(
-        item.exe_url for item in releases
-        if item is not best and item.version == best.version
-        and item.exe_url and item.exe_url != best.exe_url
-    )
-    return dataclasses.replace(best, fallback_urls=mirrors) if mirrors else best
+    others = [item for item in releases if item is not best and item.version == best.version]
+    mirrors = tuple(item.exe_url for item in others if item.exe_url and item.exe_url != best.exe_url)
+    patch = best.patch
+    if patch is not None:
+        patch_mirrors = tuple(
+            item.patch.url for item in others
+            if item.patch is not None and item.patch.sha256 == patch.sha256 and item.patch.url != patch.url
+        )
+        patch = dataclasses.replace(patch, fallback_urls=patch_mirrors)
+    return dataclasses.replace(best, fallback_urls=mirrors, patch=patch)
 
 
 
