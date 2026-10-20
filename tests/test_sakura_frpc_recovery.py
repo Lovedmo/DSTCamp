@@ -1,4 +1,4 @@
-"""樱花 frpc 缺失诊断和配置前预检。"""
+"""frpc 缺失/被安全软件拦截的诊断（樱花、自建与 Lolia）和配置前预检。"""
 
 import tempfile
 from pathlib import Path
@@ -69,6 +69,27 @@ def test_enable_mapping_aborts_before_remote_changes_when_client_is_missing() ->
         sakura_page._SakuraMappingPanel._enable_mapping(page)
     list_tunnels.assert_not_called()
     progress.assert_not_called()
+
+
+def test_selfhost_frpc_marks_security_blocks() -> None:
+    """文件不见了、或系统以"含病毒"拒绝执行（WinError 225）算被拦截；其它启动错误不算。"""
+    from dstools.features.frp_selfhost import client
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        missing = client.FrpcProcess(root, root / "frpc.exe", root / "frpc.toml")
+        missing.start()
+        assert missing.status == client.FrpcStatus.CRASHED and missing.blocked
+
+        exe = root / "frpc.exe"
+        exe.write_bytes(b"frpc")
+        virus = OSError("含病毒")
+        virus.winerror = 225
+        for error, blocked in ((virus, True), (OSError("其它错误"), False)):
+            proc = client.FrpcProcess(root, exe, root / "frpc.toml")
+            with patch.object(client.subprocess, "Popen", side_effect=error):
+                proc.start()
+            assert proc.status == client.FrpcStatus.CRASHED and proc.blocked is blocked
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
 _SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
+_SECURITY_BLOCK_WINERROR = 225  # "操作无法成功完成，因为文件包含病毒或潜在的垃圾软件"
 
 
 def _pid_exists(pid: int) -> bool:
@@ -123,6 +124,7 @@ class FrpcProcess:
         self.status = FrpcStatus.RUNNING if adopted_pid is not None else FrpcStatus.STARTING
         self.proc: subprocess.Popen | None = None
         self.error: str | None = None
+        self.blocked = False  # 文件被安全软件隔离或拦截，界面据此引导添加 Defender 排除项
         self._adopted_pid = adopted_pid
         self._out_queue: "queue.Queue[str]" = queue.Queue()
 
@@ -131,6 +133,7 @@ class FrpcProcess:
         if not self.frpc_exe.exists():
             self.status = FrpcStatus.CRASHED
             self.error = "frpc.exe 不存在（可能被杀毒软件隔离或已手动删除）"
+            self.blocked = True
             return
         try:
             self.proc = subprocess.Popen(
@@ -143,6 +146,8 @@ class FrpcProcess:
         except OSError as exc:
             self.status = FrpcStatus.CRASHED
             self.error = f"启动失败：{exc}"
+            # 检查后到启动前被删（FileNotFoundError），或系统以"文件包含病毒"拒绝执行（WinError 225）
+            self.blocked = isinstance(exc, FileNotFoundError) or getattr(exc, "winerror", None) == _SECURITY_BLOCK_WINERROR
             return
         self.status = FrpcStatus.RUNNING
         threading.Thread(target=self._read_loop, daemon=True).start()

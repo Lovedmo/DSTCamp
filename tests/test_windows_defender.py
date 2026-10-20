@@ -57,17 +57,17 @@ def test_standard_install_returns_exe_runtime_tools_and_temp_wildcard() -> None:
         root = Path(tmp)
         executable = root / "DSTCamp.exe"
         executable.touch()
-        runtime_tools_dir = root / "runtime_tools_stub"
         with patch.object(defender.sys, "platform", "win32"), patch.object(
             defender.sys, "frozen", True, create=True
         ), patch.object(defender.sys, "executable", str(executable)), patch.object(
-            defender, "data_dir", return_value=runtime_tools_dir
+            defender, "data_dir", side_effect=lambda name: root / "data" / name
         ):
             targets = defender.resolve_defender_targets()
-    assert [t.kind for t in targets] == ["file", "runtime_tools", "temp_wildcard"]
+    assert [t.kind for t in targets] == ["file", "runtime_tools", "on_demand_tools", "temp_wildcard"]
     assert targets[0].path == executable.resolve()
-    assert targets[1].path == runtime_tools_dir
-    assert targets[2].path == Path(tempfile.gettempdir()) / "_MEI*"
+    assert targets[1].path == root / "data" / "runtime_tools"
+    assert targets[2].path == root / "data" / "tools"
+    assert targets[3].path == Path(tempfile.gettempdir()) / "_MEI*"
 
 
 def test_broad_folders_are_never_safe_exclusion_targets() -> None:

@@ -293,6 +293,7 @@ _DEFENDER_TARGET_LABEL_KEYS = {
     "file": "settings.defender_target_file",
     "legacy_zip_folder": "settings.defender_target_legacy_zip_folder",
     "runtime_tools": "settings.defender_target_runtime_tools",
+    "on_demand_tools": "settings.defender_target_on_demand_tools",
     "temp_wildcard": "settings.defender_target_temp_wildcard",
 }
 

@@ -393,6 +393,7 @@ class SelfHostPanel(QWidget):
         layout.addWidget(self._frpc_row)
         self._frpc_row.setVisible(False)
         self._frpc_shown_running = False
+        self._frpc_shown_blocked = False  # 状态行正显示"被安全软件拦截"，按钮此时是"处理拦截"
         # frpc 会被本地服务器页的停服流程停掉、也可能自己退出，状态行要定时跟上实际状态
         self._frpc_timer = QTimer(self, interval=1000)
         self._frpc_timer.timeout.connect(self._tick_frpc_row)
@@ -951,6 +952,10 @@ class SelfHostPanel(QWidget):
             return proc.error
         return None
 
+    def _frpc_blocked(self, cluster) -> bool:
+        proc = self.frpc.get(cluster.path)
+        return proc is not None and proc.status == FrpcStatus.CRASHED and proc.blocked
+
     @staticmethod
     def _frpc_status_text(running: bool) -> str:
         return t("selfhost.frpc_status_running" if running else "selfhost.frpc_status_stopped")
@@ -959,9 +964,12 @@ class SelfHostPanel(QWidget):
         cluster = self._current_cluster
         running = bool(cluster) and self._tracked_running(cluster)
         error = self._frpc_failed_error(cluster) if cluster and not self._scanning else None
+        self._frpc_shown_blocked = bool(error) and self._frpc_blocked(cluster)
         self._frpc_toggle_btn.setEnabled(not self._scanning)
         if self._scanning:
             text, color = t("selfhost.frpc_status_checking"), theme.hex("TEXT_MUTED")
+        elif self._frpc_shown_blocked:
+            text, color = t("selfhost.frpc_status_blocked"), theme.hex("ERROR")
         elif error:
             text, color = t("selfhost.frpc_status_failed"), theme.hex("ERROR")
         elif running:
@@ -972,12 +980,15 @@ class SelfHostPanel(QWidget):
         self._frpc_status_label.setText(text)
         self._frpc_status_label.setStyleSheet(f"color: {color};")
         self._frpc_status_label.setToolTip(error or "")
-        self._frpc_toggle_btn.setText(t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
+        self._frpc_toggle_btn.setText(t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
+                                      else t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
 
     def _on_frpc_toggle(self) -> None:
         cluster = self._current_cluster
         if not cluster or self._scanning:
             return
+        if self._frpc_shown_blocked:
+            self.window().show_defender_dialog()  # 关窗后接着按"启动"处理，排除项生效时就能起来
         running = self._tracked_running(cluster)
         if running != self._frpc_shown_running:
             # 显示的状态已过期（如 frpc 已随停服结束），先刷新，不能反过来执行相反的操作

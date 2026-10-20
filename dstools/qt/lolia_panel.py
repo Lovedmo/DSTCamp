@@ -196,6 +196,7 @@ class LoliaPanel(QWidget):
         shards_layout.addWidget(self._frpc_row)
         self._frpc_row.setVisible(False)
         self._frpc_shown_running = False
+        self._frpc_shown_blocked = False  # 状态行正显示"被安全软件拦截"，按钮此时是"处理拦截"
         # frpc 可能随停服结束或自己退出，状态行定时跟上实际状态，只在变化时刷新
         self._frpc_timer = QTimer(self, interval=1000)
         self._frpc_timer.timeout.connect(self._tick_frpc_row)
@@ -593,14 +594,24 @@ class LoliaPanel(QWidget):
                 return f"{shard.name}: {proc.error}"
         return None
 
+    def _frpc_blocked(self, cluster) -> bool:
+        return any(
+            (proc := self.frpc.get(self._proc_key(cluster, shard))) is not None
+            and proc.status == FrpcStatus.CRASHED and proc.blocked
+            for shard in self._mapped_shards(cluster)
+        )
+
     def _refresh_frpc_row(self) -> None:
         cluster = self._current_cluster
         mapped = self._mapped_shards(cluster) if cluster else []
         running = bool(mapped) and all(self._shard_running(cluster, s, scan=False) for s in mapped)
         error = self._frpc_failed_error(cluster) if cluster and not running and not self._scanning else None
+        self._frpc_shown_blocked = bool(error) and self._frpc_blocked(cluster)
         self._frpc_toggle_btn.setEnabled(not self._scanning)
         if self._scanning:
             text, color = t("lolia.frpc_status_checking"), theme.hex("TEXT_MUTED")
+        elif self._frpc_shown_blocked:
+            text, color = t("selfhost.frpc_status_blocked"), theme.hex("ERROR")
         elif error:
             text, color = t("selfhost.frpc_status_failed"), theme.hex("ERROR")
         elif running:
@@ -613,12 +624,15 @@ class LoliaPanel(QWidget):
         self._frpc_status_label.setToolTip(error or "")
         if error:
             self._status_label.setText(error)  # 失败原因直接显示出来，不只藏在悬停提示里
-        self._frpc_toggle_btn.setText(t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
+        self._frpc_toggle_btn.setText(t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
+                                      else t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
 
     def _on_frpc_toggle(self) -> None:
         cluster = self._current_cluster
         if not cluster or self._scanning:
             return
+        if self._frpc_shown_blocked:
+            self.window().show_defender_dialog()  # 关窗后接着按"启动"处理，排除项生效时就能起来
         mapped = self._mapped_shards(cluster)
         running = bool(mapped) and all(self._shard_running(cluster, s, scan=False) for s in mapped)
         if running != self._frpc_shown_running:

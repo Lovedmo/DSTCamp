@@ -55,7 +55,8 @@ def resolve_defender_targets() -> list[DefenderTarget]:
     """返回需要排除的目标；只有冻结发布版才有，源码模式绝不排除 Python 或仓库目录。
 
     存量 ZIP 版排除整个解压目录即可；单文件版需要主 EXE、runtime_tools（见
-    resource_paths.runtime_tool_path）和每次启动名字都不同的 ``_MEI*`` 临时目录。
+    resource_paths.runtime_tool_path）、按需下载的工具 data/tools（见 tool_store.py）
+    和每次启动名字都不同的 ``_MEI*`` 临时目录。
     """
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         return []
@@ -65,6 +66,7 @@ def resolve_defender_targets() -> list[DefenderTarget]:
     return [
         DefenderTarget(executable, "file"),
         DefenderTarget(data_dir("runtime_tools"), "runtime_tools"),
+        DefenderTarget(data_dir("tools"), "on_demand_tools"),
         DefenderTarget(Path(tempfile.gettempdir()) / "_MEI*", "temp_wildcard"),
     ]
 
