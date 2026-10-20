@@ -83,7 +83,8 @@ python scripts/build_exe.py
 - Mod 目录联接用 `os.path.isjunction()` 判断、`os.rmdir()` 删除，禁止 `shutil.rmtree()`。
 - `CLUSTER_INI_DEFAULTS` 只补缺失字段；`NO_TYPE_COERCE_FIELDS` 中的密码等字段保持字符串。
 - 森林与洞穴配置独立；新增世界 key、取值或 Mod 支持前必须核对实际 Lua 源码。
-- 自建/Lolia 用的 frpc 与 ktech 随包；frps、樱花 frpc、vcredist 不打包，首次使用时经 `tool_store` 从官网（vcredist）或 `tools-N` 发行版下载，按写死的 SHA-256 校验，存 `data/tools/` 并保持 `.xz`（裸 frp 落盘会被杀软隔离），也可从网盘工具包导入。Linux 二进制用 `sftp.putfo()` 流式上传，本机不落地解压。
+- ktech 随包；frpc、frps、樱花 frpc、vcredist 不打包，首次使用时经 `tool_store` 从官网（vcredist）或 `tools-N` 发行版下载，按写死的 SHA-256 校验，存 `data/tools/` 并保持 `.xz`（裸 frp 落盘会被杀软隔离），也可从网盘工具包导入。自建/Lolia 的 frpc 由开服等无人值守流程拉起，经 `qt/frpc_tool.py` 后台静默下载、失败显示在状态行，不弹窗。Linux 二进制用 `sftp.putfo()` 流式上传，本机不落地解压。
+- LuaJIT 补丁依赖的 VC++ 2015-2022 x64 运行库版本会随微软更新而变，不进 `tool_store`：安装补丁前按配套 DLL 的链接器版本检测，缺失时从微软官网下载，校验内嵌的微软 Authenticode 签名后安装（`features/local_service/luajit_runtime.py`）。
 - 内置 SteamCMD（`tools/steamcmd/`，原样附 Valve 许可协议，不得修改程序）首次使用时释放到缓存目录；它不能在非 ASCII 路径下运行，联网自更新由它自己完成。
 - WeGame 不支持一键启动专服，不实现绕过方案。
 - 动态 Mod 名称、版本、图标和配置以受限 Lua 5.1 沙箱结果为准；缓存校验包含内容哈希、来源路径、`folder_name` 和协议版本。
