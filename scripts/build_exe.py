@@ -30,7 +30,6 @@ TOOL_FILES = (
     "fonts/KNMaiyuan_OFL.txt",
     "fonts/fusion-pixel-12px-proportional-zh_hans.ttf",
     "frp_selfhost/LICENSE",
-    "frp_selfhost/frpc.exe.xz",
     "hdiffpatch/LICENSE",
     "hdiffpatch/hpatchz.exe",  # 客户端合成增量补丁
     "ktools/CORE_RL_Magick++_.dll",
@@ -61,6 +60,7 @@ BUILD_ONLY_TOOL_FILES = (
 # 不打进 EXE、首次用到时下载的工具（与 dstools/shared/tool_store.py 的登记一致，有测试核对），
 # 由 scripts/make_tools_release.py 发布到工具 Release 并打成网盘工具包
 ON_DEMAND_TOOL_FILES = (
+    "frp_selfhost/frpc.exe.xz",
     "frp_selfhost/frps_linux_amd64.xz",
     "frp_selfhost/frps_linux_arm64.xz",
     "frpc-sakura/sakura-frpc.exe.xz",

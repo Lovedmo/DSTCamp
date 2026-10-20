@@ -61,7 +61,7 @@ def runtime_tool_path(relative: str | Path) -> Path:
     _MEI 临时目录，裸 exe（尤其 frp 被杀软归为 HackTool）每次启动都会被隔离。所以优先读 ``.xz`` 现场解压，
     按内容哈希落地到 data/runtime_tools（_MEI 目录随主程序退出回收，长驻进程不能用）；没有 ``.xz`` 才读裸文件。
     源码/ZIP 版的裸文件存在时直接使用（仓库只提交了 .xz，源码模式同样要解压）。
-    不打进 EXE 的工具（tool_store.TOOLS 中 bundled=False 的）再找 data/tools 里已下载或导入的副本。
+    不打进 EXE 的工具（登记在 tool_store.TOOLS）再找 data/tools 里已下载或导入的副本。
     """
     relative = Path(relative)
     if relative.is_absolute() or ".." in relative.parts:
@@ -81,10 +81,16 @@ def runtime_tool_path(relative: str | Path) -> Path:
         data = source.read_bytes()
     else:
         # 不打进 EXE 的工具：用已下载或导入的副本，都没有时返回不存在的路径，由调用方提示下载
-        from dstools.shared.tool_store import find_stored
+        from dstools.shared.tool_store import find_stored, store_tool
 
         stored = find_stored(relative.as_posix() + ".xz") or find_stored(relative.as_posix())
         if stored is None:
+            # 旧版随包时解压过的副本（落地规则同下）还在就沿用，升级后不必为它重新下载
+            tool = store_tool(relative.as_posix() + ".xz")
+            if tool is not None and tool.unpacked_sha256:
+                previous = data_dir("runtime_tools") / tool.unpacked_sha256[:16] / relative
+                if previous.is_file() and hashlib.sha256(previous.read_bytes()).hexdigest() == tool.unpacked_sha256:
+                    return previous
             return source
         data = lzma.decompress(stored.read_bytes()) if stored.suffix == ".xz" else stored.read_bytes()
 

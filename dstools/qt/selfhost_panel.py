@@ -25,13 +25,13 @@ from dstools.features.frp_selfhost.wireguard import DEFAULT_WIREGUARD_PORT, ensu
 from dstools.features.local_service.shard_helpers import RUNNING_LIKE
 from dstools.i18n import t
 from dstools.models import SaveSource
-from dstools.qt import dialogs
+from dstools.qt import dialogs, frpc_tool
 from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import AutoHideLabel, PillTabBar, ToggleSwitch, section_card
 from dstools.shared import app_settings
 from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping
-from dstools.shared.resource_paths import data_dir, runtime_tool_path
+from dstools.shared.resource_paths import data_dir
 from dstools.shared.server_ports import stable_path_key
 
 _FRPC_DATA_NAME = "frp_selfhost_config"
@@ -48,7 +48,7 @@ _UDP_CHECK_KEY_BY_STATUS = {
 
 
 def _frpc_exe_path():
-    return runtime_tool_path("frp_selfhost/frpc.exe")
+    return frpc_tool.frpc_exe_path()
 
 
 def _muted(text: str = "") -> QLabel:
@@ -394,6 +394,8 @@ class SelfHostPanel(QWidget):
         self._frpc_row.setVisible(False)
         self._frpc_shown_running = False
         self._frpc_shown_blocked = False  # 状态行正显示"被安全软件拦截"，按钮此时是"处理拦截"
+        self._frpc_shown_download_failed = False  # 状态行正显示"客户端下载失败"，按钮此时是"下载客户端"
+        frpc_tool.add_listener(self._refresh_frpc_row)
         # frpc 会被本地服务器页的停服流程停掉、也可能自己退出，状态行要定时跟上实际状态
         self._frpc_timer = QTimer(self, interval=1000)
         self._frpc_timer.timeout.connect(self._tick_frpc_row)
@@ -885,6 +887,8 @@ class SelfHostPanel(QWidget):
         exe = _frpc_exe_path()
         if not config_path.exists():
             return
+        if not frpc_tool.ensure(exe, lambda: self.maybe_start_frpc(cluster, shard)):
+            return  # 发布版不打包 frpc：后台下载完成后再拉起
         existing = self._reconcile_once(cluster)
         if existing is not None and existing.status not in (FrpcStatus.CRASHED, FrpcStatus.STOPPED):
             return  # 已在运行/启停中；崩溃或已停止的才重新拉起
@@ -965,8 +969,16 @@ class SelfHostPanel(QWidget):
         running = bool(cluster) and self._tracked_running(cluster)
         error = self._frpc_failed_error(cluster) if cluster and not self._scanning else None
         self._frpc_shown_blocked = bool(error) and self._frpc_blocked(cluster)
-        self._frpc_toggle_btn.setEnabled(not self._scanning)
-        if self._scanning:
+        downloading = frpc_tool.downloading()
+        download_error = frpc_tool.failed_error() if not running else None
+        self._frpc_shown_download_failed = bool(download_error) and not downloading
+        self._frpc_toggle_btn.setEnabled(not self._scanning and not downloading)
+        if downloading:
+            text, color = t("selfhost.frpc_status_downloading"), theme.hex("TEXT_MUTED")
+        elif self._frpc_shown_download_failed:
+            text, color = t("selfhost.frpc_status_download_failed"), theme.hex("ERROR")
+            error = download_error
+        elif self._scanning:
             text, color = t("selfhost.frpc_status_checking"), theme.hex("TEXT_MUTED")
         elif self._frpc_shown_blocked:
             text, color = t("selfhost.frpc_status_blocked"), theme.hex("ERROR")
@@ -980,12 +992,17 @@ class SelfHostPanel(QWidget):
         self._frpc_status_label.setText(text)
         self._frpc_status_label.setStyleSheet(f"color: {color};")
         self._frpc_status_label.setToolTip(error or "")
-        self._frpc_toggle_btn.setText(t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
+        self._frpc_toggle_btn.setText(t("sakura.frpc_download_btn") if self._frpc_shown_download_failed
+                                      else t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
                                       else t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
 
     def _on_frpc_toggle(self) -> None:
         cluster = self._current_cluster
         if not cluster or self._scanning:
+            return
+        if self._frpc_shown_download_failed:
+            frpc_tool.download_with_dialog(self.window(), lambda: [
+                self.maybe_start_frpc(cluster, shard) for shard in cluster.shards])
             return
         if self._frpc_shown_blocked:
             self.window().show_defender_dialog()  # 关窗后接着按"启动"处理，排除项生效时就能起来
@@ -1052,7 +1069,7 @@ class SelfHostPanel(QWidget):
     def _maybe_start_after_restart(self, cluster, on_done) -> None:
         config_path = self._frpc_config_path(cluster.path)
         exe = _frpc_exe_path()
-        if config_path.exists() and exe.exists():
+        if config_path.exists() and frpc_tool.ensure(exe, lambda: self._maybe_start_after_restart(cluster, None)):
             self.frpc.start(cluster.path, exe, config_path)
         if on_done:
             on_done()

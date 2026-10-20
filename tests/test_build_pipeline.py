@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import lzma
 import tempfile
 from pathlib import Path
 
@@ -22,13 +23,16 @@ def test_fixed_resource_layout_matches_build_manifest() -> None:
     assert actual_tools == (set(build_exe.TOOL_FILES) | set(build_exe.BUILD_ONLY_TOOL_FILES)
                             | set(build_exe.ON_DEMAND_TOOL_FILES))
 
-    # 按需下载工具的登记（大小、SHA-256）与仓库文件一致，不打包的正好是 bundled=False 的那些
+    # 按需下载工具的登记（大小、SHA-256、旧版解压副本哈希）与仓库文件一致，且正好是不打包的那些
     from dstools.shared import tool_store
 
     for tool in tool_store.TOOLS:
         assert build_exe._file_info(PROJECT_ROOT / "tools" / tool.relative) == {
             "size": tool.size, "sha256": tool.sha256}, tool.relative
-    assert set(build_exe.ON_DEMAND_TOOL_FILES) == {tool.relative for tool in tool_store.TOOLS if not tool.bundled}
+        if tool.unpacked_sha256:
+            unpacked = lzma.decompress((PROJECT_ROOT / "tools" / tool.relative).read_bytes())
+            assert hashlib.sha256(unpacked).hexdigest() == tool.unpacked_sha256, tool.relative
+    assert set(build_exe.ON_DEMAND_TOOL_FILES) == {tool.relative for tool in tool_store.TOOLS}
 
     for relative in build_exe.REQUIRED_ICON_FILES:
         assert (PROJECT_ROOT / "icons" / relative).is_file(), relative

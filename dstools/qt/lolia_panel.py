@@ -28,7 +28,7 @@ from dstools.features.lolia import api as lolia_api
 from dstools.features.lolia import config as lolia_config
 from dstools.i18n import t
 from dstools.models import SaveSource
-from dstools.qt import dialogs
+from dstools.qt import dialogs, frpc_tool
 from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.qt.lolia_oauth_dialog import LoliaOAuthAppDialog
 from dstools.qt.node_picker import NodeChoice, NodePickerDialog
@@ -36,7 +36,7 @@ from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import AutoHideLabel, section_card
 from dstools.shared import app_settings
-from dstools.shared.resource_paths import data_dir, runtime_tool_path
+from dstools.shared.resource_paths import data_dir
 from dstools.shared.server_ports import stable_path_key
 
 _FRPC_DATA_NAME = "lolia_frpc_config"
@@ -44,7 +44,7 @@ _FRPC_DATA_NAME = "lolia_frpc_config"
 
 def _frpc_exe_path():
     # 原版 frpc，跟自建节点共用同一份（Lolia 官方注明 config 字段兼容原版 frpc）
-    return runtime_tool_path("frp_selfhost/frpc.exe")
+    return frpc_tool.frpc_exe_path()
 
 
 class _PasteSourceDialog(dialogs.Dialog):
@@ -197,6 +197,8 @@ class LoliaPanel(QWidget):
         self._frpc_row.setVisible(False)
         self._frpc_shown_running = False
         self._frpc_shown_blocked = False  # 状态行正显示"被安全软件拦截"，按钮此时是"处理拦截"
+        self._frpc_shown_download_failed = False  # 状态行正显示"客户端下载失败"，按钮此时是"下载客户端"
+        frpc_tool.add_listener(self._refresh_frpc_row)
         # frpc 可能随停服结束或自己退出，状态行定时跟上实际状态，只在变化时刷新
         self._frpc_timer = QTimer(self, interval=1000)
         self._frpc_timer.timeout.connect(self._tick_frpc_row)
@@ -500,6 +502,8 @@ class LoliaPanel(QWidget):
         if not config_path.exists():
             return  # 缺失时由状态行提示用户重新开启映射
         exe = _frpc_exe_path()
+        if not frpc_tool.ensure(exe, lambda: self.maybe_start_frpc(cluster, shard)):
+            return  # 发布版不打包 frpc：后台下载完成后再拉起
         key = self._proc_key(cluster, shard)
         existing = self._reconcile_once(key, config_path)
         if existing is not None and existing.status not in (FrpcStatus.CRASHED, FrpcStatus.STOPPED):
@@ -607,8 +611,16 @@ class LoliaPanel(QWidget):
         running = bool(mapped) and all(self._shard_running(cluster, s, scan=False) for s in mapped)
         error = self._frpc_failed_error(cluster) if cluster and not running and not self._scanning else None
         self._frpc_shown_blocked = bool(error) and self._frpc_blocked(cluster)
-        self._frpc_toggle_btn.setEnabled(not self._scanning)
-        if self._scanning:
+        downloading = frpc_tool.downloading()
+        download_error = frpc_tool.failed_error() if not running else None
+        self._frpc_shown_download_failed = bool(download_error) and not downloading
+        self._frpc_toggle_btn.setEnabled(not self._scanning and not downloading)
+        if downloading:
+            text, color = t("selfhost.frpc_status_downloading"), theme.hex("TEXT_MUTED")
+        elif self._frpc_shown_download_failed:
+            text, color = t("selfhost.frpc_status_download_failed"), theme.hex("ERROR")
+            error = download_error
+        elif self._scanning:
             text, color = t("lolia.frpc_status_checking"), theme.hex("TEXT_MUTED")
         elif self._frpc_shown_blocked:
             text, color = t("selfhost.frpc_status_blocked"), theme.hex("ERROR")
@@ -624,12 +636,17 @@ class LoliaPanel(QWidget):
         self._frpc_status_label.setToolTip(error or "")
         if error:
             self._status_label.setText(error)  # 失败原因直接显示出来，不只藏在悬停提示里
-        self._frpc_toggle_btn.setText(t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
+        self._frpc_toggle_btn.setText(t("sakura.frpc_download_btn") if self._frpc_shown_download_failed
+                                      else t("selfhost.frpc_blocked_btn") if self._frpc_shown_blocked
                                       else t("sakura.frpc_stop_btn") if running else t("sakura.frpc_start_btn"))
 
     def _on_frpc_toggle(self) -> None:
         cluster = self._current_cluster
         if not cluster or self._scanning:
+            return
+        if self._frpc_shown_download_failed:
+            frpc_tool.download_with_dialog(self.window(), lambda: [
+                self.maybe_start_frpc(cluster, shard) for shard in cluster.shards])
             return
         if self._frpc_shown_blocked:
             self.window().show_defender_dialog()  # 关窗后接着按"启动"处理，排除项生效时就能起来

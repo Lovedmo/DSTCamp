@@ -35,12 +35,13 @@ class StoreTool:
     size: int
     sha256: str
     official_url: str = ""  # 有官方下载地址时最先尝试
-    bundled: bool = False  # 仍打进 EXE；登记在这里只为让工具包完整、能导入
+    unpacked_sha256: str = ""  # 旧版随包时解压出的副本哈希：升级后沿用，不必重新下载
 
 
 TOOLS = (
     StoreTool("frp_selfhost/frpc.exe.xz", "frpc.exe.xz", 4770108,
-              "04829ce3d730afd87e24b522d4aee7b70903e32cc470f21146ada16d68987291", bundled=True),
+              "04829ce3d730afd87e24b522d4aee7b70903e32cc470f21146ada16d68987291",
+              unpacked_sha256="1320325b3fd46d83ef7b2161d5e19f2b5dd9341b3391084a58d75ad82ef374d3"),
     StoreTool("frp_selfhost/frps_linux_amd64.xz", "frps_linux_amd64.xz", 5802848,
               "f7c8b4508c90a7a94ae42b03dd9cc7faadc0c05d365722311182404733d5e4f1"),
     StoreTool("frp_selfhost/frps_linux_arm64.xz", "frps_linux_arm64.xz", 4896496,

@@ -84,5 +84,26 @@ def test_tools_package_import_and_frozen_lookup() -> None:
             assert runtime.parent.parent.parent == root / "data" / "runtime_tools"
 
 
+def test_frozen_lookup_reuses_copy_unpacked_by_older_bundled_version() -> None:
+    """工具从随包改为按需下载后，旧版已解压到 data/runtime_tools 的副本哈希对得上就沿用，被改过则当作未下载。"""
+    binary = b"old-bundled-frpc"
+    unpacked = hashlib.sha256(binary).hexdigest()
+    tool = tool_store.StoreTool("demo/demo.exe.xz", "demo.exe.xz", 1, "0" * 64, unpacked_sha256=unpacked)
+    with tempfile.TemporaryDirectory() as directory, \
+            patch.dict(tool_store._BY_RELATIVE, {tool.relative: tool}, clear=True):
+        root = Path(directory)
+        previous = root / "data" / "runtime_tools" / unpacked[:16] / "demo" / "demo.exe"
+        previous.parent.mkdir(parents=True)
+        (root / "bundle" / "tools").mkdir(parents=True)
+        with patch.object(sys, "frozen", True, create=True), \
+                patch.object(sys, "_MEIPASS", str(root / "bundle"), create=True), \
+                patch.object(tool_store, "data_dir", return_value=root / "data" / "tools"), \
+                patch.object(resource_paths, "data_dir", side_effect=lambda name, **_k: root / "data" / name):
+            previous.write_bytes(binary)
+            assert resource_paths.runtime_tool_path("demo/demo.exe") == previous
+            previous.write_bytes(b"tampered")
+            assert not resource_paths.runtime_tool_path("demo/demo.exe").is_file()
+
+
 if __name__ == "__main__":
     run(globals())
