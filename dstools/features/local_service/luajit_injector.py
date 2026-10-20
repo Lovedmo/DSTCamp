@@ -172,6 +172,11 @@ def _injector_payload_file() -> Path | None:
     return None
 
 
+def runtime_dlls() -> list[Path]:
+    """配套 Mod 里依赖 VC++ x64 运行库的 DLL（注入壳与 Injector.dll），用于判断运行库版本是否够新。"""
+    return [path for path in (_trigger_source_file(), _injector_payload_file()) if path is not None]
+
+
 def _file_sha256(path: Path | None) -> str:
     if path is None:
         return ""

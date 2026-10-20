@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from dstools.features.cluster_config.config_manager import (
     get_cluster_option, get_shard_option, load_cluster_config, load_shard_config,
 )
-from dstools.features.local_service import luajit_injector, steam_client_updater, steamcmd_updater
+from dstools.features.local_service import luajit_injector, luajit_runtime, steam_client_updater, steamcmd_updater
 from dstools.features.local_service.backup_manager import changed_since_last_backup, create_backup
 from dstools.features.local_service.dedicated_server import (
     ConfDirCrossDriveError, ServerStatus, detect_external_running_clusters,
@@ -1787,11 +1787,15 @@ class LocalServicePage(Page):
         cluster = self.get_cluster()
         mod_overrides_paths = [s.mod_overrides_path for s in cluster.shards if s.mod_overrides_path] if cluster else []
         shared = luajit_injector.uses_game_bin64(plan.bin64_dir.parent)
-        if not dialogs.ask_yes_no_with_auxiliary(
+        if not dialogs.ask_yes_no(
                 self.window(), t("local.luajit_confirm_install_title"),
                 t("local.luajit_confirm_install_msg_shared" if shared else "local.luajit_confirm_install_msg"),
-                t("local.luajit_runtime_btn"), self._open_luajit_runtime_download, min_width=560):
+                min_width=560):
             return
+        self._ensure_luajit_runtime(lambda: self._start_luajit_install(plan.bin64_dir, mod_overrides_paths))
+
+    def _start_luajit_install(self, bin64_dir: Path, mod_overrides_paths: list[Path]) -> None:
+        cluster = self.get_cluster()
         self._luajit_busy = True
         self._update_luajit_row(cluster)
         log_dialog = dialogs.LogDialog(self.window(), t("local.luajit_confirm_install_title"))
@@ -1799,7 +1803,7 @@ class LocalServicePage(Page):
         log_dialog.show()
 
         def work(emit):
-            return luajit_injector.apply_install(plan.bin64_dir, mod_overrides_paths, on_log=emit)
+            return luajit_injector.apply_install(bin64_dir, mod_overrides_paths, on_log=emit)
 
         def done(result) -> None:
             self._luajit_busy = False
@@ -1814,8 +1818,70 @@ class LocalServicePage(Page):
 
         run_async_with_log(work, log_dialog.append, done, error)
 
+    def _ensure_luajit_runtime(self, then) -> None:
+        """补丁依赖的 VC++ x64 运行库已满足时直接 then()；否则询问后从微软官网下载安装，装好再 then()。"""
+        dlls = luajit_injector.runtime_dlls()
+        if luajit_runtime.is_satisfied(dlls):
+            then()
+            return
+        title = t("local.luajit_runtime_title")
+        installed = luajit_runtime.installed_version()
+        required = "%d.%d" % luajit_runtime.required_version(dlls)
+        text = (t("local.luajit_runtime_missing_msg") if installed is None
+                else t("local.luajit_runtime_outdated_msg", installed="%d.%d" % installed, required=required))
+        choice = dialogs.ask_choice(self.window(), title, text, [
+            (t("dlg.cancel_btn"), "cancel"),
+            (t("local.luajit_runtime_skip_btn"), "skip"),
+            (t("local.luajit_runtime_lanzou_btn"), "lanzou"),
+            (t("local.luajit_runtime_install_btn"), "official"),
+        ], default="official", min_width=560)
+        if choice == "skip":
+            then()
+        elif choice == "lanzou":
+            self._open_luajit_runtime_download()
+        elif choice == "official":
+            self._install_luajit_runtime(then)
+
+    def _install_luajit_runtime(self, then) -> None:
+        title = t("local.luajit_runtime_title")
+        log_dialog = dialogs.LogDialog(self.window(), title)
+        log_dialog.append(t("local.luajit_runtime_downloading"), "section")
+        log_dialog.show()
+        shown = [0]
+
+        def work(emit):
+            def progress(done: int, total: int) -> None:
+                percent = done * 100 // max(1, total)
+                if total and percent >= shown[0] + 20:
+                    shown[0] = percent - percent % 20
+                    emit(t("tools.download_progress", percent=shown[0]))
+
+            installer = luajit_runtime.download(progress)
+            emit(t("local.luajit_runtime_installing"))
+            luajit_runtime.install(installer)
+            return luajit_runtime.is_satisfied(luajit_injector.runtime_dlls())
+
+        def done(satisfied: bool) -> None:
+            log_dialog.finish()
+            if not satisfied:
+                log_dialog.append(t("local.luajit_runtime_still_missing"), "result_error")
+                return
+            log_dialog.accept()
+            then()
+
+        def error(exc: Exception) -> None:
+            log_dialog.finish()
+            if isinstance(exc, InterruptedError):
+                log_dialog.append(t("local.luajit_runtime_cancelled"), "note")
+                return
+            log_dialog.accept()
+            if dialogs.ask_yes_no(self.window(), title, t("local.luajit_runtime_failed_msg", error=exc), min_width=560):
+                self._open_luajit_runtime_download()
+
+        run_async_with_log(work, log_dialog.append, done, error)
+
     def _open_luajit_runtime_download(self) -> None:
-        """打开 VC++ 2023 下载页前复制提取码，避免用户在蓝奏页与应用间来回找。"""
+        """打开网盘里的 VC++ 运行库前复制提取码，避免用户在蓝奏页与应用间来回找。"""
         QGuiApplication.clipboard().setText("bzuu")
         dialogs.show_toast(self.window(), t("local.luajit_runtime_copied"))
         webbrowser.open(_LUAJIT_VCREDIST_DOWNLOAD_URL)

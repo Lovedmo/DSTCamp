@@ -2321,6 +2321,31 @@ def _make_fake_install_dir(root: Path, build_id: str | None = None) -> Path:
     return install_dir
 
 
+def test_luajit_runtime_requires_toolset_version_of_dlls():
+    """运行库版本不能低于编译配套 DLL 的工具集：读 PE 链接器版本取最高值，读不到时用 14.40 兜底。"""
+    import struct
+    from unittest.mock import patch
+
+    from dstools.features.local_service import luajit_runtime
+
+    def fake_pe(path: Path, major: int, minor: int) -> Path:
+        header = bytearray(512)
+        struct.pack_into("<I", header, 0x3C, 0x80)
+        header[0x80:0x84] = b"PE\0\0"
+        struct.pack_into("<HBB", header, 0x80 + 24, 0x20B, major, minor)
+        path.write_bytes(bytes(header))
+        return path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        dlls = [fake_pe(root / "a.dll", 14, 44), fake_pe(root / "b.dll", 14, 36)]
+        assert luajit_runtime.required_version(dlls) == (14, 44)
+        assert luajit_runtime.required_version([root / "missing.dll"]) == (14, 40)
+        for installed, expected in (((14, 50), True), ((14, 44), True), ((14, 42), False), (None, False)):
+            with patch.object(luajit_runtime, "installed_version", return_value=installed):
+                assert luajit_runtime.is_satisfied(dlls) is expected, installed
+
+
 def test_luajit_game_bin64_install():
     """游戏专服按作者方式：Winmm.dll 直接放进游戏 bin64（与客户端共用），不建 luajit 副本。"""
     from unittest.mock import patch
