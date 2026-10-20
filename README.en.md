@@ -18,17 +18,17 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#171-changes">Changelog</a> ·
+  <a href="#172-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.7.1 highlights
+## ✨ 1.7.2 highlights
 
-- 🗺️ **Manage Worlds**: rename, hide, cap players, rename folders of, or delete worlds in dedicated-server saves, with an automatic backup first.
-- ⚡ **Faster Mod page**: warmed up in the background after launch, 211 Mods appear in about 0.2 s.
-- 💾 **Smarter backups**: 20 kept by default, no duplicate backups of an unchanged save, and manual backups are kept for good.
+- 📦 **Installer down from 89 MB to 54 MB**: tools are xz-compressed, and rarely used tools are downloaded automatically on first use.
+- 🚀 **Faster, more reliable updates**: background pre-download, Gitee/GitHub fallback and resumable downloads; from the next version on, only a few-MB incremental patch is downloaded.
+- 🧰 **Offline updates**: "About → Manual Update → Import from File" installs a full package, patch package or tools package downloaded from a cloud drive.
 
 ## 🧭 Features
 
@@ -52,10 +52,11 @@ Download from [GitHub Releases](https://github.com/chengzhirenchaoshuai/DSTCamp/
 
 | File | Description |
 |---|---|
-| `DSTCamp-<version>.exe` | Single-file build with all tools and resources embedded; no installation needed |
-| `DSTCamp-<version>.sha256.json` | File sizes and SHA-256 hashes for the updater and manual verification |
+| `DSTCamp-<version>.exe` | Single-file build, no installation needed; rarely used tools such as frpc/frps and the SakuraFrp frpc are downloaded on first use |
+| `DSTCamp-<version>.sha256.json` | Publisher-signed file sizes and SHA-256 hashes for the updater and manual verification |
+| `*.hdiff` | Incremental patches from recent versions, used by auto-update |
 
-Users on 1.4.0 or later can update in place from the About dialog or the update prompt at startup.
+Users on 1.4.0 or later can update in place from the About dialog or the update prompt at startup. On a poor connection, download the full, patch or tools package from the cloud drives listed under "About → Manual Update" and click "Import from File".
 
 > **Nothing happens on double-click?** Windows may block files marked as downloaded from another computer: right-click the EXE → Properties → check "Unblock" at the bottom → OK, then double-click again. After one successful launch, the app clears this mark automatically.
 
@@ -78,7 +79,7 @@ Bundled, read-only resources used on every start:
 
 ```text
 icons/   Window and UI icons, world-setting icons, official character avatars, recommended-Mod icons
-tools/   ktech (texture conversion), frpc/frps, VC++ 2013 runtime, bundled fonts
+tools/   ktech (texture conversion), incremental patch tool, bundled fonts (frpc/frps, SakuraFrp frpc and the VC++ 2013 runtime are downloaded to data/tools on demand)
 ```
 
 Runtime data lives in `%APPDATA%/DSTCamp/`:
@@ -86,7 +87,7 @@ Runtime data lives in `%APPDATA%/DSTCamp/`:
 ```text
 settings.json   All user settings
 cache/          Generated on demand, safe to clear: Mod metadata/versions/translations/icons, character and world-Mod icons, parsed logs, ktech runtime copy
-data/           Kept: custom background, player registry, port backups, auto-restart log, update packages, resident tool copies, frpc configs
+data/           Kept: custom background, player registry, port backups, auto-restart log, update packages, on-demand tools and resident tool copies, frpc configs
 security/       Credentials: SSH keys and host trust, WireGuard/Mihomo configs, Lolia sign-in tokens
 ```
 
@@ -112,9 +113,34 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.7.1 changes
+## 1.7.2 changes
+
+> When auto-updating from 1.7.1 or earlier, the replacement script from the old version is still used, so occasionally clicking "Restart" does not start the new version or replace the program: just reopen DSTCamp and update again (the downloaded file is reused), or download the full package from the cloud drive and install it via "About → Manual Update → Import from File".
 
 ### ✨ New features
+
+- **Smaller installer**: the bundled frpc, frps and SakuraFrp frpc are now xz-compressed (about 7 MB smaller); the unpacked files are byte-for-byte identical.
+- **Smaller installer**: three oversized recommended-Mod icons are scaled down to 256 px (about 2.7 MB smaller) and still look sharp on high-DPI screens.
+- **Smaller installer**: frps (Linux amd64/arm64), the SakuraFrp frpc and the VC++ 2013 runtime installer are no longer bundled (about 21 MB smaller) and are downloaded on first use (VC++ from Microsoft, the rest from the tools release on Gitee/GitHub, verified against built-in SHA-256 hashes); SakuraFrp asks before downloading its client on first use and continues automatically; one-click frp deployment downloads frps automatically and lets the server download it itself if that fails.
+- **Smaller installer**: the frpc used by self-hosted nodes and Lolia is no longer bundled (about 4.7 MB smaller); it is downloaded in the background when a server starts or a mapping is enabled and then started automatically, without any dialog; the status row shows "Downloading client", and on failure "Download Client" retries; a copy unpacked by an older version is reused, so upgrading needs no new download.
+- **Cloud drive fallback for tool downloads**: when a download fails, DSTCamp offers to open the tools package on Lanzou (the password is copied automatically); import it via "About → Manual Update → Import from File".
+- **Faster, more reliable auto-update**: new versions are pre-downloaded in the background (not when "Update reminders" is off), so "Update now" is usually instant; if the main source fails the other one is used (Gitee ↔ GitHub); interrupted downloads resume after a restart.
+- **Incremental updates**: future versions ship a binary patch for each of the last few versions, so auto-update downloads only the patch and rebuilds the new version locally (measured: 6.9 MB patch for 1.6.0→1.7.1 versus an 89 MB full package), verified against the new version's SHA-256; if a patch does not apply, the full package is downloaded instead.
+- **Offline update packages**: "About → Manual Update" adds "Import from File", which verifies and installs a full package, patch package or tools package downloaded from a cloud drive, with no manual file replacement; failed auto-updates suggest the offline package. The update manifest is now signed by the publisher, and only validly signed versions are installed.
+- **Automatic runtime install for LuaJIT**: installing the LuaJIT patch now checks for the VC++ 2015-2022 x64 runtime; if it is missing or too old, DSTCamp offers to download it from Microsoft (verifying Microsoft's digital signature), installs it, and continues installing the patch; a cloud drive is offered if the download fails.
+- **A way out when frpc is blocked**: when security software quarantines or blocks the frpc of self-hosted nodes or Lolia, the status row says "Blocked by security software" and the button becomes "Resolve Block", which opens the Windows Defender exclusions window and restarts frpc after it closes.
+- **VC++ 2013 runtime update**: the x86 installer used by "Install runtime" is now Microsoft's current 12.0.40664, including later security fixes.
+
+### 🐞 Fixes
+
+- After clicking "Restart" for an auto-update, the new version did not start and the program was not replaced.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.7.1)</strong></summary>
+
+### 1.7.1
+
+#### ✨ New features
 
 - **Manage Worlds**: "Manage Worlds" on the World page edits each world's WorldGate name, hidden flag, and player cap, renames world folders, and deletes non-master worlds in dedicated-server saves; a backup is made before every change.
 - **Faster Mod page**: the Mod cache is warmed up in the background after launch, so 211 Mods appear in about 0.2 s (was about 1.6 s) and switching to the Mod page no longer stutters; without the VC++ runtime only icons are skipped.
@@ -124,15 +150,12 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - **SteamCMD entry moved**: now under "Settings → Choose Steam Client...", so players hosting locally no longer see SteamCMD options; without a Steam client (e.g. on a cloud server) a banner suggests SteamCMD.
 - **UI and wording**: the "Two-way sync of mod default configs with the game" switch moves into the Global Default Configs window; the Settings menu is reordered; the "Choose Server Program" explanation is friendlier for newcomers; WorldGate in the recommended Mods gets a new icon and description.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - After adding a world, Mod worlds such as Shipwrecked and Volcano failed to generate (`TaskSet has no data`).
 - Clicking "Apply" in a Mod's configuration cleared WorldGate's world names, hidden flags, and player caps.
 - After restoring a backup, world folders added or renamed after that backup were left behind as extra worlds.
 - After changing a local Mod's modinfo, options, or icon, refreshing the Mod page still showed the old content.
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.7.0)</strong></summary>
 
 ### 1.7.0
 
