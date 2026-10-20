@@ -20,7 +20,7 @@ from dstools.features.cluster_config.config_manager import (
 from dstools.features.local_service.shard_helpers import RUNNING_LIKE
 from dstools.features.sakura import api as sakura_frp
 from dstools.features.sakura.frpc import FrpcManager, FrpcStatus
-from dstools.features.sakura.frpc_recovery import SakuraFrpcHealth, inspect_sakura_frpc
+from dstools.features.sakura.frpc_recovery import SAKURA_FRPC_ARCHIVE, SakuraFrpcHealth, inspect_sakura_frpc
 from dstools.i18n import t
 from dstools.models import SaveSource
 from dstools.qt import dialogs
@@ -30,8 +30,9 @@ from dstools.qt.node_picker import NodeChoice, NodePickerDialog
 from dstools.qt.selfhost_panel import SelfHostPanel
 from dstools.qt.theme import theme
 from dstools.qt.threads import post_to_ui, run_async
+from dstools.qt.tool_download import download_tool_with_dialog
 from dstools.qt.widgets import AutoHideLabel, Card, PillTabBar, VScrollArea, section_card
-from dstools.shared import app_settings
+from dstools.shared import app_settings, tool_store
 from dstools.qt.lan_mapping_guard import ensure_lan_free_for_mapping, ensure_no_other_mapping, remote_failure_item
 from dstools.shared.server_ports import stable_path_key
 from dstools.shared.token_manager import mask_token
@@ -102,7 +103,8 @@ class _FrpcRecoveryDialog(dialogs.Dialog):
 
     def _render(self) -> None:
         key = {"missing": "sakura.frpc_recovery_missing", "blocked": "sakura.frpc_recovery_blocked",
-               "unreadable": "sakura.frpc_recovery_unreadable", "ready": "sakura.frpc_recovery_ready"}[self._health.status]
+               "unreadable": "sakura.frpc_recovery_unreadable", "ready": "sakura.frpc_recovery_ready",
+               "not_downloaded": "sakura.frpc_recovery_not_downloaded"}[self._health.status]
         self._message.setText(t(key, error=self._health.detail))
         self._path_label.setText(str(self._health.path))
         self._status_label.setText(t("sakura.frpc_recovery_ready" if self._health.ready else "sakura.frpc_recovery_waiting"))
@@ -619,7 +621,8 @@ class _SakuraMappingPanel(QWidget):
         health = self._frpc_health
         if health is not None and not health.ready:
             key = {"missing": "sakura.frpc_recovery_missing", "blocked": "sakura.frpc_recovery_blocked",
-                   "unreadable": "sakura.frpc_recovery_unreadable"}[health.status]
+                   "unreadable": "sakura.frpc_recovery_unreadable",
+                   "not_downloaded": "sakura.frpc_recovery_not_downloaded"}[health.status]
             return t(key, error=health.detail)
         for s in self._mapped_shards(cluster):
             proc = self.frpc.get(cluster.path, s.name)
@@ -627,11 +630,29 @@ class _SakuraMappingPanel(QWidget):
                 return proc.error
         return None
 
-    def _ensure_frpc_available(self) -> SakuraFrpcHealth | None:
+    def _ensure_frpc_available(self, retry=None) -> SakuraFrpcHealth | None:
+        """客户端可用时返回健康状态；否则引导恢复并返回 None。
+
+        发布版不打包客户端：首次使用时问一句再下载，下完自动重新执行 retry（调用方原本的操作）。"""
         health = inspect_sakura_frpc()
         self._frpc_health = health
         if health.ready:
             return health
+        if health.status == "not_downloaded":
+            tool = tool_store.store_tool(SAKURA_FRPC_ARCHIVE)
+            if dialogs.ask_yes_no(self.window(), t("sakura.frpc_download_title"),
+                                  t("sakura.frpc_download_confirm", size=f"{tool.size / 1e6:.1f}")):
+
+                def downloaded(_path) -> None:
+                    self._frpc_health = inspect_sakura_frpc()
+                    if self._any_mapped:
+                        self._refresh_frpc_row()
+                    if retry is not None and self._frpc_health.ready:
+                        retry()
+
+                download_tool_with_dialog(self.window(), SAKURA_FRPC_ARCHIVE, t("sakura.frpc_download_title"),
+                                          downloaded)
+            return None
         dialog = _FrpcRecoveryDialog(self.window(), health)
         dialog.exec()
         self._frpc_health = inspect_sakura_frpc()
@@ -645,9 +666,14 @@ class _SakuraMappingPanel(QWidget):
         cluster = self._current_cluster
         running = bool(cluster) and self.frpc_all_running(cluster)
         error = self._frpc_failed_error(cluster) if cluster else None
+        not_downloaded = self._frpc_health is not None and self._frpc_health.status == "not_downloaded"
         if error:
-            text = t("sakura.frpc_status_file_missing") if (self._frpc_health and not self._frpc_health.ready) \
-                else t("sakura.frpc_status_failed")
+            if not_downloaded:
+                text = t("sakura.frpc_status_not_downloaded")
+            elif self._frpc_health and not self._frpc_health.ready:
+                text = t("sakura.frpc_status_file_missing")
+            else:
+                text = t("sakura.frpc_status_failed")
             color = theme.hex("ERROR")
         elif running:
             text, color = t("sakura.frpc_status_running"), theme.hex("SUCCESS")
@@ -657,7 +683,9 @@ class _SakuraMappingPanel(QWidget):
         self._frpc_status_label.setText(text)
         self._frpc_status_label.setStyleSheet(f"color: {color};")
         self._frpc_status_label.setToolTip(self._frpc_failed_error(cluster) or "" if cluster else "")
-        if self._frpc_health is not None and not self._frpc_health.ready:
+        if not_downloaded:
+            button_text = t("sakura.frpc_download_btn")
+        elif self._frpc_health is not None and not self._frpc_health.ready:
             button_text = t("sakura.frpc_recovery_btn")
         else:
             button_text = t("sakura.frpc_stop_btn" if running else "sakura.frpc_start_btn")
@@ -686,7 +714,7 @@ class _SakuraMappingPanel(QWidget):
             for s in shards:
                 self.stop_frpc_for_shard(cluster, s, on_done=lambda: post_to_ui(lambda _a: one_done()))
         else:
-            health = self._ensure_frpc_available()
+            health = self._ensure_frpc_available(retry=self._on_frpc_toggle)
             if health is None:
                 return
             for s in shards:
@@ -756,7 +784,7 @@ class _SakuraMappingPanel(QWidget):
             return
         if not ensure_no_other_mapping(self.window(), self.ctx, cluster, "sakura", t("sakura.enable_btn")):
             return
-        if self._ensure_frpc_available() is None:
+        if self._ensure_frpc_available(retry=self._enable_mapping) is None:
             return
         if not ensure_lan_free_for_mapping(self.window(), self.ctx, cluster):
             return

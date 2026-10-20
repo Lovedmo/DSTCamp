@@ -27,17 +27,24 @@ $headers = @{ 'User-Agent' = 'DSTCamp-release-sync' }
 function Remove-Emoji([string]$Text) {
     return $Text -replace '(?:[\uD800-\uDBFF][\uDC00-\uDFFF]|[☀-➿⬀-⯿])[️‍]*[ \t]?', ''
 }
-$retainedReleases = @((Invoke-WebRequest -Uri "https://api.github.com/repos/$githubRepo/releases?per_page=100" -Headers $headers).Content | ConvertFrom-Json) |
-    Where-Object { [version]($_.tag_name.TrimStart('v')) -ge [version]'1.0.0' } |
+$allGithubReleases = @((Invoke-WebRequest -Uri "https://api.github.com/repos/$githubRepo/releases?per_page=100" -Headers $headers).Content | ConvertFrom-Json)
+# 版本发行版（vX.Y.Z）只保留最新 $keepCount 个；工具发行版（tools-N，按需下载的工具，见 tool_store.py）保留编号最大的一个。
+# 先按标签格式筛选再转 [version]，否则 tools-N 转换失败会中断整个脚本
+$retainedReleases = @($allGithubReleases |
+    Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' -and [version]($_.tag_name.TrimStart('v')) -ge [version]'1.0.0' } |
     Sort-Object { [version]$_.tag_name.TrimStart('v') } -Descending |
-    Select-Object -First $keepCount
+    Select-Object -First $keepCount)
+$retainedReleases += @($allGithubReleases |
+    Where-Object { $_.tag_name -match '^tools-\d+$' } |
+    Sort-Object { [int]($_.tag_name -replace '^tools-', '') } -Descending |
+    Select-Object -First 1)
 $githubReleases = @($retainedReleases | Where-Object {
     [string]::IsNullOrWhiteSpace($OnlyTag) -or $_.tag_name -eq $OnlyTag
 })
 $giteeReleases = Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/$owner/$repo/releases?per_page=100&access_token=$token"
 $keepTags = @($retainedReleases | ForEach-Object tag_name)
 foreach ($oldRelease in @($giteeReleases)) {
-    if ($oldRelease.tag_name -match '^v\d+\.\d+\.\d+$' -and $keepTags -notcontains $oldRelease.tag_name) {
+    if ($oldRelease.tag_name -match '^(v\d+\.\d+\.\d+|tools-\d+)$' -and $keepTags -notcontains $oldRelease.tag_name) {
         Invoke-RestMethod -Method Delete -Uri "https://gitee.com/api/v5/repos/$owner/$repo/releases/$($oldRelease.id)?access_token=$token"
         Write-Output "删除旧发行版：$($oldRelease.tag_name)"
     }

@@ -19,7 +19,16 @@ def test_fixed_resource_layout_matches_build_manifest() -> None:
         for path in (PROJECT_ROOT / "tools").rglob("*")
         if path.is_file()
     }
-    assert actual_tools == set(build_exe.TOOL_FILES) | set(build_exe.BUILD_ONLY_TOOL_FILES)
+    assert actual_tools == (set(build_exe.TOOL_FILES) | set(build_exe.BUILD_ONLY_TOOL_FILES)
+                            | set(build_exe.ON_DEMAND_TOOL_FILES))
+
+    # 按需下载工具的登记（大小、SHA-256）与仓库文件一致，不打包的正好是 bundled=False 的那些
+    from dstools.shared import tool_store
+
+    for tool in tool_store.TOOLS:
+        assert build_exe._file_info(PROJECT_ROOT / "tools" / tool.relative) == {
+            "size": tool.size, "sha256": tool.sha256}, tool.relative
+    assert set(build_exe.ON_DEMAND_TOOL_FILES) == {tool.relative for tool in tool_store.TOOLS if not tool.bundled}
 
     for relative in build_exe.REQUIRED_ICON_FILES:
         assert (PROJECT_ROOT / "icons" / relative).is_file(), relative

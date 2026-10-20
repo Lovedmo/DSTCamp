@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from dstools import __version__
-from dstools.shared import auto_update, update_check, update_signing
+from dstools.shared import auto_update, http_download, update_check, update_signing
 from dstools.shared.update_check import UpdatePatch, UpdateRelease
 from scripts import build_exe
 from _harness import run  # noqa: E402
@@ -80,6 +80,9 @@ def test_release_manifest_enables_auto_update() -> None:
     assert parsed.sha256 == "a" * 64 and parsed.size == 4
     # 只取以当前运行版本为起点的补丁
     assert parsed.patch == UpdatePatch("https://example/patch", 2, "b" * 64, "c" * 64)
+    # 发行版列表里按版本号挑最新正式版：工具发行版、预发布不算
+    listing = [{"tag_name": "v1.3.0"}, release, {"tag_name": "tools-1"}, {"tag_name": "v9.0.0", "prerelease": True}]
+    assert update_check._newest_version_release(listing) is release
 
 
 def test_download_requires_matching_hash_and_size() -> None:
@@ -95,14 +98,14 @@ def test_download_requires_matching_hash_and_size() -> None:
     with tempfile.TemporaryDirectory() as directory, patch.object(
         auto_update, "data_dir", return_value=Path(directory)
     ), patch.object(
-        auto_update.urllib.request,
+        http_download.urllib.request,
         "urlopen",
         side_effect=lambda *_args, **_kwargs: _Response(payload),
     ):
         path = auto_update.download_update(release)
         assert path.read_bytes() == payload
         # 已下载且校验一致时再次更新直接复用，不再联网
-        with patch.object(auto_update.urllib.request, "urlopen", side_effect=AssertionError("不应重新下载")):
+        with patch.object(http_download.urllib.request, "urlopen", side_effect=AssertionError("不应重新下载")):
             assert auto_update.download_update(release) == path
 
         bad = UpdateRelease(
@@ -134,7 +137,7 @@ def test_download_resumes_and_falls_back_to_mirror() -> None:
     def urlopen(request, **_kwargs):
         requested.append((request.full_url, request.get_header("Range")))
         if request.full_url == "https://primary/exe":
-            raise auto_update.urllib.error.URLError("断线")
+            raise http_download.urllib.error.URLError("断线")
         start = int(request.get_header("Range")[len("bytes="):-1])
         response = _Response(payload[start:])
         response.status = 206
@@ -147,7 +150,7 @@ def test_download_resumes_and_falls_back_to_mirror() -> None:
         part = Path(directory) / "1.4.0" / "DSTCamp-1.4.0.exe.part"
         part.parent.mkdir(parents=True)
         part.write_bytes(payload[:1000])
-        with patch.object(auto_update.urllib.request, "urlopen", side_effect=urlopen):
+        with patch.object(http_download.urllib.request, "urlopen", side_effect=urlopen):
             path = auto_update.download_update(release)
         assert path.read_bytes() == payload and not part.exists()
         assert requested == [("https://primary/exe", "bytes=1000-"), ("https://mirror/exe", "bytes=1000-")]
@@ -155,7 +158,7 @@ def test_download_resumes_and_falls_back_to_mirror() -> None:
         path.unlink()
         part.write_bytes(b"x" * 1000)
         with patch.object(
-            auto_update.urllib.request, "urlopen", side_effect=lambda *_a, **_k: _Response(payload)
+            http_download.urllib.request, "urlopen", side_effect=lambda *_a, **_k: _Response(payload)
         ):
             assert auto_update.download_update(release).read_bytes() == payload
 
@@ -189,7 +192,7 @@ def test_patch_update_builds_exe_locally() -> None:
             patch.object(auto_update.sys, "executable", str(old_exe)),
             patch.object(auto_update, "data_dir", return_value=updates),
             patch.object(auto_update, "tool_binary_dir", return_value=tool_dir),
-            patch.object(auto_update.urllib.request, "urlopen", side_effect=urlopen),
+            patch.object(http_download.urllib.request, "urlopen", side_effect=urlopen),
         ):
             assert auto_update.download_update(release).read_bytes() == new
             assert requested == [update_patch.url]

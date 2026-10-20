@@ -23,6 +23,15 @@ def test_inspect_distinguishes_ready_and_missing() -> None:
             ready = frpc_recovery.inspect_sakura_frpc()
             assert ready.ready and ready.path == client
 
+        # 发布版不打包客户端：哪里都没有副本时是"未下载"，不是被隔离
+        not_bundled = root / "bundle-tools"
+        with (
+            patch.object(frpc_recovery, "tool_binary_dir", return_value=not_bundled),
+            patch.object(frpc_recovery, "runtime_tool_path",
+                         return_value=not_bundled / "frpc-sakura" / "sakura-frpc.exe"),
+        ):
+            assert frpc_recovery.inspect_sakura_frpc().status == "not_downloaded"
+
 
 def test_security_block_has_a_structured_status() -> None:
     client = Path("C:/DSTCamp/tools/frpc-sakura/sakura-frpc.exe")
@@ -48,7 +57,8 @@ def test_enable_mapping_aborts_before_remote_changes_when_client_is_missing() ->
         _selected_node_id=1,
         _running_shard_names=lambda _cluster: [],
         ctx=SimpleNamespace(mapping_owner=lambda _cluster, _shard: None),
-        _ensure_frpc_available=lambda: None,
+        _ensure_frpc_available=lambda **_kwargs: None,
+        _enable_mapping=lambda: None,
         window=lambda: None,
     )
     with patch.object(

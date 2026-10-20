@@ -826,12 +826,18 @@ class MainWindow(QWidget):
     def install_vcredist(self) -> None:
         """"文件"菜单"安装运行库"——跟 Mod 管理页签自动探测走的是同一个安装器，
         这个入口不依赖任何自动探测，怀疑图标/其它功能异常时能自己主动装一遍。"""
-        from dstools.shared.tex_convert import launch_vcredist_installer
+        from dstools.qt.tool_download import download_tool_with_dialog
+        from dstools.shared import tool_store
+        from dstools.shared.tex_convert import VCREDIST_RELATIVE, launch_vcredist_installer
 
-        if not launch_vcredist_installer():
+        if launch_vcredist_installer():
+            dialogs.show_info(self, t("app.install_vcredist"), t("mod.vcredist_installer_launched"))
+        elif tool_store.store_tool(VCREDIST_RELATIVE) is not None and tool_store.find_stored(VCREDIST_RELATIVE) is None:
+            # 发布版不打包安装程序：先从微软官网（备用 Gitee/GitHub）下载，下完再拉起
+            download_tool_with_dialog(self, VCREDIST_RELATIVE, t("app.install_vcredist"),
+                                      lambda _path: self.install_vcredist())
+        else:
             dialogs.show_error(self, t("app.install_vcredist"), t("mod.vcredist_installer_missing"))
-            return
-        dialogs.show_info(self, t("app.install_vcredist"), t("mod.vcredist_installer_launched"))
 
     def show_custom_bg_dialog(self) -> None:
         from dstools.qt.settings_dialogs import BackgroundImageDialog
@@ -899,8 +905,30 @@ class MainWindow(QWidget):
             f'{t("app.update_available", version=release.version)}</a>')
 
     def import_offline_package(self, package) -> None:
-        """"关于 → 手动更新 → 从文件导入"选中的网盘离线包。"""
-        self._updater.install_from_package(package)
+        """"关于 → 手动更新 → 从文件导入"选中的网盘离线包：更新包走更新流程，工具包校验后存入 data/tools。"""
+        from dstools.shared import tool_store
+        from dstools.shared.auto_update import is_update_package
+
+        title = t("about.manual_update_title")
+        if is_update_package(package):
+            self._updater.install_from_package(package)
+            return
+        if not tool_store.is_tools_package(package):
+            dialogs.show_error(self, title, t("update.package_unknown"))
+            return
+
+        def done(result) -> None:
+            imported, rejected = result
+            lines = []
+            if imported:
+                lines.append(t("update.tools_imported", names="、".join(imported)))
+            if rejected:
+                lines.append(t("update.tools_rejected", names="、".join(rejected)))
+            show = dialogs.show_info if imported and not rejected else dialogs.show_warning
+            show(self, title, "\n\n".join(lines) or t("update.tools_none"))
+
+        run_async(lambda: tool_store.import_tools_package(package), done,
+                  lambda exc: dialogs.show_error(self, title, t("update.import_failed", error=exc)))
 
     def open_update_prompt(self, release) -> None:
         """"关于"里检查到新版本、或点状态栏提示时调用：弹出更新窗口。"""

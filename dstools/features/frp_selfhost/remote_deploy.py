@@ -195,8 +195,32 @@ def verify_key_login(
         client.close()
 
 
-def _bundled_frps_binary_xz_path(arch: str) -> Path:
-    return tool_binary_dir() / "frp_selfhost" / f"frps_linux_{arch}.xz"
+def _local_frps_binary_xz(arch: str, on_log: LogFn) -> Path | None:
+    """本机的 frps（.xz）：源码模式在 tools/ 里；发布版不打包，用已下载的副本或现场下载。拿不到返回 None。"""
+    from dstools.shared import tool_store
+
+    relative = f"frp_selfhost/frps_linux_{arch}.xz"
+    bundled = tool_binary_dir() / relative
+    if bundled.is_file():
+        return bundled
+    stored = tool_store.find_stored(relative)
+    if stored is not None:
+        return stored
+    tool = tool_store.store_tool(relative)
+    on_log(f"正在下载 frps 程序本体（{arch}，约 {tool.size / 1e6:.1f} MB，只需下载一次）...")
+    shown = [0]
+
+    def progress(done: int, total: int) -> None:
+        percent = done * 100 // max(1, total)
+        if percent >= shown[0] + 25:
+            shown[0] = percent - percent % 25
+            on_log(f"  已下载 {shown[0]}%")
+
+    try:
+        return tool_store.download_tool(relative, progress)
+    except OSError as exc:
+        on_log(f"下载 frps 失败（{exc}），改为让服务器自己下载。")
+        return None
 
 
 def _detect_remote_arch(client: paramiko.SSHClient) -> str:
@@ -217,7 +241,7 @@ def _cached_frps_binary_path(arch: str) -> str:
 
 
 def _maybe_upload_frps_binary(client: paramiko.SSHClient, on_log: LogFn) -> str | None:
-    """架构匹配已打包二进制时上传到远程固定缓存路径并返回该路径，否则返回 None。
+    """架构匹配本机 frps 时上传到远程固定缓存路径并返回该路径，否则返回 None。
 
     已存在缓存（``test -f``）则跳过上传；先传到临时名再 posix_rename，避免断线留下半成品
     被误判为缓存。"""
@@ -225,10 +249,6 @@ def _maybe_upload_frps_binary(client: paramiko.SSHClient, on_log: LogFn) -> str 
     if arch not in _BUNDLED_ARCHS:
         on_log(f"服务器架构（{arch or '未知'}）没有对应的本地打包二进制，改为让服务器自己下载。")
         return None
-    xz_path = _bundled_frps_binary_xz_path(arch)
-    if not xz_path.exists():
-        return None
-
     remote_path = _cached_frps_binary_path(arch)
     _stdin, stdout, _stderr = client.exec_command("mkdir -p /opt/dstcamp-frp", timeout=10)
     stdout.channel.recv_exit_status()
@@ -238,6 +258,9 @@ def _maybe_upload_frps_binary(client: paramiko.SSHClient, on_log: LogFn) -> str 
     if already_cached:
         on_log(f"检测到服务器上已经缓存过 frps 程序本体（{arch}），跳过上传。")
         return remote_path
+    xz_path = _local_frps_binary_xz(arch, on_log)
+    if xz_path is None:
+        return None
 
     on_log(f"正在上传 frps 程序本体（{arch}，避免服务器自己访问 GitHub）...")
     import secrets

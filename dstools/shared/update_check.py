@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,11 +16,14 @@ from dstools.shared.ssl_context import default_ssl_context
 from dstools.shared.update_signing import verify_manifest
 
 _TIMEOUT = 8
+# 用列表接口自己按版本号挑最新版，不用 releases/latest：仓库里还有工具发行版（tools-N，见 tool_store.py），
+# 它比某个版本晚发布时会被当成 latest。Gitee 列表按时间正序、GitHub 倒序，取一页足够（Gitee 只保留少数几个版本）
 _SOURCES = (
-    ("gitee", "https://gitee.com/api/v5/repos/orange-blade/DSTCamp/releases/latest"),
-    ("github", "https://api.github.com/repos/chengzhirenchaoshuai/DSTCamp/releases/latest"),
+    ("gitee", "https://gitee.com/api/v5/repos/orange-blade/DSTCamp/releases?per_page=20&page=1"),
+    ("github", "https://api.github.com/repos/chengzhirenchaoshuai/DSTCamp/releases?per_page=20"),
 )
-# 本地端到端验证自动更新用：设置该环境变量后只从此地址读取发布信息（格式同 releases/latest），
+_VERSION_TAG_RE = re.compile(r"v?\d+(?:\.\d+)+")
+# 本地端到端验证自动更新用：设置该环境变量后只从此地址读取发布信息（发行版列表，或单个发行版），
 # 为防被利用只接受本机回环地址
 _TEST_FEED_ENV = "DSTCAMP_UPDATE_FEED"
 
@@ -138,14 +142,24 @@ def _strip_download_footer(body: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _newest_version_release(data) -> dict | None:
+    """从发行版列表里按版本号挑最新的正式版；工具发行版、预发布和草稿不算。"""
+    items = [data] if isinstance(data, dict) else list(data or ())
+    candidates = [
+        item for item in items
+        if isinstance(item, dict) and not item.get("prerelease") and not item.get("draft")
+        and _VERSION_TAG_RE.fullmatch(str(item.get("tag_name") or "").strip())
+    ]
+    return max(candidates, key=lambda item: _version_parts(str(item["tag_name"]).strip().lstrip("v")), default=None)
+
+
 def check_latest_release() -> UpdateRelease | None:
     """选择两个源的最高版本；同版本优先可自动更新，其次优先 Gitee，另一源的同版本 EXE 作为备用下载地址。"""
     releases = []
     for source, url in _release_sources():
         try:
-            release = _parse_release(
-                _request_json(url, accept="application/vnd.github+json"), source
-            )
+            data = _newest_version_release(_request_json(url, accept="application/vnd.github+json"))
+            release = _parse_release(data, source) if data is not None else None
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             continue
         if release is not None:

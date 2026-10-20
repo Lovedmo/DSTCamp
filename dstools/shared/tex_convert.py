@@ -31,8 +31,8 @@ _ktools_runtime_dir: Path | None = None
 _ktools_runtime_attempted = False
 _logger = logging.getLogger(__name__)
 
-# 微软官方安装包（已核实 Microsoft 数字签名）随软件打包，安装时无需联网
-_VCREDIST_EXE = tool_binary_dir() / "vcredist" / "VC++ 2013 x86.exe"
+# 微软官方安装包（已核实 Microsoft 数字签名）。发布版不打包，首次需要时从微软官网下载（tool_store）
+VCREDIST_RELATIVE = "vcredist/VC++ 2013 x86.exe"
 
 # ktech.exe 是控制台程序，不加该标志每次调用都会闪出黑色控制台窗口
 _CREATIONFLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -288,13 +288,13 @@ def launch_vcredist_installer() -> bool:
     """拉起内置的 VC++ 2013 x86 运行库安装程序（自带向导，不等待结果，装完需重启 DSTCamp 生效）。
 
     不能带 _CREATIONFLAGS（那是给控制台程序隐藏黑框用的）。拉起后另起 daemon 线程把向导提到
-    前台。找不到安装包返回 False，调用方提示用户去官网下载。
+    前台。本机没有安装包（还没下载）返回 False，调用方先用 tool_store 下载。
     """
-    if not _VCREDIST_EXE.exists():
-        return False
     try:
         # 坑：从 _MEI 临时目录直接启动会锁住目录，DSTCamp 先退出时 bootloader 报错删除失败，故先复制到数据目录
-        installer = runtime_tool_path("vcredist/VC++ 2013 x86.exe")
+        installer = runtime_tool_path(VCREDIST_RELATIVE)
+        if not installer.is_file():
+            return False
         before = _enum_visible_windows()
         subprocess.Popen([str(installer)], cwd=str(installer.parent))
         if sys.platform == "win32":
