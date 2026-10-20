@@ -878,7 +878,7 @@ class MainWindow(QWidget):
 
     def start_update_check(self) -> None:
         """启动时后台查一次最新 Release，失败不重试。有新版本时始终点亮状态栏提示，
-        "提醒更新"开关打开（默认）时才额外弹窗。"""
+        "提醒更新"开关打开（默认）时才额外弹窗并在后台预下载。"""
         from dstools.shared.update_check import check_latest_release
 
         def done(result) -> None:
@@ -886,6 +886,8 @@ class MainWindow(QWidget):
                 return
             self.show_update_notice(result)
             if get_remind_update_enabled():
+                # 先在后台预下载，用户读更新说明时已在下载；关了"提醒更新"就不主动占用流量
+                self._updater.prefetch(result)
                 self._updater.prompt(result)
 
         run_async(check_latest_release, done, lambda _exc: None)

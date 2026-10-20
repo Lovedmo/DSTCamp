@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -32,6 +34,7 @@ _HIDDEN_STAGED_GLOB = ".*.update-*.exe"
 _UPDATE_LOG_NAME = "apply_update.log"
 # 与 _helper_script() 里的路径保持一致；清理下载缓存目录时需要跳过它。
 _HELPER_SCRIPT_NAME = "apply_update.ps1"
+_download_lock = threading.Lock()
 
 
 def _hidden_staged_name(stem: str, pid: int) -> str:
@@ -52,42 +55,74 @@ def _matches_release(path: Path, release: UpdateRelease) -> bool:
     return digest.hexdigest().lower() == release.sha256.lower()
 
 
-def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:
-    """下载到持久更新目录，并严格校验长度和 SHA-256；之前已下载且校验一致时直接复用。"""
-    if not release.can_auto_update:
-        raise ValueError("该发行版缺少自动更新文件或 SHA-256 清单")
-    target_dir = data_dir("updates") / release.version
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"DSTCamp-{release.version}.exe"
-    if _matches_release(target, release):
-        if progress is not None:
-            progress(release.size, release.size)
-        return target
-    temporary = target.with_suffix(".exe.part")
-    temporary.unlink(missing_ok=True)
-    digest = hashlib.sha256()
-    downloaded = 0
-    request = urllib.request.Request(release.exe_url, headers={"User-Agent": "DSTCamp-AutoUpdate"})
-    try:
-        with urllib.request.urlopen(request, timeout=30, context=default_ssl_context()) as response, temporary.open("wb") as output:
+def _download_to_part(url: str, part: Path, total: int, progress: ProgressCallback | None) -> None:
+    """把 url 下载到 part；part 已有半截时用 Range 续传。
+
+    坑：Gitee 附件的 CDN 不支持 Range，会忽略请求头直接返回整份文件（200），这时必须从头覆盖写，
+    不能把整份内容追加到半截后面；GitHub 支持（206）。
+    """
+    offset = part.stat().st_size if part.is_file() else 0
+    if offset >= total:
+        part.unlink()
+        offset = 0
+    headers = {"User-Agent": "DSTCamp-AutoUpdate"}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=30, context=default_ssl_context()) as response:
+        if offset:
+            content_range = str(response.headers.get("Content-Range") or "")
+            if getattr(response, "status", 200) != 206 or not content_range.startswith(f"bytes {offset}-"):
+                offset = 0
+        downloaded = offset
+        with part.open("ab" if offset else "wb") as output:
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
                 output.write(chunk)
-                digest.update(chunk)
                 downloaded += len(chunk)
+                if downloaded > total:
+                    break
                 if progress is not None:
-                    progress(downloaded, release.size)
-        if downloaded != release.size:
-            raise OSError(f"下载大小不符：{downloaded} != {release.size}")
-        if digest.hexdigest().lower() != release.sha256.lower():
-            raise OSError("下载文件 SHA-256 校验失败")
-        os.replace(temporary, target)
-        return target
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+                    progress(downloaded, total)
+    if downloaded > total:
+        part.unlink(missing_ok=True)
+    if downloaded != total:
+        raise OSError(f"下载大小不符：{downloaded} != {total}")
+
+
+def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:
+    """下载到持久更新目录，并严格校验长度和 SHA-256；之前已下载且校验一致时直接复用。
+
+    主下载源失败时依次换备用源（同一版本、同一份文件），半截文件在源之间和程序重启后都能续传。
+    后台预下载与"立即更新"可能同时调用，用锁串行：后到的等前一个结束后直接复用结果。
+    """
+    if not release.can_auto_update:
+        raise ValueError("该发行版缺少自动更新文件或 SHA-256 清单")
+    target_dir = data_dir("updates") / release.version
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"DSTCamp-{release.version}.exe"
+    temporary = target.with_suffix(".exe.part")
+    with _download_lock:
+        if _matches_release(target, release):
+            if progress is not None:
+                progress(release.size, release.size)
+            return target
+        last_error: Exception = OSError("没有可用的下载地址")
+        for url in (release.exe_url, *release.fallback_urls):
+            try:
+                _download_to_part(url, temporary, release.size, progress)
+            except (OSError, http.client.HTTPException) as exc:
+                last_error = exc
+                continue
+            if _matches_release(temporary, release):
+                os.replace(temporary, target)
+                return target
+            # 内容不对（含续传拼出的坏文件）：丢掉半截，换下一个源从头下
+            temporary.unlink(missing_ok=True)
+            last_error = OSError("下载文件 SHA-256 校验失败")
+        raise last_error
 
 
 def _helper_script() -> Path:
@@ -266,7 +301,7 @@ def cleanup_stale_update_artifacts() -> None:
     """尽力清理历史更新遗留的 ``*.exe.old``、staged 文件、失败日志和过时的下载，单个失败不影响启动。
 
     能正常启动到这里就说明这些都已是残留，不依赖持久化的更新状态。
-    比当前版本新的下载目录保留（只删其中的半截 ``.part``），下次点更新直接复用。
+    比当前版本新的下载目录整个保留：下完的直接复用，半截的 ``.part`` 下次续传。
     """
     if not getattr(sys, "frozen", False):
         return
@@ -286,8 +321,6 @@ def cleanup_stale_update_artifacts() -> None:
                 if entry.name == _HELPER_SCRIPT_NAME:
                     continue
                 if entry.is_dir() and is_newer_version(__version__, entry.name):
-                    for partial in entry.glob("*.part"):
-                        _safe_unlink(partial)
                     continue
                 if entry.is_dir():
                     _safe_rmtree(entry)

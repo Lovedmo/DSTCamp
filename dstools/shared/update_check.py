@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import urllib.error
@@ -37,6 +38,7 @@ class UpdateRelease:
     sha256: str = ""
     size: int = 0
     notes: str = ""  # Release 说明（Markdown），已去掉末尾的下载提示
+    fallback_urls: tuple[str, ...] = ()  # 另一源上同版本 EXE 的地址，主源下载失败时换用（按 sha256 校验）
 
     @property
     def can_auto_update(self) -> bool:
@@ -105,7 +107,7 @@ def _strip_download_footer(body: str) -> str:
 
 
 def check_latest_release() -> UpdateRelease | None:
-    """选择两个源的最高版本；同版本优先可自动更新，其次优先 Gitee。"""
+    """选择两个源的最高版本；同版本优先可自动更新，其次优先 Gitee，另一源的同版本 EXE 作为备用下载地址。"""
     releases = []
     for source, url in _release_sources():
         try:
@@ -118,7 +120,7 @@ def check_latest_release() -> UpdateRelease | None:
             releases.append(release)
     if not releases:
         return None
-    return max(
+    best = max(
         releases,
         key=lambda item: (
             _version_parts(item.version),
@@ -126,6 +128,12 @@ def check_latest_release() -> UpdateRelease | None:
             item.source == "gitee",
         ),
     )
+    mirrors = tuple(
+        item.exe_url for item in releases
+        if item is not best and item.version == best.version
+        and item.exe_url and item.exe_url != best.exe_url
+    )
+    return dataclasses.replace(best, fallback_urls=mirrors) if mirrors else best
 
 
 

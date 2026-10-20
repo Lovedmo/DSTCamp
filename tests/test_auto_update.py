@@ -17,6 +17,9 @@ from _harness import run  # noqa: E402
 
 
 class _Response(io.BytesIO):
+    status = 200
+    headers: dict = {}
+
     def __enter__(self):
         return self
 
@@ -82,6 +85,45 @@ def test_download_requires_matching_hash_and_size() -> None:
             assert "SHA-256" in str(exc)
         else:
             raise AssertionError("错误哈希不应通过校验")
+
+
+def test_download_resumes_and_falls_back_to_mirror() -> None:
+    """主源断线时换备用源并按 Range 续传；服务器忽略 Range（如 Gitee 附件返回 200）时从头写。"""
+    payload = bytes(range(256)) * 40
+    release = UpdateRelease(
+        "1.4.0", "https://example/release", "gitee", "https://primary/exe",
+        hashlib.sha256(payload).hexdigest(), len(payload),
+        fallback_urls=("https://mirror/exe",),
+    )
+    requested = []
+
+    def urlopen(request, **_kwargs):
+        requested.append((request.full_url, request.get_header("Range")))
+        if request.full_url == "https://primary/exe":
+            raise auto_update.urllib.error.URLError("断线")
+        start = int(request.get_header("Range")[len("bytes="):-1])
+        response = _Response(payload[start:])
+        response.status = 206
+        response.headers = {"Content-Range": f"bytes {start}-{len(payload) - 1}/{len(payload)}"}
+        return response
+
+    with tempfile.TemporaryDirectory() as directory, patch.object(
+        auto_update, "data_dir", return_value=Path(directory)
+    ):
+        part = Path(directory) / "1.4.0" / "DSTCamp-1.4.0.exe.part"
+        part.parent.mkdir(parents=True)
+        part.write_bytes(payload[:1000])
+        with patch.object(auto_update.urllib.request, "urlopen", side_effect=urlopen):
+            path = auto_update.download_update(release)
+        assert path.read_bytes() == payload and not part.exists()
+        assert requested == [("https://primary/exe", "bytes=1000-"), ("https://mirror/exe", "bytes=1000-")]
+
+        path.unlink()
+        part.write_bytes(b"x" * 1000)
+        with patch.object(
+            auto_update.urllib.request, "urlopen", side_effect=lambda *_a, **_k: _Response(payload)
+        ):
+            assert auto_update.download_update(release).read_bytes() == payload
 
 
 def test_launch_helper_stages_on_exe_volume() -> None:
@@ -182,7 +224,7 @@ def test_cleanup_removes_known_stale_artifacts() -> None:
         (updates_dir / "1.3.6").mkdir(parents=True)
         (updates_dir / "1.3.6" / "DSTCamp-1.3.6.exe").write_bytes(b"stale-download")
         updates_dir.joinpath("apply_update.ps1").write_text("script", encoding="utf-8")
-        # 比当前版本新的下载留给下次复用，只删半截文件
+        # 比当前版本新的下载留给下次复用，半截文件留着续传
         newer = updates_dir / "999.0.0"
         newer.mkdir()
         (newer / "DSTCamp-999.0.0.exe").write_bytes(b"ready")
@@ -201,7 +243,7 @@ def test_cleanup_removes_known_stale_artifacts() -> None:
         assert not (updates_dir / "1.3.6").exists()
         assert updates_dir.joinpath("apply_update.ps1").exists()
         assert (newer / "DSTCamp-999.0.0.exe").exists()
-        assert not (newer / "DSTCamp-999.0.0.exe.part").exists()
+        assert (newer / "DSTCamp-999.0.0.exe.part").exists()
 
 
 def test_cleanup_is_noop_when_not_frozen() -> None:

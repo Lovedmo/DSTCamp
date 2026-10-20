@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 import sys
+import threading
 import webbrowser
 
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QTextBrowser
@@ -20,6 +22,8 @@ from dstools.qt.threads import post_to_ui, run_async
 from dstools.qt.widgets import ToggleSwitch
 from dstools.shared.app_settings import get_remind_update_enabled, set_remind_update_enabled
 from dstools.shared.update_check import UpdateRelease
+
+_logger = logging.getLogger(__name__)
 
 
 def can_install_automatically(release: UpdateRelease) -> bool:
@@ -143,6 +147,36 @@ class SelfUpdater:
     def __init__(self, window):
         self._window = window
         self._busy = False
+        self._prefetching = False
+
+    def _report_progress(self, downloaded: int, total: int) -> None:
+        """下载线程的进度回调：只在用户点了"立即更新"之后才显示到状态栏，静默预下载不打扰。"""
+        if self._busy:
+            # 下载在后台线程回调，转回界面线程更新进度条
+            post_to_ui(lambda percent: self._window.set_update_progress(percent),
+                       min(99, int(downloaded * 100 / max(1, total))))
+
+    def prefetch(self, release: UpdateRelease) -> None:
+        """发现新版本后在后台静默下载并校验，用户点"立即更新"时直接安装；失败不提示，点更新时会再下。
+
+        用守护线程而不是 run_async：Qt 线程池退出时会等任务跑完，下到一半关程序会卡住；
+        守护线程随进程结束，半截文件下次续传。
+        """
+        from dstools.shared.auto_update import download_update
+
+        if self._prefetching or not can_install_automatically(release):
+            return
+        self._prefetching = True
+
+        def work() -> None:
+            try:
+                download_update(release, self._report_progress)
+            except Exception:
+                _logger.warning("后台预下载更新失败", exc_info=True)
+            finally:
+                self._prefetching = False
+
+        threading.Thread(target=work, name="update-prefetch", daemon=True).start()
 
     def prompt(self, release: UpdateRelease) -> None:
         if self._busy:
@@ -167,15 +201,10 @@ class SelfUpdater:
         self._busy = True
         window = self._window
         window.set_update_progress(0)
-        total = max(1, int(release.size or 0))
-
-        def progress(downloaded: int, _total: int) -> None:
-            # 下载在后台线程回调，转回界面线程更新进度条
-            post_to_ui(lambda percent: window.set_update_progress(percent),
-                       min(99, int(downloaded * 100 / total)))
 
         def work():
-            path = download_update(release, progress)
+            # 预下载还在进行时这里会等它结束再复用结果，等待期间进度照样显示
+            path = download_update(release, self._report_progress)
             validate_staged_executable(path)   # 实际启动一次新 EXE 的冒烟入口
             ensure_install_dir_writable()      # 退出前确认能替换 EXE 所在目录
             ensure_install_target_replaceable()  # 同目录已有的固定名字 EXE 不能正在运行
