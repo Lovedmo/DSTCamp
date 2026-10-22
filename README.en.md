@@ -18,17 +18,15 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#172-changes">Changelog</a> ·
+  <a href="#173-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.7.2 highlights
+## ✨ 1.7.3 highlights
 
-- 📦 **Installer down from 89 MB to 54 MB**: tools are xz-compressed, and rarely used tools are downloaded automatically on first use.
-- 🚀 **Faster, more reliable updates**: background pre-download, Gitee/GitHub fallback and resumable downloads; from the next version on, only a few-MB incremental patch is downloaded.
-- 🧰 **Offline updates**: "About → Manual Update → Import from File" installs a full package, patch package or tools package downloaded from a cloud drive.
+- 🚫 **Disable players' client mods**: dedicated-server saves gain a "Disable client mods" entry in the Mod list that temporarily disables joining players' local client mods.
 
 ## 🧭 Features
 
@@ -113,11 +111,20 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.7.2 changes
+## 1.7.3 changes
+
+### ✨ New features
+
+- **Disable client mods**: the Mod list of dedicated-server saves gains a "Disable client mods" row (with its own icon) that toggles like any other Mod; "Save Changes" writes it to all worlds, and "Apply to Current Shard Only" writes only the current one. After the next start, joining players' local client mods are temporarily disabled. It is hidden for local saves and on the client mods tab.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.7.2)</strong></summary>
+
+### 1.7.2
 
 > When auto-updating from 1.7.1 or earlier, the replacement script from the old version is still used, so occasionally clicking "Restart" does not start the new version or replace the program: just reopen DSTCamp and update again (the downloaded file is reused), or download the full package from the cloud drive and install it via "About → Manual Update → Import from File".
 
-### ✨ New features
+#### ✨ New features
 
 - **Smaller installer**: the bundled frpc, frps and SakuraFrp frpc are now xz-compressed (about 7 MB smaller); the unpacked files are byte-for-byte identical.
 - **Smaller installer**: three oversized recommended-Mod icons are scaled down to 256 px (about 2.7 MB smaller) and still look sharp on high-DPI screens.
@@ -131,12 +138,9 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 - **A way out when frpc is blocked**: when security software quarantines or blocks the frpc of self-hosted nodes or Lolia, the status row says "Blocked by security software" and the button becomes "Resolve Block", which opens the Windows Defender exclusions window and restarts frpc after it closes.
 - **VC++ 2013 runtime update**: the x86 installer used by "Install runtime" is now Microsoft's current 12.0.40664, including later security fixes.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - After clicking "Restart" for an auto-update, the new version did not start and the program was not replaced.
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.7.1)</strong></summary>
 
 ### 1.7.1
 
