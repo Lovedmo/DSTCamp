@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
 )
 
 from dstools.features.local_service import luajit_injector
@@ -28,7 +28,9 @@ from dstools.features.mod.list_model import (
 )
 from dstools.features.mod.local_version import apply_local_version, resolve_local_version_target
 from dstools.features.mod.locations import resolve_mod_open_location
-from dstools.features.mod.manager import enable_mod, load_mod_overrides, save_mod_overrides, sync_mods
+from dstools.features.mod.manager import (
+    client_mods_disabled, enable_mod, load_mod_overrides, save_mod_overrides, set_client_mods_disabled, sync_mods,
+)
 from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 from dstools.features.mod.parser import (
     find_game_mods_dir, find_wegame_client_dir, find_wegame_server_dir,
@@ -138,6 +140,13 @@ class ModPage(Page):
         self._global_defaults_btn = QPushButton(t("mod.global_defaults_btn"))
         self._global_defaults_btn.clicked.connect(self._open_global_defaults)
         tool_row.addWidget(self._global_defaults_btn)
+        tool_row.addSpacing(10)
+        # 存档级开关，勾选即写盘，跟 Mod 勾选的"保存"无关；本地存档开服时游戏会重写 modoverrides，只给服务器存档
+        self._client_mods_check = QCheckBox(t("mod.client_mods_disabled"))
+        self._client_mods_check.setToolTip(t("mod.client_mods_disabled_hint"))
+        self._client_mods_check.setVisible(False)
+        self._client_mods_check.toggled.connect(self._on_client_mods_toggled)
+        tool_row.addWidget(self._client_mods_check)
         tool_row.addStretch()
         root.addLayout(tool_row)
 
@@ -308,6 +317,7 @@ class ModPage(Page):
         self._wegame_banner.set_text(t("mod.wegame_root_needed_banner") if self._wegame_root_missing(c) else "")
         self._refresh_runtime_banner()
         self._update_mod_location_display()
+        self._refresh_client_mods_check(c if is_server else None)
         self._shard_combo.blockSignals(True)
         self._shard_combo.clear()
         if not c:
@@ -335,6 +345,49 @@ class ModPage(Page):
             return False
         root = app_settings.get_wegame_root_path()
         return root is None or find_wegame_client_dir(root) is None
+
+    def _set_client_mods_check(self, checked: bool) -> None:
+        self._client_mods_check.blockSignals(True)
+        self._client_mods_check.setChecked(checked)
+        self._client_mods_check.blockSignals(False)
+
+    def _refresh_client_mods_check(self, cluster) -> None:
+        """只有服务器存档显示开关；读各世界 modoverrides.lua 放后台，回来时存档已切走就丢弃。"""
+        self._client_mods_check.setVisible(cluster is not None)
+        self._set_client_mods_check(False)
+        if cluster is None:
+            return
+        self._client_mods_check.setEnabled(False)
+        path = str(cluster.path)
+
+        def done(disabled: bool) -> None:
+            current = self.get_cluster()
+            if current is None or str(current.path) != path:
+                return
+            self._set_client_mods_check(disabled)
+            self._client_mods_check.setEnabled(True)
+
+        run_async(lambda: client_mods_disabled(cluster), done, lambda _exc: self._client_mods_check.setEnabled(True))
+
+    def _on_client_mods_toggled(self, checked: bool) -> None:
+        cluster = self.get_cluster()
+        if not cluster or cluster.source != SaveSource.SERVER:
+            self._set_client_mods_check(not checked)
+            return
+        self._client_mods_check.setEnabled(False)
+
+        def done(_written: int) -> None:
+            self._client_mods_check.setEnabled(True)
+            self.ctx.cluster_config_saved.emit(cluster)
+            dialogs.show_toast(self.window(), t("mod.client_mods_disabled_on_toast" if checked
+                                                else "mod.client_mods_disabled_off_toast"), ms=3000)
+
+        def failed(exc: Exception) -> None:
+            self._client_mods_check.setEnabled(True)
+            self._set_client_mods_check(not checked)
+            dialogs.show_error(self.window(), t("mod.client_mods_disabled"), str(exc))
+
+        run_async(lambda: set_client_mods_disabled(cluster, checked), done, failed)
 
     def _on_shard_select(self, _index: int = 0) -> None:
         self._current_shard_name = self._shard_combo.currentText()

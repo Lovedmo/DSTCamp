@@ -16,6 +16,7 @@ import struct
 import zlib
 from pathlib import Path
 
+from dstools.features.mod.manager import CLIENT_MODS_DISABLED_KEY
 from dstools.models import ModEntry
 from dstools.shared.lua_parser import parse_lua_table, serialize_lua_table
 
@@ -83,7 +84,8 @@ def load_shardindex_mods(path: Path) -> dict[str, ModEntry]:
         raise ShardIndexError(f"无法读取 {path}：{exc}") from exc
     mods = {}
     for key, mod_data in (data.get(_KEY) or {}).items():
-        if not isinstance(mod_data, dict):
+        # 禁用客户端 Mod 的开关不是 Mod；游戏开服时按启用的 Mod 重建 enabled_mods，本地存档留不住它
+        if key == CLIENT_MODS_DISABLED_KEY or not isinstance(mod_data, dict):
             continue
         # config_data 是游戏的旧格式（见 ShardIndex:LoadEnabledServerMods）
         options = mod_data.get("configuration_options") or mod_data.get("config_data") or {}

@@ -99,6 +99,8 @@ class ModOverrides:
 
     path: Path
     mods: dict[str, ModEntry] = field(default_factory=dict)
+    # client_mods_disabled 键：不是 Mod，开启后加入的玩家本地客户端 Mod 被临时禁用
+    client_mods_disabled: bool = False
 
 
 @dataclass
