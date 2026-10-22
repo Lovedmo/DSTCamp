@@ -80,6 +80,7 @@ REQUIRED_ICON_FILES = (
     "app/icon.ico",
     "app/icon.png",
     "ui/character_icon_default.png",
+    "ui/client_mods_disabled.png",  # Mod 列表"禁用客户端模组"行
     "ui/combo_arrow.png",  # Qt 版下拉框箭头（QSS 引用）
     "ui/mod_icon_default.png",
 )
