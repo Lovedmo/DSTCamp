@@ -30,7 +30,7 @@ from dstools.features.mod.list_model import (
 from dstools.features.mod.local_version import apply_local_version, resolve_local_version_target
 from dstools.features.mod.locations import resolve_mod_open_location
 from dstools.features.mod.manager import (
-    CLIENT_MODS_DISABLED_KEY, enable_mod, load_mod_overrides, save_mod_overrides, set_client_mods_disabled, sync_mods,
+    CLIENT_MODS_DISABLED_KEY, enable_mod, load_mod_overrides, save_mod_overrides, sync_mods,
 )
 from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 from dstools.features.mod.parser import (
@@ -111,11 +111,10 @@ class ModPage(Page):
         self._filter_timer.timeout.connect(self._render_list)
         self._current_shard_name = ""
         self._global_defaults_dialog = None
-        # 列表里"禁用客户端模组"开关行：当前世界 modoverrides.lua 的状态，写盘期间不响应再次点击；
+        # 列表里"禁用客户端模组"开关行：当前世界 modoverrides.lua 的状态（含未保存改动），随"保存"写入；
         # 排序位置按加载时的状态定，跟其它 Mod 一样切换开关不重排
         self._client_mods_disabled = False
         self._client_mods_sort_enabled = False
-        self._client_mods_writing = False
 
         # 更新状态（供 Workshop 更新弹窗共享，避免重复扫描）
         self._workshop_update_running = False
@@ -968,7 +967,7 @@ class ModPage(Page):
         return len(rows)
 
     def _client_mods_switch_row(self, cluster) -> dict | None:
-        """服务器存档的"禁用客户端模组"行：存档级开关，借用 Mod 行的样式，点开关立即写入所有世界（不走"保存"）。
+        """服务器存档的"禁用客户端模组"行：借用 Mod 行的样式，开关跟普通 Mod 一样随"保存"写入。
         本地存档开服时游戏会按启用的 Mod 重写 modoverrides.lua，留不住这个键，所以不显示。"""
         if not cluster or cluster.source != SaveSource.SERVER or not self._current_shard_name:
             return None
@@ -1048,7 +1047,9 @@ class ModPage(Page):
         if not self._editable(self.get_cluster()):
             return
         if workshop_id == CLIENT_MODS_DISABLED_KEY:
-            self._toggle_client_mods_disabled()
+            self._client_mods_disabled = not self._client_mods_disabled
+            self._mark_dirty()
+            self._render_list()
             return
         if self._luajit_mod_locked and workshop_id == luajit_injector.WORKSHOP_MOD_KEY:
             return
@@ -1085,33 +1086,6 @@ class ModPage(Page):
         self._mark_dirty()
         self._update_enabled_count()
         self._render_list()
-
-    def _toggle_client_mods_disabled(self) -> None:
-        cluster = self.get_cluster()
-        if self._client_mods_writing or not cluster or cluster.source != SaveSource.SERVER:
-            return
-        disabled = not self._client_mods_disabled
-        self._client_mods_writing = True
-        self._render_list()
-
-        def finish(ok: bool) -> None:
-            self._client_mods_writing = False
-            current = self.get_cluster()
-            if ok and current is not None and str(current.path) == str(cluster.path):
-                self._client_mods_disabled = disabled
-            self._render_list()
-
-        def done(_written: int) -> None:
-            finish(True)
-            self.ctx.cluster_config_saved.emit(cluster)
-            dialogs.show_toast(self.window(), t("mod.client_mods_disabled_on_toast" if disabled
-                                                else "mod.client_mods_disabled_off_toast"), ms=3000)
-
-        def failed(exc: Exception) -> None:
-            finish(False)
-            dialogs.show_error(self.window(), t("mod.client_mods_disabled"), str(exc))
-
-        run_async(lambda: set_client_mods_disabled(cluster, disabled), done, failed)
 
     def _on_config(self, workshop_id: str) -> None:
         mod = self._mod_data.get(workshop_id)
@@ -1227,6 +1201,7 @@ class ModPage(Page):
 
     # ── 保存 / 应用 ─────────────────────────────────────────────────────
     def _write_mod_states(self, overrides) -> None:
+        overrides.client_mods_disabled = self._client_mods_disabled
         for wid, mod in self._mod_data.items():
             if wid in overrides.mods:
                 overrides.mods[wid].enabled = mod.enabled

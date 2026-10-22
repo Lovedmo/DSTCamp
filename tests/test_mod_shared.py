@@ -658,46 +658,26 @@ def test_shardindex_save_replaces_only_enabled_mods():
 
 def test_client_mods_disabled_switch_is_not_a_mod():
     """禁用客户端 Mod 的键不当成 Mod；游戏只看真假（enabled=false 也算开启），关闭时整键删除。"""
-    from dstools.features.mod.manager import (
-        client_mods_disabled, load_mod_overrides, save_mod_overrides, set_client_mods_disabled,
-    )
-    from dstools.models import Cluster, SaveSource, Shard
-    from dstools.shared.lua_parser import LuaParseError, parse_lua_file
+    from dstools.features.mod.manager import load_mod_overrides, save_mod_overrides, sync_mods
+    from dstools.models import ModOverrides
+    from dstools.shared.lua_parser import parse_lua_file
 
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        master, caves = root / "Master", root / "Caves"
-        master.mkdir()
-        caves.mkdir()
-        (master / "modoverrides.lua").write_text(
-            'return { ["workshop-1"]={ enabled=true, configuration_options={ k=1 } },\n'
-            '  client_mods_disabled={ enabled=false } }', encoding="utf-8")
-        cluster = Cluster(name="c", path=root, source=SaveSource.SERVER,
-                          shards=[Shard("Master", master, mod_overrides_path=master / "modoverrides.lua"),
-                                  Shard("Caves", caves)])
-
-        overrides = load_mod_overrides(master / "modoverrides.lua")
+        path = Path(tmp) / "modoverrides.lua"
+        path.write_text('return { ["workshop-1"]={ enabled=true, configuration_options={ k=1 } },\n'
+                        '  client_mods_disabled={ enabled=false } }', encoding="utf-8")
+        overrides = load_mod_overrides(path)
         assert list(overrides.mods) == ["workshop-1"] and overrides.client_mods_disabled
         save_mod_overrides(overrides)
-        assert parse_lua_file(master / "modoverrides.lua")["client_mods_disabled"] == {"enabled": True}
+        assert parse_lua_file(path)["client_mods_disabled"] == {"enabled": True}
 
-        # 开启时补齐没有 modoverrides.lua 的世界
-        assert set_client_mods_disabled(cluster, True) == 1
-        assert load_mod_overrides(caves / "modoverrides.lua").client_mods_disabled
+        other = ModOverrides(path=Path(tmp) / "Caves.lua")
+        sync_mods(overrides, other)
+        assert other.client_mods_disabled
 
-        assert set_client_mods_disabled(cluster, False) == 2 and not client_mods_disabled(cluster)
-        assert parse_lua_file(master / "modoverrides.lua") == {
-            "workshop-1": {"enabled": True, "configuration_options": {"k": 1}}}
-
-        # 任一世界解析失败时一个文件都不改
-        (caves / "modoverrides.lua").write_text("return { broken", encoding="utf-8")
-        before = (master / "modoverrides.lua").read_bytes()
-        try:
-            set_client_mods_disabled(cluster, True)
-            raise AssertionError("解析失败应抛出")
-        except LuaParseError:
-            pass
-        assert (master / "modoverrides.lua").read_bytes() == before
+        overrides.client_mods_disabled = False
+        save_mod_overrides(overrides)
+        assert parse_lua_file(path) == {"workshop-1": {"enabled": True, "configuration_options": {"k": 1}}}
 
 
 def test_mod_config_memory_two_way_sync():

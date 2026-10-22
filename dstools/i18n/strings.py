@@ -1118,9 +1118,7 @@ STRINGS = {
         "mod.default_state_saved": "已保存在 DSTCamp",
         "mod.global_defaults_btn": "全局默认配置",
         "mod.client_mods_disabled": "禁用客户端模组",
-        "mod.client_mods_disabled_desc": "玩家进服时临时禁用其客户端模组 · 立即写入所有世界，下次开服生效",
-        "mod.client_mods_disabled_on_toast": "已禁用客户端模组，下次开服生效",
-        "mod.client_mods_disabled_off_toast": "已允许客户端模组，下次开服生效",
+        "mod.client_mods_disabled_desc": "玩家进服时临时禁用其客户端模组，保存后下次开服生效",
         "mod.global_defaults_title": "全局默认配置",
         "mod.global_defaults_search": "搜索名称或 ID",
         "mod.global_defaults_configured": "已设置",
@@ -2819,11 +2817,7 @@ STRINGS = {
         "mod.default_state_saved": "Saved in DSTCamp",
         "mod.global_defaults_btn": "Global Default Configs",
         "mod.client_mods_disabled": "Disable client mods",
-        "mod.client_mods_disabled_desc": (
-            "Temporarily disables joining players' client mods · Saved to all worlds at once, applies on next start"
-        ),
-        "mod.client_mods_disabled_on_toast": "Client mods disabled; takes effect on the next start",
-        "mod.client_mods_disabled_off_toast": "Client mods allowed; takes effect on the next start",
+        "mod.client_mods_disabled_desc": "Temporarily disables joining players' client mods; applies on next start after saving",
         "mod.global_defaults_title": "Global Default Configs",
         "mod.global_defaults_search": "Search name or ID",
         "mod.global_defaults_configured": "Configured",
