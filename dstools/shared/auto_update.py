@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import http.client
 import json
 import logging
@@ -92,6 +93,27 @@ def _build_from_patch(release: UpdateRelease, target: Path, progress: ProgressCa
     except (OSError, http.client.HTTPException, subprocess.SubprocessError):
         _logger.warning("补丁更新不可用，改为下载完整安装包", exc_info=True)
     return False
+
+
+@functools.lru_cache(maxsize=1)
+def _running_exe_sha256() -> str:
+    """正在运行的 EXE 运行期间不会变，算一次即可（约 50 MB，避免每次打开更新提示都重算）。"""
+    return _file_sha256(Path(sys.executable))
+
+
+def planned_download(release: UpdateRelease) -> tuple[str, int]:
+    """更新提示里显示的下载量，判断与 download_update 实际走的分支一致：
+    ("ready", 0) 已下载好；("patch", 补丁大小) 本机是补丁起点的原版 EXE；("full", 整包大小) 其余情况。"""
+    target = data_dir("updates") / release.version / f"DSTCamp-{release.version}.exe"
+    try:
+        if _matches(target, release.size, release.sha256):
+            return "ready", 0
+        patch = release.patch
+        if patch is not None and _hpatchz() is not None and _running_exe_sha256() == patch.from_sha256:
+            return "patch", patch.size
+    except OSError:
+        pass
+    return "full", release.size
 
 
 def download_update(release: UpdateRelease, progress: ProgressCallback | None = None) -> Path:

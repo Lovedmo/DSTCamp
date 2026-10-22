@@ -31,6 +31,22 @@ def can_install_automatically(release: UpdateRelease) -> bool:
     return bool(release.can_auto_update and getattr(sys, "frozen", False))
 
 
+def _format_size(size: int) -> str:
+    # 与发布脚本一样按 10 进制换算；补丁可能只有几十 KB，不足 0.1 MB 时用 KB 显示
+    return f"{size / 1e6:.1f} MB" if size >= 100_000 else f"{max(1, round(size / 1e3))} KB"
+
+
+def _download_size_text(release: UpdateRelease) -> str:
+    from dstools.shared.auto_update import planned_download
+
+    kind, size = planned_download(release)
+    if kind == "ready":
+        return t("update.size_ready")
+    if kind == "patch":
+        return t("update.size_patch", size=_format_size(size), full=_format_size(release.size))
+    return t("update.size_full", size=_format_size(size))
+
+
 def _inline_html(text: str) -> str:
     """转义后处理行内的 **粗体**、`代码` 与 [文字](链接)。"""
     text = html.escape(text, quote=False)
@@ -96,6 +112,8 @@ class UpdatePromptDialog(dialogs.Dialog):
         self.action = "cancel"
         key = "update.prompt" if release.can_auto_update else "update.manual_only"
         self.body.addWidget(self.text_label(t(key, version=release.version)))
+        if can_install_automatically(release):
+            self.body.addWidget(self.text_label(_download_size_text(release)))
         if release.notes:
             self.body.addWidget(self.heading_label(t("update.notes_heading")))
             notes = QTextBrowser()
