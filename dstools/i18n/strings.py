@@ -1118,10 +1118,7 @@ STRINGS = {
         "mod.default_state_saved": "已保存在 DSTCamp",
         "mod.global_defaults_btn": "全局默认配置",
         "mod.client_mods_disabled": "禁用玩家的客户端模组",
-        "mod.client_mods_disabled_hint": (
-            "写入所有世界的 modoverrides.lua（client_mods_disabled），下次开服生效：玩家加入时，"
-            "本地启用的客户端模组会被临时禁用，退出后自动恢复。只对服务器存档有效。"
-        ),
+        "mod.client_mods_disabled_desc": "玩家进服时临时禁用其客户端模组 · 立即写入所有世界，下次开服生效",
         "mod.client_mods_disabled_on_toast": "已禁用玩家的客户端模组，下次开服生效",
         "mod.client_mods_disabled_off_toast": "已允许玩家使用客户端模组，下次开服生效",
         "mod.global_defaults_title": "全局默认配置",
@@ -2822,10 +2819,8 @@ STRINGS = {
         "mod.default_state_saved": "Saved in DSTCamp",
         "mod.global_defaults_btn": "Global Default Configs",
         "mod.client_mods_disabled": "Disable players' client mods",
-        "mod.client_mods_disabled_hint": (
-            "Writes client_mods_disabled to every world's modoverrides.lua and takes effect on the next start: "
-            "client mods enabled by joining players are temporarily disabled and restored after they leave. "
-            "Server saves only."
+        "mod.client_mods_disabled_desc": (
+            "Temporarily disables joining players' client mods · Saved to all worlds at once, applies on next start"
         ),
         "mod.client_mods_disabled_on_toast": "Client mods disabled for players; takes effect on the next start",
         "mod.client_mods_disabled_off_toast": "Client mods allowed for players; takes effect on the next start",

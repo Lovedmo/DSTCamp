@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
+    QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
 )
 
 from dstools.features.local_service import luajit_injector
@@ -29,7 +29,7 @@ from dstools.features.mod.list_model import (
 from dstools.features.mod.local_version import apply_local_version, resolve_local_version_target
 from dstools.features.mod.locations import resolve_mod_open_location
 from dstools.features.mod.manager import (
-    client_mods_disabled, enable_mod, load_mod_overrides, save_mod_overrides, set_client_mods_disabled, sync_mods,
+    CLIENT_MODS_DISABLED_KEY, enable_mod, load_mod_overrides, save_mod_overrides, set_client_mods_disabled, sync_mods,
 )
 from dstools.features.mod.modinfo_cache import parse_modinfo_cached
 from dstools.features.mod.parser import (
@@ -94,6 +94,9 @@ class ModPage(Page):
         self._filter_timer.timeout.connect(self._render_list)
         self._current_shard_name = ""
         self._global_defaults_dialog = None
+        # 列表首行"禁用玩家的客户端模组"开关：当前世界 modoverrides.lua 的状态，写盘期间不响应再次点击
+        self._client_mods_disabled = False
+        self._client_mods_writing = False
 
         # 更新状态（供 Workshop 更新弹窗共享，避免重复扫描）
         self._workshop_update_running = False
@@ -140,13 +143,6 @@ class ModPage(Page):
         self._global_defaults_btn = QPushButton(t("mod.global_defaults_btn"))
         self._global_defaults_btn.clicked.connect(self._open_global_defaults)
         tool_row.addWidget(self._global_defaults_btn)
-        tool_row.addSpacing(10)
-        # 存档级开关，勾选即写盘，跟 Mod 勾选的"保存"无关；本地存档开服时游戏会重写 modoverrides，只给服务器存档
-        self._client_mods_check = QCheckBox(t("mod.client_mods_disabled"))
-        self._client_mods_check.setToolTip(t("mod.client_mods_disabled_hint"))
-        self._client_mods_check.setVisible(False)
-        self._client_mods_check.toggled.connect(self._on_client_mods_toggled)
-        tool_row.addWidget(self._client_mods_check)
         tool_row.addStretch()
         root.addLayout(tool_row)
 
@@ -317,7 +313,6 @@ class ModPage(Page):
         self._wegame_banner.set_text(t("mod.wegame_root_needed_banner") if self._wegame_root_missing(c) else "")
         self._refresh_runtime_banner()
         self._update_mod_location_display()
-        self._refresh_client_mods_check(c if is_server else None)
         self._shard_combo.blockSignals(True)
         self._shard_combo.clear()
         if not c:
@@ -345,49 +340,6 @@ class ModPage(Page):
             return False
         root = app_settings.get_wegame_root_path()
         return root is None or find_wegame_client_dir(root) is None
-
-    def _set_client_mods_check(self, checked: bool) -> None:
-        self._client_mods_check.blockSignals(True)
-        self._client_mods_check.setChecked(checked)
-        self._client_mods_check.blockSignals(False)
-
-    def _refresh_client_mods_check(self, cluster) -> None:
-        """只有服务器存档显示开关；读各世界 modoverrides.lua 放后台，回来时存档已切走就丢弃。"""
-        self._client_mods_check.setVisible(cluster is not None)
-        self._set_client_mods_check(False)
-        if cluster is None:
-            return
-        self._client_mods_check.setEnabled(False)
-        path = str(cluster.path)
-
-        def done(disabled: bool) -> None:
-            current = self.get_cluster()
-            if current is None or str(current.path) != path:
-                return
-            self._set_client_mods_check(disabled)
-            self._client_mods_check.setEnabled(True)
-
-        run_async(lambda: client_mods_disabled(cluster), done, lambda _exc: self._client_mods_check.setEnabled(True))
-
-    def _on_client_mods_toggled(self, checked: bool) -> None:
-        cluster = self.get_cluster()
-        if not cluster or cluster.source != SaveSource.SERVER:
-            self._set_client_mods_check(not checked)
-            return
-        self._client_mods_check.setEnabled(False)
-
-        def done(_written: int) -> None:
-            self._client_mods_check.setEnabled(True)
-            self.ctx.cluster_config_saved.emit(cluster)
-            dialogs.show_toast(self.window(), t("mod.client_mods_disabled_on_toast" if checked
-                                                else "mod.client_mods_disabled_off_toast"), ms=3000)
-
-        def failed(exc: Exception) -> None:
-            self._client_mods_check.setEnabled(True)
-            self._set_client_mods_check(not checked)
-            dialogs.show_error(self.window(), t("mod.client_mods_disabled"), str(exc))
-
-        run_async(lambda: set_client_mods_disabled(cluster, checked), done, failed)
 
     def _on_shard_select(self, _index: int = 0) -> None:
         self._current_shard_name = self._shard_combo.currentText()
@@ -650,6 +602,7 @@ class ModPage(Page):
         gen = self._refresh_gen
         local_index = self._local_shardindex(c)
         if not shard or not (shard.mod_overrides_path or local_index):
+            self._client_mods_disabled = False
             self._mod_data.clear()
             self._mod_infos.clear()
             self._icon_imgs.clear()
@@ -820,7 +773,8 @@ class ModPage(Page):
                    version_targets=version_targets,
                    full_resolved_cache=full_resolved_cache,
                    luajit_active=luajit_active, platform=platform,
-                   wegame_client_mods_dir=wegame_client_mods_dir, stamps=stamps)
+                   wegame_client_mods_dir=wegame_client_mods_dir, stamps=stamps,
+                   client_mods_disabled=overrides.client_mods_disabled)
 
     @staticmethod
     def _preload_first_screen_icons(first_screen, mod_data, mod_infos, platform, luajit_active,
@@ -856,6 +810,7 @@ class ModPage(Page):
         self._full_resolved_cache = result["full_resolved_cache"]
         self._mod_stamps = result["stamps"]
         self._luajit_mod_locked = result["luajit_active"]
+        self._client_mods_disabled = result["client_mods_disabled"]
         self._loading = False
         self._loading_key = None
         self._mods_loaded = True
@@ -975,7 +930,26 @@ class ModPage(Page):
                 # 名称和版本都是空的，用户不知道这一行从哪来——写明来源和原因。
                 row["name"] = row["name"] or t("mod.reference_missing_name")
                 row["version_text"] = referenced_missing_status_text(status)
-        return rows
+        switch_row = self._client_mods_switch_row(cluster)
+        return ([switch_row] if switch_row else []) + rows
+
+    def _client_mods_switch_row(self, cluster) -> dict | None:
+        """服务器存档的列表首行：存档级开关，借用 Mod 行的样式，点开关立即写入所有世界（不走"保存"）。
+        本地存档开服时游戏会按启用的 Mod 重写 modoverrides.lua，留不住这个键，所以不显示。"""
+        if not cluster or cluster.source != SaveSource.SERVER or not self._current_shard_name:
+            return None
+        filters = self._row_filter_args()
+        show = filters["show"]
+        if show in ("custom", "client") or show == ("disabled" if self._client_mods_disabled else "enabled"):
+            return None
+        name = t("mod.client_mods_disabled")
+        needle = filters["query"].strip().casefold()
+        if needle and needle not in name.casefold() and needle not in CLIENT_MODS_DISABLED_KEY:
+            return None
+        return {"workshop_id": CLIENT_MODS_DISABLED_KEY, "name": name,
+                "version_text": t("mod.client_mods_disabled_desc"), "enabled": self._client_mods_disabled,
+                "is_local": False, "has_config": False, "has_link": False,
+                "has_folder": False, "mod_format": None}
 
     def _mod_format(self, workshop_id: str, workshop_root) -> str | None:
         """列表和导出图片共用的 V1/V2 判断：有 Steam 状态时以它为准，否则看工坊目录内容。"""
@@ -1036,6 +1010,9 @@ class ModPage(Page):
     def _on_toggle(self, workshop_id: str) -> None:
         if not self._editable(self.get_cluster()):
             return
+        if workshop_id == CLIENT_MODS_DISABLED_KEY:
+            self._toggle_client_mods_disabled()
+            return
         if self._luajit_mod_locked and workshop_id == luajit_injector.WORKSHOP_MOD_KEY:
             return
         mod = self._mod_data.get(workshop_id)
@@ -1071,6 +1048,33 @@ class ModPage(Page):
         self._mark_dirty()
         self._update_enabled_count()
         self._render_list()
+
+    def _toggle_client_mods_disabled(self) -> None:
+        cluster = self.get_cluster()
+        if self._client_mods_writing or not cluster or cluster.source != SaveSource.SERVER:
+            return
+        disabled = not self._client_mods_disabled
+        self._client_mods_writing = True
+        self._render_list()
+
+        def finish(ok: bool) -> None:
+            self._client_mods_writing = False
+            current = self.get_cluster()
+            if ok and current is not None and str(current.path) == str(cluster.path):
+                self._client_mods_disabled = disabled
+            self._render_list()
+
+        def done(_written: int) -> None:
+            finish(True)
+            self.ctx.cluster_config_saved.emit(cluster)
+            dialogs.show_toast(self.window(), t("mod.client_mods_disabled_on_toast" if disabled
+                                                else "mod.client_mods_disabled_off_toast"), ms=3000)
+
+        def failed(exc: Exception) -> None:
+            finish(False)
+            dialogs.show_error(self.window(), t("mod.client_mods_disabled"), str(exc))
+
+        run_async(lambda: set_client_mods_disabled(cluster, disabled), done, failed)
 
     def _on_config(self, workshop_id: str) -> None:
         mod = self._mod_data.get(workshop_id)
@@ -1157,6 +1161,8 @@ class ModPage(Page):
         dialogs.show_toast(self.window(), t("mod.id_copied_toast", id=numeric_id))
 
     def _resolve_mod_display_name(self, workshop_id: str) -> str:
+        if workshop_id == CLIENT_MODS_DISABLED_KEY:
+            return t("mod.client_mods_disabled")
         info = self._mod_infos.get(workshop_id)
         mod = self._mod_data.get(workshop_id)
         name = localize_mod_name(workshop_id, info.name if info else getattr(mod, "name", ""))
