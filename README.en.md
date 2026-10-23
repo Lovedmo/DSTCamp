@@ -18,16 +18,16 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#174-changes">Changelog</a> ·
+  <a href="#175-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.7.4 highlights
+## ✨ 1.7.5 highlights
 
-- 🔌 **Choose remote ports for mappings**: Sakura and Lolia mappings can use a remote port per world, so the direct-connect code stays the same after re-enabling.
-- 📦 **Download size in the update prompt**: with an incremental patch, updates are only a few hundred KB to a few MB.
+- 🗂️ **World presets**: save and apply presets from the World Settings page and the create-save wizard, shared with the game's custom presets.
+- 🔧 **LuaJIT patch installs again**: fixes the missing injector files of the new companion Mod and the too-old runtime version.
 
 ## 🧭 Features
 
@@ -112,20 +112,34 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.7.4 changes
+## 1.7.5 changes
 
 ### ✨ New features
+
+- **World presets**: the World Settings page gains "Save as Preset" and "Apply Preset", and the world tab of the create-save wizard gains "Apply World Preset" and "Save as World Preset", shared with the custom presets on the game's world creation screen (Chinese names show up in the game too).
+- **Clearer LuaJIT install result**: after a successful install, the log ends with a prominent "Installed" message and when it takes effect, and focus moves to the confirm button.
+- **Old vs. new tokens explained**: the global token window explains that old tokens can be used by several saves at once, while a new token works for one save at a time and must be released by Klei after an abnormal exit.
+
+### 🐞 Fixes
+
+- Installing the acceleration patch failed with "complete Workshop companion Mod injector files not found" (now supports the new Workshop layout of companion Mod 3.3.x).
+- The VC++ runtime needed by the patch could only be downloaded as 14.44 while 14.51 or later is required, so it still reported the runtime missing after installing (now downloaded from Microsoft's latest-version link; the mirror link is updated to 14.51 as well).
+- The first runtime download failed with "No such file or directory", and when DSTCamp was started from PowerShell 7 the runtime's digital signature was wrongly reported as missing.
+
+<details>
+<summary><strong>Earlier versions (1.3.5 ~ 1.7.4)</strong></summary>
+
+### 1.7.4
+
+#### ✨ New features
 
 - **Choose remote ports for mappings**: when enabling Sakura or Lolia (login) mapping, each world can get a remote port (blank = assigned automatically); re-enabling with the same port keeps the direct-connect code unchanged. The disable-mapping confirmation lists the current remote ports and explains that simply stopping the server does not require disabling mapping.
 - **Download size in the update prompt**: shows the patch size (with the full package size) when an incremental patch applies, otherwise the full size; if the update is already downloaded in the background, it says it can be installed right away.
 - **World settings kept up to date**: Caves gains the game's new "Hound Batilisks" and "Rock Masters" settings; Beneath the World Below is updated for 0.4.16.5; the World Settings page warns when a Mod's version differs from the one DSTCamp was verified against.
 
-### 🐞 Fixes
+#### 🐞 Fixes
 
 - If one world failed while enabling Sakura or Lolia mapping, mapping was left half-enabled (new tunnels are now removed and the original ports restored).
-
-<details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.7.3)</strong></summary>
 
 ### 1.7.3
 
