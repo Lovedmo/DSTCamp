@@ -513,53 +513,53 @@ def run_update(
 ) -> SteamAppSnapshot:
     """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，账号登录失败抛 SteamcmdLoginError，
     取消抛 InterruptedError。任务被挂起时先回调 on_suspended（之后约 2 分钟没有输出），本次按失败处理。"""
-    try:
-        if steamcmd_needs_prepare(steamcmd):
-            on_line(t("steamcmd.preparing"))
-            _prepare(steamcmd, account, on_line, cancel_event)
-        command = build_command(steamcmd, install_dir, validate=validate, account=account)
-        content_log = Path(steamcmd).parent / "logs" / "content_log.txt"
-        returncode = None
+    # 开始前：上次失败留下 StateFlags/UpdateResult=6 时清掉 steamapps，否则本轮可能直接 0x6
+    clear_steamapps_if_manifest_stuck(install_dir)
+    if steamcmd_needs_prepare(steamcmd):
+        on_line(t("steamcmd.preparing"))
+        _prepare(steamcmd, account, on_line, cancel_event)
+    command = build_command(steamcmd, install_dir, validate=validate, account=account)
+    content_log = Path(steamcmd).parent / "logs" / "content_log.txt"
+    returncode = None
+    suspended = threading.Event()
+    for attempt in range(1, max(1, attempts) + 1):
+        # 被挂起时 on_suspended 已说明会自动重试，不再报"未完成（退出码 0）"这种自相矛盾的提示
+        if attempt > 1 and on_retry is not None and not suspended.is_set():
+            on_retry(returncode)
+        # 任务被挂起时 SteamCMD 会空等约 2 分钟再假报成功：记下来，结束后按失败重试
         suspended = threading.Event()
-        for attempt in range(1, max(1, attempts) + 1):
-            # 上次失败留下 StateFlags/UpdateResult=6 时先清掉 steamapps，否则本轮仍可能直接 0x6
-            clear_steamapps_if_manifest_stuck(install_dir)
-            # 被挂起时 on_suspended 已说明会自动重试，不再报"未完成（退出码 0）"这种自相矛盾的提示
-            if attempt > 1 and on_retry is not None and not suspended.is_set():
-                on_retry(returncode)
-            # 任务被挂起时 SteamCMD 会空等约 2 分钟再假报成功：记下来，结束后按失败重试
-            suspended = threading.Event()
-            watch_stop = threading.Event()
+        watch_stop = threading.Event()
 
-            def mark_suspended(_line: str) -> None:
-                if not suspended.is_set():
-                    suspended.set()
-                    if on_suspended is not None:
-                        on_suspended()
+        def mark_suspended(_line: str) -> None:
+            if not suspended.is_set():
+                suspended.set()
+                if on_suspended is not None:
+                    on_suspended()
 
-            watcher = threading.Thread(
-                target=_follow_log, args=(content_log, is_suspended_log_line, mark_suspended, watch_stop), daemon=True)
-            watcher.start()
-            try:
-                returncode = _run_once(command, on_line, cancel_event)
-            finally:
-                watch_stop.set()
-                watcher.join(3)
-            if cancel_event is not None and cancel_event.is_set():
-                raise InterruptedError("SteamCMD 更新已取消")
-            snapshot = snapshot_install(install_dir)
-            if not suspended.is_set() and update_succeeded(returncode, snapshot):
-                _record_login(steamcmd, account, None)
-                return snapshot
-            if account and returncode == LOGIN_FAILED_EXIT_CODE:
-                _record_login(steamcmd, account, returncode)
-                raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
-        if suspended.is_set():
-            raise RuntimeError("更新任务被 Steam 挂起")
-        raise RuntimeError(f"SteamCMD 退出码 {returncode}")
-    finally:
-        # 失败后若又写成 6，清掉以免下次一上来就 0x6；正常清单不动
-        clear_steamapps_if_manifest_stuck(install_dir)
+        watcher = threading.Thread(
+            target=_follow_log, args=(content_log, is_suspended_log_line, mark_suspended, watch_stop), daemon=True)
+        watcher.start()
+        try:
+            returncode = _run_once(command, on_line, cancel_event)
+        finally:
+            watch_stop.set()
+            watcher.join(3)
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("SteamCMD 更新已取消")
+        snapshot = snapshot_install(install_dir)
+        if not suspended.is_set() and update_succeeded(returncode, snapshot):
+            _record_login(steamcmd, account, None)
+            return snapshot
+        if account and returncode == LOGIN_FAILED_EXIT_CODE:
+            _record_login(steamcmd, account, returncode)
+            raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
+    manifest = Path(install_dir) / "steamapps" / f"appmanifest_{DEDICATED_SERVER_APP_ID}.acf"
+    if _manifest_stuck_at_update_state_6(manifest):
+        on_line(t("steamcmd.manifest_stuck_after_update",
+                  path=str(Path(install_dir) / "steamapps")))
+    if suspended.is_set():
+        raise RuntimeError("更新任务被 Steam 挂起")
+    raise RuntimeError(f"SteamCMD 退出码 {returncode}")
 
 
 WORKSHOP_APP_ID = "322330"

@@ -97,6 +97,28 @@ def test_clear_steamapps_if_manifest_stuck() -> None:
         assert steamcmd_updater.clear_steamapps_if_manifest_stuck(root) is False
 
 
+def test_run_update_logs_when_manifest_still_stuck() -> None:
+    """全部尝试失败且清单仍为 6 时，控制台说明下次开始前才会清。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "dstserver"
+        lines: list[str] = []
+
+        def fake_run(command, on_line, cancel_event):
+            _write_manifest(root / "steamapps" / "appmanifest_343050.acf", stateflags="6")
+            return 8
+
+        with patch.object(steamcmd_updater, "_run_once", side_effect=fake_run):
+            try:
+                steamcmd_updater.run_update(
+                    Path("steamcmd.exe"), root, on_line=lines.append, attempts=1)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("expected RuntimeError")
+        assert any("0x6" in line or "StateFlags" in line or "UpdateResult" in line for line in lines)
+        assert (root / "steamapps" / "appmanifest_343050.acf").is_file()
+
+
 def test_run_update_retries_once() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "dstserver"
