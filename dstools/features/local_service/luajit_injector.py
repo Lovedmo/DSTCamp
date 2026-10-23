@@ -156,8 +156,20 @@ def _trigger_source_file(source_dir: Path | None = None) -> Path | None:
     return None
 
 
+def _packaged_twin(path: Path) -> Path:
+    return path.with_name(path.name + ".pkg")
+
+
+def _module_present(path: Path) -> bool:
+    """规范名或其 ``.pkg`` 双胞胎存在即可。
+
+    坑：创意工坊自 3.3.x 起只发布 ``Injector.dll.pkg``，由注入壳在 LoadLibrary 前就地生成
+    ``Injector.dll``（上游 core/PackagedModule.hpp），路径标记仍写规范名。"""
+    return path.is_file() or _packaged_twin(path).is_file()
+
+
 def _injector_payload_file() -> Path | None:
-    """兼容作者文档与创意工坊实际包出现过的三种 Injector.dll 位置。"""
+    """兼容作者文档与创意工坊实际包出现过的三种 Injector.dll 位置；返回规范名路径（可能尚未生成）。"""
     mod_dir = _workshop_mod_dir()
     if mod_dir is None:
         return None
@@ -167,14 +179,19 @@ def _injector_payload_file() -> Path | None:
         Path("bin64/windows") / _CORE_PAYLOAD_FILE,
     ):
         candidate = mod_dir / relative
-        if candidate.is_file():
+        if _module_present(candidate):
             return candidate
     return None
 
 
 def runtime_dlls() -> list[Path]:
-    """配套 Mod 里依赖 VC++ x64 运行库的 DLL（注入壳与 Injector.dll），用于判断运行库版本是否够新。"""
-    return [path for path in (_trigger_source_file(), _injector_payload_file()) if path is not None]
+    """配套 Mod 里依赖 VC++ x64 运行库的 DLL（注入壳与 Injector.dll），用于判断运行库版本是否够新。
+
+    有 ``.pkg`` 时读它：它才是最新内容，已生成的规范名可能还是旧版。"""
+    payload = _injector_payload_file()
+    if payload is not None and _packaged_twin(payload).is_file():
+        payload = _packaged_twin(payload)
+    return [path for path in (_trigger_source_file(), payload) if path is not None]
 
 
 def _file_sha256(path: Path | None) -> str:
@@ -252,7 +269,7 @@ def read_injector_path_marker(install_dir: Path) -> Path | None:
     if not value:
         return None
     candidate = Path(value)
-    return candidate if candidate.is_file() else None
+    return candidate if _module_present(candidate) else None
 
 
 def _runtime_ready(install_dir: Path) -> bool:

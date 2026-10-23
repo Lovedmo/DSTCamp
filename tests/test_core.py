@@ -2395,6 +2395,16 @@ def test_luajit_game_bin64_install():
             assert not (bin64 / "Winmm.dll").exists() and not marker.exists()
             assert detect_state(bin64) is InjectorState.NOT_INSTALLED
 
+            # 新版创意工坊只发布 Injector.dll.pkg，由注入壳生成规范名；标记仍写规范名
+            injector = workshop / WORKSHOP_ID / "Injector.dll"
+            packaged = injector.with_name("Injector.dll.pkg")
+            injector.replace(packaged)
+            result = lj.apply_install(bin64, [])
+            assert result.ok, result.errors
+            assert Path(marker.read_text(encoding="utf-8").strip()) == injector.resolve()
+            assert detect_state(bin64) is InjectorState.ACTIVE
+            assert lj.runtime_dlls()[-1] == packaged, "运行库版本应按 .pkg 判断"
+
 
 def test_luajit_full_uninstall():
     """独立专服彻底卸载：删除副本、中断遗留的临时目录和路径标记并停用配套 Mod；
