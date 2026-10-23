@@ -333,7 +333,7 @@ def test_bwb_hides_and_reorders_patched_vanilla_settings() -> None:
         "tideworms", "worm_ancient",
     ]
     creature_keys = [row.key for row in bwb.rules_by_category["creatures"]]
-    assert creature_keys[:3] == ["rocky_setting", "rocky_gold", "rocky_master"]
+    assert creature_keys[0] == "rocky_setting"
 
 
 def test_island_creation_defaults_are_complete() -> None:

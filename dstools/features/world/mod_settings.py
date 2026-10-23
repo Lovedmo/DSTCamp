@@ -729,15 +729,18 @@ _set_verified_scope(
     master_controlled=True,
 )
 
-# workshop-3360553731 == Beneath the World Below（深埋之下），0.4.15.17
+# workshop-3360553731 == Beneath the World Below（深埋之下），0.4.16.5
 # 来源（content/322330/3360553731/）：
 #   - 25 个无条件条目：scripts/mains/init/bwb_customizations.lua，init_worldgen.lua 逐条注册；
+#     0.4.16 起原版测试版重做石虾，Mod 注释掉了 rocky_gold/rocky_master（旧存档里的会被换成普通石虾），
+#     新增 stalagmites_regrowth/slurtlehole_regrowth；
 #   - desc 为标准描述表时用游戏真实值，nightmareclock/cave_season_start 用 Mod 自己的 data 顺序；
 #     widow_setting/widow_bags 仅同时启用 DSTU 时加入（见 BENEATH_WORLD_BELOW_DSTU_SETTINGS）；
 #   - 中英文名：scripts/wormstrings.lua、wormstrings_en.lua；图标取自 Mod 图集 XML。
 _BWB_ID = "3360553731"
 _BWB_FREQUENCY = ["never", "rare", "default", "often", "always"]
 _BWB_YES_NO = ["never", "default"]
+_BWB_SPEED = ["never", "veryslow", "slow", "default", "fast", "veryfast"]
 _BWB_SEASON_LENGTH = [
     "noseason", "veryshortseason", "shortseason", "default",
     "longseason", "verylongseason", "random",
@@ -805,16 +808,6 @@ BENEATH_WORLD_BELOW_SETTINGS: dict[str, ModWorldSetting] = {
         _BWB_YES_NO, _BWB_ID, "worm_ancient.tex",
         locations=frozenset({CAVE_LOCATION}), group="misc", order=2.5,
     ),
-    "rocky_gold": ModWorldSetting(
-        "rocky_gold", True, {"zh": "镶金石虾", "en": "Gilded Rock Lobsters"},
-        _BWB_FREQUENCY, _BWB_ID, "rocky_gold.tex",
-        locations=frozenset({CAVE_LOCATION}), group="animals", order=2,
-    ),
-    "rocky_master": ModWorldSetting(
-        "rocky_master", True, {"zh": "宝缠石虾", "en": "Jeweled Rock Lobsters"},
-        _BWB_FREQUENCY, _BWB_ID, "rocky_master.tex",
-        locations=frozenset({CAVE_LOCATION}), group="animals", order=3,
-    ),
     "worm_boss_setting": ModWorldSetting(
         "worm_boss_setting", True, {"zh": "时令大蠕虫", "en": "Seasonal Great Worm"},
         _BWB_FREQUENCY, _BWB_ID, locations=frozenset({CAVE_LOCATION}), group="giants",
@@ -875,6 +868,17 @@ BENEATH_WORLD_BELOW_SETTINGS: dict[str, ModWorldSetting] = {
         "umbral", True, {"zh": "夏（洞穴）", "en": "Summer (Cave)"},
         _BWB_SEASON_LENGTH, _BWB_ID,
         master_controlled=True, group="global", order=33,
+    ),
+    "stalagmites_regrowth": ModWorldSetting(
+        "stalagmites_regrowth", True, {"zh": "石笋", "en": "Stalagmites"},
+        _BWB_SPEED, _BWB_ID, "stalagmites_regrowth.tex",
+        locations=frozenset({CAVE_LOCATION}), group="resources",
+    ),
+    # 图标是本体 worldgen_customization 图集的 slurtleden.tex，即原版 slurtles 的图标
+    "slurtlehole_regrowth": ModWorldSetting(
+        "slurtlehole_regrowth", True, {"zh": "蛞蝓龟窝", "en": "Slurtle Mound"},
+        _BWB_SPEED, _BWB_ID, locations=frozenset({CAVE_LOCATION}), group="resources",
+        vanilla_icon_key="slurtles",
     ),
 }
 
