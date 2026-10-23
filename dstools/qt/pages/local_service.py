@@ -90,7 +90,9 @@ _PUBLIC_CONNECT_TIMEOUT_S = 18.0
 _NAT_CONNECT_TIMEOUT_S = 28.0
 # 公网/穿透直连代码获取失败或超时后的自动重试间隔（秒），用完即停，可点击该行手动重试
 _CONNECT_RETRY_DELAYS_S = (5, 15, 30, 60)
-_LUAJIT_VCREDIST_DOWNLOAD_URL = "https://wwwu.lanzoub.com/b0nyns22d"
+# 网盘里的 VC++ x64 运行库（14.51.36247）：官网下载失败时的备用
+_LUAJIT_VCREDIST_DOWNLOAD_URL = "https://wwblt.lanzout.com/i9oFG4d3r92j"
+_LUAJIT_VCREDIST_PASSWORD = "6666"
 _PUBLIC_IP_SOURCES = (
     ("https://cip.cc/", "curl/8.0"),
     ("https://myip.ipip.net", "DSTCamp/1.0"),
@@ -1887,7 +1889,7 @@ class LocalServicePage(Page):
 
     def _open_luajit_runtime_download(self) -> None:
         """打开网盘里的 VC++ 运行库前复制提取码，避免用户在蓝奏页与应用间来回找。"""
-        QGuiApplication.clipboard().setText("bzuu")
+        QGuiApplication.clipboard().setText(_LUAJIT_VCREDIST_PASSWORD)
         dialogs.show_toast(self.window(), t("local.luajit_runtime_copied"))
         webbrowser.open(_LUAJIT_VCREDIST_DOWNLOAD_URL)
 
