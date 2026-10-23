@@ -18,15 +18,16 @@
   <a href="#-features">Features</a> ·
   <a href="#-storage-layout">Storage</a> ·
   <a href="#-development">Development</a> ·
-  <a href="#173-changes">Changelog</a> ·
+  <a href="#174-changes">Changelog</a> ·
   <a href="README.md">中文</a>
 </p>
 
 ---
 
-## ✨ 1.7.3 highlights
+## ✨ 1.7.4 highlights
 
-- 🚫 **Disable players' client mods**: dedicated-server saves gain a "Disable client mods" entry in the Mod list that temporarily disables joining players' local client mods.
+- 🔌 **Choose remote ports for mappings**: Sakura and Lolia mappings can use a remote port per world, so the direct-connect code stays the same after re-enabling.
+- 📦 **Download size in the update prompt**: with an incremental patch, updates are only a few hundred KB to a few MB.
 
 ## 🧭 Features
 
@@ -111,14 +112,26 @@ python scripts/build_exe.py         # stage allowlisted resources in build/, wri
 
 `tests/_harness.py` runs every `test_*` function in definition order, so new tests need no registration. Real Windows GUI, Steam, frpc, and game behavior still require manual validation before release.
 
-## 1.7.3 changes
+## 1.7.4 changes
 
 ### ✨ New features
 
-- **Disable client mods**: the Mod list of dedicated-server saves gains a "Disable client mods" row (with its own icon) that toggles like any other Mod; "Save Changes" writes it to all worlds, and "Apply to Current Shard Only" writes only the current one. After the next start, joining players' local client mods are temporarily disabled. It is hidden for local saves and on the client mods tab.
+- **Choose remote ports for mappings**: when enabling Sakura or Lolia (login) mapping, each world can get a remote port (blank = assigned automatically); re-enabling with the same port keeps the direct-connect code unchanged. The disable-mapping confirmation lists the current remote ports and explains that simply stopping the server does not require disabling mapping.
+- **Download size in the update prompt**: shows the patch size (with the full package size) when an incremental patch applies, otherwise the full size; if the update is already downloaded in the background, it says it can be installed right away.
+- **World settings kept up to date**: Caves gains the game's new "Hound Batilisks" and "Rock Masters" settings; Beneath the World Below is updated for 0.4.16.5; the World Settings page warns when a Mod's version differs from the one DSTCamp was verified against.
+
+### 🐞 Fixes
+
+- If one world failed while enabling Sakura or Lolia mapping, mapping was left half-enabled (new tunnels are now removed and the original ports restored).
 
 <details>
-<summary><strong>Earlier versions (1.3.5 ~ 1.7.2)</strong></summary>
+<summary><strong>Earlier versions (1.3.5 ~ 1.7.3)</strong></summary>
+
+### 1.7.3
+
+#### ✨ New features
+
+- **Disable client mods**: the Mod list of dedicated-server saves gains a "Disable client mods" row (with its own icon) that toggles like any other Mod; "Save Changes" writes it to all worlds, and "Apply to Current Shard Only" writes only the current one. After the next start, joining players' local client mods are temporarily disabled. It is hidden for local saves and on the client mods tab.
 
 ### 1.7.2
 
