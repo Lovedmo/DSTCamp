@@ -276,11 +276,26 @@ exe = EXE(
 """
 
 
-def build(patch_from: list[Path], *, signed: bool = True) -> None:
+def _check_world_settings_audit(project_root: Path) -> None:
+    """正式发布前核对世界设置登记表是否跟上了游戏与已适配 Mod 的更新；有需要处理的地方就中止构建。
+    核对脚本在 reference/（不进 Git），本机没有时只提示不拦截。"""
+    script = project_root / "reference" / "dev_scripts" / "audit_world_settings.py"
+    if not script.is_file():
+        print(f"提示：没有找到世界设置核对脚本 {script}，跳过发布前核对")
+        return
+    print("发布前核对世界设置适配……")
+    if subprocess.run([sys.executable, str(script)], cwd=project_root).returncode != 0:
+        raise SystemExit("世界设置核对发现需要处理的地方（见上方报告）：更新登记表后用 --snapshot 存快照再构建；"
+                         "确认这次先不处理可加 --skip-world-audit")
+
+
+def build(patch_from: list[Path], *, signed: bool = True, world_audit: bool = True) -> None:
     release_dir = Path(__file__).resolve().parents[1] / "release"
     signing_key = release_dir.parent / "reference" / "update_signing_key.pem" if signed else None
     if signing_key is not None and not signing_key.is_file():
         raise SystemExit(f"找不到更新签名私钥：{signing_key}（开发自测可加 --unsigned，正式发布必须签名）")
+    if signed and world_audit:
+        _check_world_settings_audit(release_dir.parent)
     for old_exe in patch_from:
         if not old_exe.is_file():
             raise SystemExit(f"找不到旧版 EXE：{old_exe}")
@@ -360,6 +375,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="构建 DSTCamp 单文件 EXE")
     parser.add_argument("--patch-from", nargs="*", type=Path, default=[],
                         help="正式发布过的旧版 EXE（文件名须为 DSTCamp-版本号.exe），为每个生成增量补丁")
-    parser.add_argument("--unsigned", action="store_true", help="不签名清单（仅开发自测）")
+    parser.add_argument("--unsigned", action="store_true", help="不签名清单（仅开发自测，也不做发布前核对）")
+    parser.add_argument("--skip-world-audit", action="store_true",
+                        help="跳过发布前的世界设置适配核对（确认这次先不处理时使用）")
     arguments = parser.parse_args()
-    build(arguments.patch_from, signed=not arguments.unsigned)
+    build(arguments.patch_from, signed=not arguments.unsigned, world_audit=not arguments.skip_world_audit)
