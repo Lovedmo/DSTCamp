@@ -308,6 +308,12 @@ def test_island_vanilla_catalogs() -> None:
     assert set(volcano) == IA_VOLCANO_VANILLA_KEYS
 
 
+def test_every_registered_mod_has_verified_version() -> None:
+    # 漏写已核对版本时 Mod 更新后不会有任何提示
+    from dstools.features.world.mod_settings import MOD_VERIFIED_VERSIONS, MOD_WORLD_SETTINGS
+    assert set(MOD_VERIFIED_VERSIONS) == set(MOD_WORLD_SETTINGS)
+
+
 def test_bwb_hides_and_reorders_patched_vanilla_settings() -> None:
     vanilla = build_world_view_model(WorldPreset(location=CAVE_LOCATION), {})
     assert any(

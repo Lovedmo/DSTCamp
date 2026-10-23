@@ -118,6 +118,9 @@ class WorldSettingsPage(Page):
 
         self._banner = Banner()
         layout.addWidget(self._banner)
+        # Mod 版本与登记表核对版本不同时的提示，和上面按存档类型变化的提示互不覆盖
+        self._mod_banner = Banner()
+        layout.addWidget(self._mod_banner)
 
         self._title = QLabel()
         self._title.setFont(theme.font("FONT_SIZE_BASE", bold=True))
@@ -322,6 +325,7 @@ class WorldSettingsPage(Page):
         self._generation += 1
         generation = self._generation
         self._data = None
+        self._mod_banner.set_text("")
         self._set_dirty(False)
         self._rules.clear()
         self._generation_panel.clear()
@@ -349,6 +353,10 @@ class WorldSettingsPage(Page):
                                      data.mod_settings, data.mod_icons)
                 self._generation_panel.set_data(data.generation_categories, data.generation_by_category,
                                                 data.location, data.mod_settings, data.mod_icons)
+                if data.unverified_mods:
+                    mods = "、".join(t("world.mod_unverified_item", name=name, installed=installed, verified=verified)
+                                    for name, installed, verified in data.unverified_mods)
+                    self._mod_banner.set_text(t("world.mod_unverified_banner", mods=mods))
             elif data.status == page_data.STATUS_INVALID:
                 # 具体异常文本一并显示，方便远程排障（编码问题、空文件、语法错误显示的不一样）
                 detail = t("world.invalid_leveldata_detail", detail=data.error) if data.error else ""

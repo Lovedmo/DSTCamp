@@ -1083,6 +1083,24 @@ for _source_id, _source in (
 MOD_WORLD_SETTINGS[_THREE_WORLDS_ID] = THREE_WORLDS_SETTINGS
 MOD_LOAD_PRIORITY[_THREE_WORLDS_ID] = 5
 
+# workshop id -> 登记表核对时的 modinfo version。本机版本不同时世界设置页提示"可能未适配"；
+# Mod 更新后用 reference/dev_scripts/audit_world_settings.py 核对差异，改完登记表再更新这里。
+MOD_VERIFIED_VERSIONS: dict[str, str] = {
+    _CHERRY_FOREST_ID: "1.6.107",
+    _IA_CORE_ID: "1.0.79",
+    _IA_SHIPWRECKED_ID: "1.0.62",
+    _PORKLAND_ID: "1.0.50",
+    _BWB_ID: "0.4.16.5",
+    _TA_ID: "26.09.19",
+    _THREE_WORLDS_ID: "1.2.5.1",
+}
+
+
+def is_verified_version(mod_id: str, installed_version: str) -> bool:
+    """本机版本是否就是登记表核对过的版本；比较方式同游戏 ModIndex（去首尾空白、转小写）。"""
+    verified = MOD_VERIFIED_VERSIONS.get(mod_id)
+    return verified is None or verified.strip().lower() == installed_version.strip().lower()
+
 
 def get_mod_world_settings(
     enabled_mod_ids,

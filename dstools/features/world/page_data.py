@@ -5,11 +5,12 @@ from pathlib import Path
 
 from dstools.features.mod.parser import resolve_wegame_client_mods_dir
 from dstools.features.mod.sync import get_enabled_mod_ids
-from dstools.features.world.categories import get_setting_info
+from dstools.features.world.categories import get_setting_info, localized_name
 from dstools.features.world.location_profiles import get_location_definition
 from dstools.features.world.mod_icons import resolve_mod_setting_icons
 from dstools.features.world.mod_settings import (
-    filter_mod_world_settings, get_mod_categories, get_mod_world_settings,
+    MOD_DISPLAY_NAMES, MOD_VERIFIED_VERSIONS, filter_mod_world_settings, get_mod_categories,
+    get_mod_world_settings, is_verified_version,
 )
 from dstools.features.mod.shardindex import ShardIndexError
 from dstools.features.world.local_options import load_local_overrides, save_local_overrides
@@ -45,6 +46,8 @@ class WorldPageData:
     generation_categories: list = field(default_factory=list)
     # 本地存档的真实配置在分片 save/shardindex；读不了时退回 leveldataoverride 显示，并记下原因禁止保存
     local_index_error: str = ""
+    # 本机版本与登记表核对版本不同的 Mod：[(显示名, 本机版本, 已核对版本)]
+    unverified_mods: list = field(default_factory=list)
 
     @property
     def can_save(self) -> bool:
@@ -109,7 +112,29 @@ def load_world_page(
         generation_by_category=view_model.generation_by_category,
         generation_categories=view_model.generation_categories,
         local_index_error=local_index_error,
+        unverified_mods=find_unverified_mods(all_mod_settings, cluster.platform),
     )
+
+
+def find_unverified_mods(mod_settings: dict, platform) -> list[tuple[str, str, str]]:
+    """列出贡献了世界设置、但本机版本不是登记表核对版本的 Mod；版本读不出（目录缺失、沙箱失败）的不报，
+    免得误报。版本读取走内容指纹缓存，Mod 没变时不重跑沙箱。"""
+    from dstools.features.mod.local_version import VERSION_CONFIRMED, resolve_local_mod_version
+    from dstools.features.mod.parser import find_mod_folder
+
+    result = []
+    for mod_id in sorted({info.mod_id for info in mod_settings.values()}):
+        verified = MOD_VERIFIED_VERSIONS.get(mod_id)
+        folder = find_mod_folder(f"workshop-{mod_id}", platform,
+                                 resolve_wegame_client_mods_dir(platform)) if verified else None
+        if folder is None:
+            continue
+        version = resolve_local_mod_version(mod_id, folder)
+        if version.status != VERSION_CONFIRMED or is_verified_version(mod_id, version.version):
+            continue
+        name = localized_name(MOD_DISPLAY_NAMES[mod_id]) if mod_id in MOD_DISPLAY_NAMES else (version.name or mod_id)
+        result.append((name, version.version, verified))
+    return result
 
 
 def step_rule_value(data: WorldPageData, key: str, delta: int, is_rule: bool = True) -> None:

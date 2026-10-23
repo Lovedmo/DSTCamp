@@ -994,6 +994,11 @@ STRINGS = {
             "多层世界会一起重新生成，请先备份存档。\n\n"
             "不想丢掉当前世界就不必重置，世界规则部分的修改在下次启动时照常生效。"
         ),
+        "world.mod_unverified_banner": (
+            "以下 Mod 的版本和 DSTCamp 适配的版本不同，它们的世界设置项可能和游戏里不完全一致"
+            "（可能多出已停用的项，或缺少新加的项）：{mods}"
+        ),
+        "world.mod_unverified_item": "{name}（本机 {installed}，已适配 {verified}）",
         "world.local_edit_banner": (
             "当前是本地存档：游戏只在回到开始页面时重新读取存档设置。若保存时游戏开着，请先让游戏回到开始页面"
             "（在游戏主菜单「模组」里点「应用」，或重启游戏）再开启这个存档，否则会用旧设置覆盖你的修改。"
@@ -2696,6 +2701,11 @@ STRINGS = {
             "If you want to keep the current world, don't reset -- your world rule changes still apply on the "
             "next start."
         ),
+        "world.mod_unverified_banner": (
+            "These mods differ from the versions DSTCamp was adapted to, so their world settings may not fully "
+            "match the game (retired options may still show, or new ones may be missing): {mods}"
+        ),
+        "world.mod_unverified_item": "{name} (installed {installed}, adapted {verified})",
         "world.local_edit_banner": (
             "This is a local save: the game only re-reads save settings when it returns to its start screen. "
             "If the game is open when you save, send it back to the start screen first (click \"Apply\" in "
