@@ -18,7 +18,8 @@ from typing import Callable
 from dstools.shared.resource_paths import cache_dir
 from dstools.shared.ssl_context import default_ssl_context
 
-DOWNLOAD_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+# 微软"最新 v14 运行库"入口（现跳转 vs/18）；vs/17 是 VS 2022 通道，停在 14.44，满足不了 14.5x 编译的补丁
+DOWNLOAD_URL = "https://aka.ms/vc14/vc_redist.x64.exe"
 _REGISTRY_KEY = r"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 # 读不到 DLL 链接器版本时的下限：VS 2022 17.10 起编译的 STL 要求运行库不低于 14.40
 _FALLBACK_REQUIRED = (14, 40)
