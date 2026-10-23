@@ -181,6 +181,54 @@ def lua_value_types(data: WorldPageData) -> dict[str, list[str]]:
     return {key: info.values for key, info in data.mod_settings.items() if info.values}
 
 
+def current_override_table(data: WorldPageData) -> dict:
+    """当前取值（含未保存的修改）的 overrides 表；数字、布尔等非字符串原值保持原类型，供保存为预设。"""
+    if data.preset is None:
+        raise ValueError("当前世界没有可用的设置")
+    if not data.is_server and not data.local_index_error and data.path is not None:
+        existing = load_local_overrides(data.path.parent)
+    else:
+        existing = data.preset.raw.get("overrides") or {}
+    return merge_overrides(existing, data.preset.overrides, lua_value_types(data))
+
+
+def apply_preset_values(data: WorldPageData, overrides: dict) -> tuple[list[str], list[str]]:
+    """把预设取值套到页面（不写文件，由用户再点保存），并重建视图模型；返回 (改了值的 key, 没有套用的 key)。
+
+    当前世界类型未登记的 key、只读的 Mod 项，以及与当前值不同的非字符串值（界面只能按字符串编辑，
+    写成字符串会让 Mod 的 == true 判断失效）都跳过。"""
+    from dstools.features.world.reader import _display_value
+    from dstools.features.world.value_sets import is_mod_readonly
+
+    preset = data.preset
+    current = {o.key: o for o in preset.overrides}
+    changed, skipped = [], []
+    for key, value in overrides.items():
+        category, _, name = get_setting_info(key, data.location, data.mod_settings)
+        override = current.get(key)
+        text = _display_value(value)
+        if category == "other" or is_mod_readonly(key, data.mod_settings):
+            skipped.append(key)
+        elif override is not None and override.value == text:
+            continue
+        elif not isinstance(value, str):
+            skipped.append(key)
+        elif override is not None:
+            override.value = text
+            changed.append(key)
+        else:
+            override = WorldOverride(key=key, value=text, name=name or key)
+            preset.overrides.append(override)
+            current[key] = override
+            changed.append(key)
+    view_model = build_world_view_model(
+        preset, data.mod_settings, data.mod_categories, is_master_world=data.shard_name == "Master")
+    data.rules_by_category, data.rule_categories = view_model.rules_by_category, view_model.rule_categories
+    data.generation_by_category = view_model.generation_by_category
+    data.generation_categories = view_model.generation_categories
+    return changed, sorted(skipped)
+
+
 def save_world_page(data: WorldPageData) -> None:
     """保存当前取值。服务器存档写 leveldataoverride.lua；本地存档先写游戏真正读取的各分片
     save/shardindex，再同步写 leveldataoverride.lua 保持一致。本地存档须在游戏关闭时调用。"""

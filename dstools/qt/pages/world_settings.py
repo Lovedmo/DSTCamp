@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from dstools.features.local_service.backup_manager import create_backup
 from dstools.features.local_service.steam_backend import SteamBackend, get_backend
-from dstools.features.world import page_data, shard_management
+from dstools.features.world import page_data, shard_management, user_presets
 from dstools.features.world.location_profiles import FOREST_LOCATION, get_location_definition
 from dstools.features.mod.shardindex import (
     LOCAL_SAVE_OPEN, LOCAL_SAVE_RUNNING, ShardIndexError, local_save_play_state,
@@ -26,6 +26,7 @@ from dstools.qt.threads import run_async
 from dstools.qt.widgets import Banner, Card, PillTabBar
 from dstools.qt.world_manage import ManageWorldsDialog
 from dstools.qt.world_panel import WorldPanel
+from dstools.qt.world_presets_dialogs import ApplyWorldPresetDialog, SaveWorldPresetDialog
 
 FLASH_MS = 200  # 被点的箭头短暂画成"按下"效果，模仿游戏 UI 的点击反馈
 
@@ -145,10 +146,23 @@ class WorldSettingsPage(Page):
         self._stack.addWidget(self._generation_panel)
         layout.addWidget(self._stack, 1)
 
+        # 预设按钮读写游戏的自定义世界预设，与保存按钮同一行；加载完成前不可用（见 _load_world）
+        self._apply_preset_button = QPushButton()
+        self._apply_preset_button.setEnabled(False)
+        self._apply_preset_button.clicked.connect(self._on_apply_preset)
+        self._save_preset_button = QPushButton()
+        self._save_preset_button.setEnabled(False)
+        self._save_preset_button.clicked.connect(self._on_save_preset)
         self._save_button = QPushButton()
         self._save_button.setEnabled(False)
         self._save_button.clicked.connect(self._on_save)
-        layout.addWidget(self._save_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        button_row.addWidget(self._apply_preset_button)
+        button_row.addWidget(self._save_preset_button)
+        button_row.addWidget(self._save_button)
+        button_row.addStretch()
+        layout.addLayout(button_row)
 
         theme.changed.connect(self._on_theme_changed)
         # Mod 页的开关/保存/配置集应用都会改变"来自 Mod"这部分显示内容；这个页不一定
@@ -174,6 +188,10 @@ class WorldSettingsPage(Page):
         self._manage_button.setText(t("world.manage_btn"))
         self._manage_button.setToolTip(t("world.manage_tip"))
         self._save_button.setText(t("world.save_rules"))
+        self._apply_preset_button.setText(t("world.preset_apply_btn"))
+        self._apply_preset_button.setToolTip(t("world.preset_apply_tip"))
+        self._save_preset_button.setText(t("world.preset_save_btn"))
+        self._save_preset_button.setToolTip(t("world.preset_save_tip"))
         self._update_tab_labels()
         self._update_banner()
 
@@ -327,6 +345,8 @@ class WorldSettingsPage(Page):
         self._data = None
         self._mod_banner.set_text("")
         self._set_dirty(False)
+        self._apply_preset_button.setEnabled(False)
+        self._save_preset_button.setEnabled(False)
         self._rules.clear()
         self._generation_panel.clear()
         self._update_banner()
@@ -353,6 +373,8 @@ class WorldSettingsPage(Page):
                                      data.mod_settings, data.mod_icons)
                 self._generation_panel.set_data(data.generation_categories, data.generation_by_category,
                                                 data.location, data.mod_settings, data.mod_icons)
+                self._save_preset_button.setEnabled(True)
+                self._apply_preset_button.setEnabled(data.can_save)
                 if data.unverified_mods:
                     mods = "、".join(t("world.mod_unverified_item", name=name, installed=installed, verified=verified)
                                     for name, installed, verified in data.unverified_mods)
@@ -398,6 +420,66 @@ class WorldSettingsPage(Page):
     def _clear_flash(self) -> None:
         self._rules.set_flash(None)
         self._generation_panel.set_flash(None)
+
+    # ── 自定义预设 ──────────────────────────────────────────────────────
+    def _preset_user_dir(self, title: str):
+        """当前账号目录（游戏把自定义预设存在账号目录下）；没有时提示并返回 None。"""
+        cluster = self.ctx.selected_cluster()
+        account = self.ctx.env.current_account(cluster.platform) if cluster is not None else None
+        if account is None or not account.path.is_dir():
+            dialogs.show_warning(self.window(), title, t("world.preset_no_account"))
+            return None
+        return account.path
+
+    def _on_save_preset(self) -> None:
+        data = self._data
+        title = t("world.preset_save_btn")
+        if data is None or data.status != page_data.STATUS_OK:
+            return
+        user_dir = self._preset_user_dir(title)
+        if user_dir is None:
+            return
+        dialog = SaveWorldPresetDialog(self.window(), user_dir)
+        if dialog.exec() != dialogs.Dialog.DialogCode.Accepted:
+            return
+        try:
+            table = page_data.current_override_table(data)
+            # 未登记的 key 不知道属于哪一类，不写入（has_ocean 等内部字段游戏保存预设时同样不存）
+            settings, worldgen, _unknown = user_presets.split_overrides(table, data.location, data.mod_settings)
+            settings_base, worldgen_base = user_presets.resolve_base_ids(data.preset.raw, data.location, user_dir)
+            user_presets.save_preset(user_dir, dialog.name, dialog.description, settings_base, worldgen_base,
+                                     settings, worldgen)
+        except (OSError, ValueError, ShardIndexError, user_presets.UserPresetError) as exc:
+            dialogs.show_error(self.window(), title, str(exc))
+            return
+        dialogs.show_info(self.window(), title, t("world.preset_saved", name=dialog.name))
+
+    def _on_apply_preset(self) -> None:
+        data = self._data
+        title = t("world.preset_apply_btn")
+        if data is None or not data.can_save:
+            return
+        user_dir = self._preset_user_dir(title)
+        if user_dir is None:
+            return
+        dialog = ApplyWorldPresetDialog(self.window(), user_dir, data.location, data.location_label)
+        if dialog.exec() != dialogs.Dialog.DialogCode.Accepted or dialog.selected is None or data is not self._data:
+            return
+        preset = dialog.selected
+        changed, skipped = page_data.apply_preset_values(data, preset.overrides)
+        self._rules.set_data(data.rule_categories, data.rules_by_category, data.location,
+                             data.mod_settings, data.mod_icons)
+        self._generation_panel.set_data(data.generation_categories, data.generation_by_category,
+                                        data.location, data.mod_settings, data.mod_icons)
+        self._update_tab_labels()
+        if changed:
+            self._set_dirty(True)
+            if any(key in preset.worldgen for key in changed):
+                self._generation_changed = True
+        message = t("world.preset_applied", name=preset.name, count=len(changed))
+        if skipped:
+            message += t("world.preset_applied_skipped", count=len(skipped), keys="、".join(skipped))
+        dialogs.show_info(self.window(), title, message)
 
     def _on_save(self) -> None:
         data = self._data

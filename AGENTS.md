@@ -41,6 +41,7 @@ python scripts/build_exe.py
 ```
 
 - 测试不用 pytest/unittest 框架：`run_all.py` 自动发现 `tests/test_*.py` 并在隔离子进程执行，每个文件以 `run(globals())`（`tests/_harness.py`）按定义顺序运行全部 `test_*`。只测 Qt 版与纯逻辑模块；测试越少越好，不测静态数据、简单读写往返和实现细节字符串。
+- 用真实存档核对世界预设：`python -X utf8 -m dstools.features.world.preset_cli check --cluster <存档名>`（只读；另有 `list`/`save`/`apply`，`apply` 先备份、可加 `--dry-run`，均支持 `--json`）。本机已可编辑安装，任意目录可用，`D:\mymod\scripts\world_preset.ps1` 是它的包装。
 - 版本号以 `pyproject.toml` 与 `dstools/__init__.py` 为准，发布时同步两处，文档不写死当前版本。
 - 构建只收固定资源白名单、在 `build/` 暂存，禁止包含缓存、持久数据、安全材料和 `reference/`。打包后实际启动 EXE；冒烟测试不能替代 GUI、Steam、frpc 或游戏内验证。验证 EXE 与 `sha256.json` 后再提交、推送、打 `vX.Y.Z` 标签并创建 Release。
 - 发布构建用 `python scripts/build_exe.py --patch-from <近几个正式版的 DSTCamp-X.Y.Z.exe>` 生成增量补丁（旧版 EXE 不能放在 `release/` 里，构建会清空它），`.hdiff` 与 EXE、`sha256.json` 一起上传为 Release 附件；没有对应补丁的旧版客户端自动下载整包。
