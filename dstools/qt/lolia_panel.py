@@ -701,10 +701,18 @@ class LoliaPanel(QWidget):
             return
         if not ensure_lan_free_for_mapping(self.window(), self.ctx, cluster):
             return
+        shards = list(cluster.shards)
+        remote_ports: dict[str, int | None] = {}
+        if oauth:
+            # 只对新建的隧道生效；粘贴配置方式用的是用户自己的隧道，端口本来就固定
+            port_dialog = dialogs.RemotePortDialog(self.window(), [shard.name for shard in shards],
+                                                   t("lolia.enable_btn"))
+            if not port_dialog.exec():
+                return
+            remote_ports = port_dialog.result_ports
 
         progress = dialogs.LogDialog(self.window(), t("lolia.setup_progress_title"))
         progress.show()
-        shards = list(cluster.shards)
 
         def log(text: str) -> None:
             post_to_ui(lambda _a: progress.append(text))
@@ -712,7 +720,7 @@ class LoliaPanel(QWidget):
         def work():
             # 先把所有世界的配置都准备好再落盘，任何一个失败都不改动存档
             if oauth:
-                prepared = self._prepare_with_oauth(cluster, shards, node_id, log)
+                prepared = self._prepare_with_oauth(cluster, shards, node_id, log, remote_ports)
             else:
                 log(t("lolia.setup_fetching"))
                 prepared = {s.name: (*lolia_config.prepare_shard(sources[s.name]), None) for s in shards}
@@ -741,7 +749,7 @@ class LoliaPanel(QWidget):
         run_async(work, done, error)
 
     @staticmethod
-    def _prepare_with_oauth(cluster, shards, node_id: int, log) -> dict:
+    def _prepare_with_oauth(cluster, shards, node_id: int, log, remote_ports: dict | None = None) -> dict:
         """（工作线程）为每个世界创建/复用隧道并拉取配置，返回 {世界名: (本地 TOML, 远程端口, 节点地址, 隧道名)}；
         中途失败已建的隧道带 remark 标记，下次开启会复用。"""
         user = lolia_api.get_user_info()
@@ -765,7 +773,8 @@ class LoliaPanel(QWidget):
             tunnel = existing[shard.name]
             if tunnel is None:
                 local_port = get_shard_option(load_shard_config(shard.path), "NETWORK", "server_port") or 10999
-                tunnel = lolia_api.create_udp_tunnel(node_id, int(local_port), remarks[shard.name])
+                tunnel = lolia_api.create_udp_tunnel(node_id, int(local_port), remarks[shard.name],
+                                                     (remote_ports or {}).get(shard.name))
             remote_port = int(tunnel["remote_port"])
             if tunnel.get("local_port") != remote_port:
                 # 让控制台里的本地端口跟实际一致（本地配置也会改写，这一步只为显示正确）
@@ -816,7 +825,10 @@ class LoliaPanel(QWidget):
         mappings = [app_settings.get_lolia_mapping(cluster.path, s.name) for s in cluster.shards]
         tunnel_names = [m["tunnel"] for m in mappings if m and m["tunnel"]]
         delete_remote = bool(tunnel_names) and lolia_api.is_logged_in()
-        message = t("lolia.disable_confirm_msg_oauth") if delete_remote else t("lolia.disable_confirm_msg")
+        # 删除后远程端口找不回来，确认框里列出当前端口，方便重新开启时填回去
+        ports = "、".join(f"{shard.name} {m['remote_port']}" for shard, m in zip(cluster.shards, mappings) if m)
+        message = (t("lolia.disable_confirm_msg_oauth", ports=ports) if delete_remote
+                   else t("lolia.disable_confirm_msg"))
         if not dialogs.ask_yes_no(self.window(), t("sakura.disable_confirm_title"), message):
             return
         for shard in cluster.shards:

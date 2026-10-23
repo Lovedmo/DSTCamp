@@ -9,7 +9,7 @@ import webbrowser
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QStackedWidget,
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -147,58 +147,6 @@ class _FrpcRecoveryDialog(dialogs.Dialog):
         if self._health.ready:
             self.restored = True
             self.accept()
-
-
-class _RemotePortDialog(dialogs.Dialog):
-    """开启映射前为每个世界填远程端口，留空由樱花随机分配；只校验格式和互不重复，能否使用交给樱花 API 判断。"""
-
-    def __init__(self, parent, shard_names: list[str]):
-        super().__init__(parent, t("sakura.remote_port_title"), "md", confirm_text=t("sakura.enable_btn"))
-        self.result_ports: dict[str, int | None] = {}
-        self.body.addWidget(self.text_label(t("sakura.remote_port_intro")))
-        grid = QGridLayout()
-        grid.setColumnStretch(1, 1)
-        self._edits: dict[str, QLineEdit] = {}
-        for row, name in enumerate(shard_names):
-            edit = QLineEdit()
-            edit.setPlaceholderText(t("sakura.remote_port_placeholder"))
-            edit.setMaxLength(5)
-            edit.setFont(theme.font("FONT_SIZE_BASE"))
-            label = QLabel(name)
-            label.setFont(theme.font("FONT_SIZE_BASE"))
-            grid.addWidget(label, row, 0)
-            grid.addWidget(edit, row, 1)
-            self._edits[name] = edit
-        self.body.addLayout(grid)
-        self.body.addWidget(self.text_label(t("sakura.remote_port_note"), muted=True))
-        self._error = self.error_label()
-        self._error.hide()
-        self.body.addWidget(self._error)
-        self.add_buttons()
-
-    def _show_error(self, text: str) -> None:
-        self._error.setText(text)
-        self._error.show()
-
-    def accept_if_valid(self) -> None:
-        ports: dict[str, int | None] = {}
-        seen: set[int] = set()
-        for name, edit in self._edits.items():
-            text = edit.text().strip()
-            if not text:
-                ports[name] = None
-                continue
-            if not (text.isascii() and text.isdigit()) or not 1 <= int(text) <= 65535:
-                self._show_error(t("sakura.remote_port_invalid", shard=name))
-                return
-            port = int(text)
-            if port in seen:
-                self._show_error(t("sakura.remote_port_duplicate", port=port))
-                return
-            seen.add(port)
-            ports[name] = port
-        self.result_ports = ports
-        self.accept()
 
 
 class _SakuraMappingPanel(QWidget):
@@ -842,7 +790,8 @@ class _SakuraMappingPanel(QWidget):
             return
         shards = list(cluster.shards)
         # 只对新建的隧道生效：已有隧道的远程端口建好后改不了，照旧复用
-        port_dialog = _RemotePortDialog(self.window(), [shard.name for shard in shards])
+        port_dialog = dialogs.RemotePortDialog(self.window(), [shard.name for shard in shards],
+                                              t("sakura.enable_btn"))
         if not port_dialog.exec():
             return
         remote_ports = port_dialog.result_ports

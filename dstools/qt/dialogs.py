@@ -16,7 +16,7 @@ from PySide6.QtGui import (
     QPen, QTextCursor,
 )
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QGraphicsOpacityEffect, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QAbstractItemView, QDialog, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListWidget, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QTextEdit, QToolTip, QVBoxLayout,
     QWidget,
 )
@@ -503,6 +503,58 @@ class Dialog(QDialog):
         label.setFont(theme.font("FONT_SIZE_SM"))
         label.setStyleSheet(f"color: {theme.hex('ERROR')};")
         return label
+
+
+class RemotePortDialog(Dialog):
+    """内网穿透开启映射前为每个世界填远程端口，留空由服务端分配；只校验格式和互不重复，能否使用交给穿透服务判断。"""
+
+    def __init__(self, parent, shard_names: list[str], confirm_text: str):
+        super().__init__(parent, t("dlg.remote_port_title"), "md", confirm_text=confirm_text)
+        self.result_ports: dict[str, int | None] = {}
+        self.body.addWidget(self.text_label(t("dlg.remote_port_intro")))
+        grid = QGridLayout()
+        grid.setColumnStretch(1, 1)
+        self._edits: dict[str, QLineEdit] = {}
+        for row, name in enumerate(shard_names):
+            edit = QLineEdit()
+            edit.setPlaceholderText(t("dlg.remote_port_placeholder"))
+            edit.setMaxLength(5)
+            edit.setFont(theme.font("FONT_SIZE_BASE"))
+            label = QLabel(name)
+            label.setFont(theme.font("FONT_SIZE_BASE"))
+            grid.addWidget(label, row, 0)
+            grid.addWidget(edit, row, 1)
+            self._edits[name] = edit
+        self.body.addLayout(grid)
+        self.body.addWidget(self.text_label(t("dlg.remote_port_note"), muted=True))
+        self._error = self.error_label()
+        self._error.hide()
+        self.body.addWidget(self._error)
+        self.add_buttons()
+
+    def _show_error(self, text: str) -> None:
+        self._error.setText(text)
+        self._error.show()
+
+    def accept_if_valid(self) -> None:
+        ports: dict[str, int | None] = {}
+        seen: set[int] = set()
+        for name, edit in self._edits.items():
+            text = edit.text().strip()
+            if not text:
+                ports[name] = None
+                continue
+            if not (text.isascii() and text.isdigit()) or not 1 <= int(text) <= 65535:
+                self._show_error(t("dlg.remote_port_invalid", shard=name))
+                return
+            port = int(text)
+            if port in seen:
+                self._show_error(t("dlg.remote_port_duplicate", port=port))
+                return
+            seen.add(port)
+            ports[name] = port
+        self.result_ports = ports
+        self.accept()
 
 
 class CopyToServerDialog(Dialog):

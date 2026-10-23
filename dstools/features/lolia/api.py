@@ -296,12 +296,16 @@ def list_tunnels() -> list[dict]:
         page += 1
 
 
-def create_udp_tunnel(node_id: int, local_port: int, remark: str) -> dict:
-    """remote_port 不传由服务端自动分配；隧道名由服务端随机生成。"""
-    return _request("POST", "/user/tunnel", body={
+def create_udp_tunnel(node_id: int, local_port: int, remark: str, remote_port: int | None = None) -> dict:
+    """remote_port 为 None 时不传，由服务端自动分配（须在节点可用范围内且未被占用，否则 409）；
+    隧道名由服务端随机生成。"""
+    body = {
         "node_id": int(node_id), "type": "udp", "local_ip": "127.0.0.1",
         "local_port": int(local_port), "remark": remark,
-    }) or {}
+    }
+    if remote_port is not None:
+        body["remote_port"] = int(remote_port)
+    return _request("POST", "/user/tunnel", body=body) or {}
 
 
 def edit_tunnel(tunnel_name: str, **fields) -> dict:
