@@ -799,33 +799,75 @@ class _SakuraMappingPanel(QWidget):
         progress = dialogs.LogDialog(self.window(), t("sakura.setup_progress_title"))
         progress.show()
 
-        def work():
+        def log(text: str) -> None:
+            post_to_ui(lambda _a: progress.append(text))
+
+        def rollback(created_ids: list[int], originals: dict) -> None:
+            # 任何一个世界失败：先删这次新建的隧道（复用的旧隧道不动），再把改过的 server.ini 和指针原样写回
+            ok = True
+            if created_ids:
+                try:
+                    sakura_frp.delete_tunnel(token, created_ids)
+                except sakura_frp.SakuraApiError as exc:
+                    ok = False
+                    log(t("dlg.mapping_rollback_failed", tunnels="、".join(map(str, created_ids)), detail=exc))
             for shard in shards:
-                post_to_ui(lambda _a, s=shard: progress.append(t("sakura.setup_step_creating", shard=s.name)))
-                shard_config = load_shard_config(shard.path)
-                local_port = get_shard_option(shard_config, "NETWORK", "server_port")
-                tunnels = sakura_frp.list_tunnels(token)
-                name = sakura_frp.sanitize_tunnel_name(cluster.path.name, shard.name, cluster.source.value,
-                                                        cluster.platform.value, cluster_identity=stable_path_key(cluster.path))
-                existing = self._find_cluster_tunnel(tunnels, cluster, shard)
-                if existing:
-                    tunnel_id, remote = existing["id"], existing.get("remote")
-                else:
-                    created = sakura_frp.create_tunnel(token, name=name, type="udp", node=node_id,
-                                                        local_ip="127.0.0.1", local_port=local_port,
-                                                        note=f"DSTCamp: {cluster.path.name}/{shard.name}",
-                                                        remote=remote_ports.get(shard.name))
-                    tunnel_id, remote = created["id"], created.get("remote")
-                remote_port = int(remote) if remote and str(remote).isdigit() else None
-                if remote_port is None or not (1 <= remote_port <= 65535):
-                    raise sakura_frp.SakuraApiError(f"invalid remote port for {name}: {remote}")
-                sakura_frp.edit_tunnel(token, tunnel_id, name=name, local_port=remote_port)
+                if shard.name not in originals:
+                    continue
+                ini_bytes, pointer_text = originals[shard.name]
                 pointer_path = _frpc_pointer_path(cluster.path, shard.name, self.ctx.env)
-                pointer_path.parent.mkdir(parents=True, exist_ok=True)
-                pointer_path.write_text(str(tunnel_id), encoding="utf-8")
-                set_shard_option(shard_config, "NETWORK", "server_port", remote_port)
-                save_shard_config(shard_config, shard.path)
-                post_to_ui(lambda _a, s=shard, p=remote_port: progress.append(t("sakura.setup_step_ready", shard=s.name, port=p)))
+                try:
+                    (shard.path / "server.ini").write_bytes(ini_bytes)
+                    if pointer_text is None:
+                        pointer_path.unlink(missing_ok=True)
+                    else:
+                        pointer_path.write_text(pointer_text, encoding="utf-8")
+                except OSError as exc:
+                    ok = False
+                    log(t("sakura.api_error", detail=f"{shard.name}: {exc}"))
+            if ok:
+                log(t("dlg.mapping_rollback_done"))
+
+        def work():
+            created_ids: list[int] = []
+            originals: dict[str, tuple] = {}
+            try:
+                # 第一步只动樱花后台：所有世界的隧道都建好/复用成功后，才改本地端口和指针
+                ready = []
+                for shard in shards:
+                    log(t("sakura.setup_step_creating", shard=shard.name))
+                    local_port = get_shard_option(load_shard_config(shard.path), "NETWORK", "server_port")
+                    tunnels = sakura_frp.list_tunnels(token)
+                    name = sakura_frp.sanitize_tunnel_name(cluster.path.name, shard.name, cluster.source.value,
+                                                            cluster.platform.value, cluster_identity=stable_path_key(cluster.path))
+                    existing = self._find_cluster_tunnel(tunnels, cluster, shard)
+                    if existing:
+                        tunnel_id, remote = existing["id"], existing.get("remote")
+                    else:
+                        created = sakura_frp.create_tunnel(token, name=name, type="udp", node=node_id,
+                                                            local_ip="127.0.0.1", local_port=local_port,
+                                                            note=f"DSTCamp: {cluster.path.name}/{shard.name}",
+                                                            remote=remote_ports.get(shard.name))
+                        tunnel_id, remote = created["id"], created.get("remote")
+                        created_ids.append(tunnel_id)
+                    remote_port = int(remote) if remote and str(remote).isdigit() else None
+                    if remote_port is None or not (1 <= remote_port <= 65535):
+                        raise sakura_frp.SakuraApiError(f"invalid remote port for {name}: {remote}")
+                    sakura_frp.edit_tunnel(token, tunnel_id, name=name, local_port=remote_port)
+                    ready.append((shard, tunnel_id, remote_port))
+                for shard, tunnel_id, remote_port in ready:
+                    shard_config = load_shard_config(shard.path)
+                    pointer_path = _frpc_pointer_path(cluster.path, shard.name, self.ctx.env)
+                    originals[shard.name] = ((shard.path / "server.ini").read_bytes(),
+                                             pointer_path.read_text(encoding="utf-8") if pointer_path.exists() else None)
+                    pointer_path.parent.mkdir(parents=True, exist_ok=True)
+                    pointer_path.write_text(str(tunnel_id), encoding="utf-8")
+                    set_shard_option(shard_config, "NETWORK", "server_port", remote_port)
+                    save_shard_config(shard_config, shard.path)
+                    log(t("sakura.setup_step_ready", shard=shard.name, port=remote_port))
+            except Exception:
+                rollback(created_ids, originals)
+                raise
 
         def done(_result) -> None:
             self._on_enable_done(progress)

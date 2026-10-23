@@ -656,6 +656,8 @@ STRINGS = {
         "sakura.disable_confirm_msg": "这会删除樱花后台对应的隧道，下次重新开启默认会随机分配新端口，直连代码也会变。\n\n"
                                       "当前远程端口：{ports}\n想沿用这些端口，重新开启时把它们填回去即可（期间被别人占用就用不了）。\n\n"
                                       "只是停服不需要关闭映射。确定继续吗？",
+        "dlg.mapping_rollback_done": "开启失败，已撤销这次新建的隧道，各世界的端口保持原样",
+        "dlg.mapping_rollback_failed": "撤销时未能删除隧道 {tunnels}（{detail}），请到穿透服务的后台手动删除",
         "dlg.remote_port_title": "设置远程端口",
         "dlg.remote_port_intro": "可以给每个世界指定节点上的远程端口（直连代码里的端口）。以后关闭映射再重新开启时填同一个端口，直连代码就不会变；留空则自动分配。",
         "dlg.remote_port_placeholder": "留空自动分配",
@@ -2363,6 +2365,8 @@ STRINGS = {
         "sakura.disable_confirm_msg": "This deletes the corresponding tunnels on SakuraFrp's side. Next time a new random port is assigned by default, so the direct-connect code changes too.\n\n"
                                       "Current remote ports: {ports}\nTo keep them, enter them again when you re-enable mapping (unless someone else takes them in the meantime).\n\n"
                                       "Stopping the server does not require disabling mapping. Continue?",
+        "dlg.mapping_rollback_done": "Enabling failed; the tunnels created this time were removed and every shard keeps its original port",
+        "dlg.mapping_rollback_failed": "Could not delete tunnels {tunnels} while undoing ({detail}); please delete them in the tunnel service's dashboard",
         "dlg.remote_port_title": "Set Remote Ports",
         "dlg.remote_port_intro": "You can choose the remote port on the node for each shard (the port in the direct-connect code). Enter the same port after disabling and re-enabling mapping and the direct-connect code stays the same; leave it blank to have one assigned.",
         "dlg.remote_port_placeholder": "Blank = auto",

@@ -718,22 +718,33 @@ class LoliaPanel(QWidget):
             post_to_ui(lambda _a: progress.append(text))
 
         def work():
-            # 先把所有世界的配置都准备好再落盘，任何一个失败都不改动存档
-            if oauth:
-                prepared = self._prepare_with_oauth(cluster, shards, node_id, log, remote_ports)
-            else:
-                log(t("lolia.setup_fetching"))
-                prepared = {s.name: (*lolia_config.prepare_shard(sources[s.name]), None) for s in shards}
-            for shard in shards:
-                toml_text, remote_port, host, tunnel_name = prepared[shard.name]
-                config_path = self._frpc_config_path(cluster, shard)
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                config_path.write_text(toml_text, encoding="utf-8")
-                shard_config = load_shard_config(shard.path)
-                set_shard_option(shard_config, "NETWORK", "server_port", remote_port)
-                save_shard_config(shard_config, shard.path)
-                app_settings.set_lolia_mapping(cluster.path, shard.name, remote_port, host, tunnel_name)
-                log(t("sakura.setup_step_ready", shard=shard.name, port=remote_port))
+            # 先把所有世界的隧道和配置都准备好再落盘；任何一个失败都撤销这次新建的隧道并还原已写的文件
+            created: list[str] = []
+            originals: dict[str, tuple] = {}
+            try:
+                if oauth:
+                    prepared = self._prepare_with_oauth(cluster, shards, node_id, log, remote_ports, created)
+                else:
+                    log(t("lolia.setup_fetching"))
+                    prepared = {s.name: (*lolia_config.prepare_shard(sources[s.name]), None) for s in shards}
+                for shard in shards:
+                    toml_text, remote_port, host, tunnel_name = prepared[shard.name]
+                    config_path = self._frpc_config_path(cluster, shard)
+                    originals[shard.name] = (
+                        (shard.path / "server.ini").read_bytes(),
+                        config_path.read_text(encoding="utf-8") if config_path.exists() else None,
+                        app_settings.get_lolia_mapping(cluster.path, shard.name),
+                    )
+                    config_path.parent.mkdir(parents=True, exist_ok=True)
+                    config_path.write_text(toml_text, encoding="utf-8")
+                    shard_config = load_shard_config(shard.path)
+                    set_shard_option(shard_config, "NETWORK", "server_port", remote_port)
+                    save_shard_config(shard_config, shard.path)
+                    app_settings.set_lolia_mapping(cluster.path, shard.name, remote_port, host, tunnel_name)
+                    log(t("sakura.setup_step_ready", shard=shard.name, port=remote_port))
+            except Exception:
+                self._rollback_enable(cluster, shards, created, originals, log)
+                raise
 
         def done(_result) -> None:
             self._restart_frpc(cluster, on_done=lambda: self._on_enable_done(progress))
@@ -749,9 +760,10 @@ class LoliaPanel(QWidget):
         run_async(work, done, error)
 
     @staticmethod
-    def _prepare_with_oauth(cluster, shards, node_id: int, log, remote_ports: dict | None = None) -> dict:
+    def _prepare_with_oauth(cluster, shards, node_id: int, log, remote_ports: dict | None = None,
+                            created: list | None = None) -> dict:
         """（工作线程）为每个世界创建/复用隧道并拉取配置，返回 {世界名: (本地 TOML, 远程端口, 节点地址, 隧道名)}；
-        中途失败已建的隧道带 remark 标记，下次开启会复用。"""
+        这次新建的隧道名追加到 created，中途失败时由调用方撤销。"""
         user = lolia_api.get_user_info()
         if not user.get("has_qq"):
             raise lolia_config.LoliaError(t("lolia.qq_required"))
@@ -775,6 +787,8 @@ class LoliaPanel(QWidget):
                 local_port = get_shard_option(load_shard_config(shard.path), "NETWORK", "server_port") or 10999
                 tunnel = lolia_api.create_udp_tunnel(node_id, int(local_port), remarks[shard.name],
                                                      (remote_ports or {}).get(shard.name))
+                if created is not None and tunnel.get("name"):
+                    created.append(tunnel["name"])
             remote_port = int(tunnel["remote_port"])
             if tunnel.get("local_port") != remote_port:
                 # 让控制台里的本地端口跟实际一致（本地配置也会改写，这一步只为显示正确）
@@ -783,6 +797,41 @@ class LoliaPanel(QWidget):
             toml_text, port, host = lolia_config.local_config_from(config)
             prepared[shard.name] = (toml_text, port, host, tunnel["name"])
         return prepared
+
+    def _rollback_enable(self, cluster, shards, created: list[str], originals: dict, log) -> None:
+        """（工作线程）开启失败：先删这次新建的隧道（复用的旧隧道不动），再把 server.ini、frpc 配置和映射记录还原。"""
+        failed = []
+        detail = ""
+        for name in created:
+            try:
+                lolia_api.delete_tunnel(name)
+            except (lolia_config.LoliaError, OSError) as exc:
+                failed.append(name)
+                detail = str(exc)
+        if failed:
+            log(t("dlg.mapping_rollback_failed", tunnels="、".join(failed), detail=detail))
+        restored = True
+        for shard in shards:
+            if shard.name not in originals:
+                continue
+            ini_bytes, config_text, mapping = originals[shard.name]
+            config_path = self._frpc_config_path(cluster, shard)
+            try:
+                (shard.path / "server.ini").write_bytes(ini_bytes)
+                if config_text is None:
+                    config_path.unlink(missing_ok=True)
+                else:
+                    config_path.write_text(config_text, encoding="utf-8")
+            except OSError as exc:
+                restored = False
+                log(t("lolia.api_error", detail=f"{shard.name}: {exc}"))
+            if mapping is None:
+                app_settings.set_lolia_mapping(cluster.path, shard.name, None)
+            else:
+                app_settings.set_lolia_mapping(cluster.path, shard.name, mapping["remote_port"],
+                                               mapping["host"], mapping["tunnel"])
+        if not failed and restored:
+            log(t("dlg.mapping_rollback_done"))
 
     def _restart_frpc(self, cluster, on_done) -> None:
         """配置已更新：先停掉旧进程（在后台线程停），全部停完后按新配置启动。"""
