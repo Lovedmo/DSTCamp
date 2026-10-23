@@ -463,18 +463,39 @@ def prepare_steamcmd(
 
 
 
-def clear_nested_steamapps_under_library(install_dir: Path) -> None:
-    """误对 Steam 库路径跑 +force_install_dir 时，会在专服目录下留下嵌套 steamapps（含误导性 acf）。
+def _manifest_stuck_at_update_state_6(manifest: Path) -> bool:
+    """appmanifest 的 StateFlags 或 UpdateResult 为 6 时视为上次更新失败卡住（社区常见 0x6 循环）。"""
+    if not manifest.is_file():
+        return False
+    from dstools.features.local_service.steam_client_updater import _parse_scalar_manifest
+    values = _parse_scalar_manifest(manifest)
+    for key in ("stateflags", "updateresult"):
+        raw = values.get(key)
+        if raw is None:
+            continue
+        try:
+            if int(raw) == 6:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
-    仅在判定为 Steam 库安装时删除 install_dir/steamapps；真正的 SteamCMD 安装（含默认布局）
-    的权威清单就在 force_install_dir/steamapps，绝不能删。
+
+def clear_steamapps_if_manifest_stuck(
+    install_dir: Path, app_id: str = DEDICATED_SERVER_APP_ID,
+) -> bool:
+    """仅当 force_install_dir 下 appmanifest 卡住（StateFlags/UpdateResult 为 6）时删除 steamapps。
+
+    正常清单（如 StateFlags=4）保留，避免破坏 SteamCMD 独立安装的版本缓存。
+    返回是否删除了目录。
     """
     install_dir = Path(install_dir)
-    if not is_steam_library_install(install_dir):
-        return
-    nested = install_dir / "steamapps"
-    if nested.is_dir():
-        shutil.rmtree(nested, ignore_errors=True)
+    steamapps = install_dir / "steamapps"
+    manifest = steamapps / f"appmanifest_{app_id}.acf"
+    if not _manifest_stuck_at_update_state_6(manifest):
+        return False
+    shutil.rmtree(steamapps, ignore_errors=True)
+    return not steamapps.exists()
 
 
 @_exclusive_task
@@ -501,6 +522,8 @@ def run_update(
         returncode = None
         suspended = threading.Event()
         for attempt in range(1, max(1, attempts) + 1):
+            # 上次失败留下 StateFlags/UpdateResult=6 时先清掉 steamapps，否则本轮仍可能直接 0x6
+            clear_steamapps_if_manifest_stuck(install_dir)
             # 被挂起时 on_suspended 已说明会自动重试，不再报"未完成（退出码 0）"这种自相矛盾的提示
             if attempt > 1 and on_retry is not None and not suspended.is_set():
                 on_retry(returncode)
@@ -535,8 +558,8 @@ def run_update(
             raise RuntimeError("更新任务被 Steam 挂起")
         raise RuntimeError(f"SteamCMD 退出码 {returncode}")
     finally:
-        # 误对 Steam 库路径校验/更新时清理嵌套 steamapps，避免残留误导性 acf
-        clear_nested_steamapps_under_library(install_dir)
+        # 失败后若又写成 6，清掉以免下次一上来就 0x6；正常清单不动
+        clear_steamapps_if_manifest_stuck(install_dir)
 
 
 WORKSHOP_APP_ID = "322330"
