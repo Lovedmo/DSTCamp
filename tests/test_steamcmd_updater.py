@@ -42,6 +42,13 @@ def test_steamcmd_install_layout() -> None:
         (steamcmd_root / "steamcmd.exe").write_bytes(b"")
         assert not steamcmd_updater.is_steam_library_install(
             steamcmd_root / "steamapps" / "common" / "Don't Starve Together Dedicated Server")
+        # Steam 客户端根目录也会自带 steamcmd.exe：有 steam.exe 时仍按 Steam 库处理
+        steam_client = Path(tmp) / "SteamClient"
+        steam_client.mkdir()
+        (steam_client / "steam.exe").write_bytes(b"")
+        (steam_client / "steamcmd.exe").write_bytes(b"")
+        assert steamcmd_updater.is_steam_library_install(
+            steam_client / "steamapps" / "common" / "Don't Starve Together Dedicated Server")
 
         missing = steamcmd_updater.snapshot_install(root)
         assert missing.manifest_path is None and missing.install_dir is None
@@ -52,6 +59,40 @@ def test_steamcmd_install_layout() -> None:
         assert snapshot.install_dir == root and snapshot.build_id == "100"
         assert steamcmd_updater.update_succeeded(0, snapshot)
         assert not steamcmd_updater.update_succeeded(7, snapshot)
+
+
+def test_clear_nested_steamapps_under_library() -> None:
+    """误对 Steam 库路径 force_install_dir 留下的嵌套 steamapps 要清掉；真 SteamCMD 安装的 acf 不能动。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        # Steam 库：根有 steam.exe（可同时有 steamcmd.exe）
+        steam_root = Path(tmp) / "Steam"
+        install_dir = steam_root / "steamapps" / "common" / "Don't Starve Together Dedicated Server"
+        nested = install_dir / "steamapps"
+        (nested / "appmanifest_343050.acf").parent.mkdir(parents=True)
+        (nested / "appmanifest_343050.acf").write_text("nested", encoding="utf-8")
+        (steam_root / "steam.exe").write_bytes(b"")
+        (steam_root / "steamcmd.exe").write_bytes(b"")
+        assert steamcmd_updater.is_steam_library_install(install_dir)
+        steamcmd_updater.clear_nested_steamapps_under_library(install_dir)
+        assert not nested.exists()
+
+        # 真 SteamCMD force_install_dir：install_dir 本身下的 steamapps 是权威清单，必须保留
+        steamcmd_install = Path(tmp) / "dstserver"
+        _make_steamcmd_install(steamcmd_install)
+        assert not steamcmd_updater.is_steam_library_install(steamcmd_install)
+        steamcmd_updater.clear_nested_steamapps_under_library(steamcmd_install)
+        assert (steamcmd_install / "steamapps" / "appmanifest_343050.acf").is_file()
+
+        # SteamCMD 默认布局（steamapps/common + 同级仅 steamcmd.exe）：也不清
+        default_root = Path(tmp) / "steamcmd_default"
+        default_install = default_root / "steamapps" / "common" / "Don't Starve Together Dedicated Server"
+        nested_acf = default_install / "steamapps" / "appmanifest_343050.acf"
+        nested_acf.parent.mkdir(parents=True)
+        nested_acf.write_text("keep", encoding="utf-8")
+        (default_root / "steamcmd.exe").write_bytes(b"")
+        assert not steamcmd_updater.is_steam_library_install(default_install)
+        steamcmd_updater.clear_nested_steamapps_under_library(default_install)
+        assert nested_acf.is_file()
 
 
 def test_run_update_retries_once() -> None:
