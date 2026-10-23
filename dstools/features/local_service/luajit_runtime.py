@@ -79,6 +79,8 @@ def _installer_path() -> Path:
 def download(progress: ProgressCallback | None = None) -> Path:
     """从微软官网下载安装程序到缓存目录并验签，返回路径；失败抛 OSError。"""
     target = _installer_path()
+    # cache_dir() 不主动创建目录，首次下载时 vcredist 子目录还不存在
+    target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + ".part")
     request = urllib.request.Request(DOWNLOAD_URL, headers={"User-Agent": "DSTCamp"})
     with urllib.request.urlopen(request, timeout=30, context=default_ssl_context()) as response:
@@ -106,7 +108,10 @@ def verify_signature(path: Path) -> None:
     script = ("$s = Get-AuthenticodeSignature -LiteralPath $env:DSTCAMP_VERIFY_PATH; "
               "Write-Output ([string]$s.Status); Write-Output ([string]$s.SignatureType); "
               "Write-Output ([string]$s.SignerCertificate.Subject)")
-    env = dict(os.environ, DSTCAMP_VERIFY_PATH=str(path))
+    # 从 PowerShell 7 启动时会继承它的 PSModulePath，Windows PowerShell 5.1 因此加载不了签名模块；
+    # Windows 上 os.environ 的键是大写的，按不区分大小写去掉
+    env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+    env["DSTCAMP_VERIFY_PATH"] = str(path)
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
