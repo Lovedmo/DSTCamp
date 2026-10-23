@@ -322,6 +322,8 @@ CAVE_RULES_DICT = {
     "spider_warriors": ("hostile_creatures", {"zh": "蜘蛛战士", "en": "Spider Warriors"}),
     "bats_setting": ("hostile_creatures", {"zh": "蝙蝠", "en": "Bats"}),
     "molebats": ("hostile_creatures", {"zh": "裸露蝠", "en": "Mole Bats"}),
+    "bat_boss": ("hostile_creatures", {"zh": "猎犬蝙蝠", "en": "Hound Batilisks"}),
+    "rocky_boss": ("hostile_creatures", {"zh": "岩石大师", "en": "Rock Masters"}),
     "nightmarecreatures": ("hostile_creatures", {"zh": "遗迹梦魇", "en": "Nightmare Creatures"}),
     "merms": ("hostile_creatures", {"zh": "鱼人", "en": "Merms"}),
     # 巨兽|bosses

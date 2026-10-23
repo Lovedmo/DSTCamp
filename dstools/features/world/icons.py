@@ -286,6 +286,8 @@ CAVE_RULES_ICONS = {
     "spider_warriors": "Spider_Warrior_Settings_Icon.png",  # 蜘蛛战士
     "bats_setting": "Batilisk_Settings_Icon.png",  # 蝙蝠
     "molebats": "molebats.png",  # 裸露蝠
+    "bat_boss": "bat_boss.png",  # 猎犬蝙蝠
+    "rocky_boss": "rocky_boss.png",  # 岩石大师
     "nightmarecreatures": "Nightmare_Fissure_Settings_Icon.png",  # 遗迹梦魇
     "merms": "Merm_Settings_Icon.png",  # 鱼人
     # 巨兽|boss

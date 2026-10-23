@@ -190,6 +190,8 @@ VALUE_SETS = {
     "spider_hider": ["never", "rare", "default", "often", "always"],
     "spider_dropper": ["never", "rare", "default", "often", "always"],
     "molebats": ["never", "rare", "default", "often", "always"],
+    "bat_boss": ["never", "rare", "default", "often", "always"],
+    "rocky_boss": ["never", "rare", "default", "often", "always"],
     "nightmarecreatures": ["never", "rare", "default", "often", "always"],
     # 巨兽|bosses
     "daywalker": ["never", "rare", "default", "often", "always"],
