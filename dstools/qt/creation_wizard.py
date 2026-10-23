@@ -32,7 +32,7 @@ from dstools.features.mod.parser import (
     split_installed_mod_counts,
 )
 from dstools.features.save_browser.cluster_copy import suggest_new_cluster_name
-from dstools.features.world import creation, defaults
+from dstools.features.world import creation, defaults, user_presets
 from dstools.features.world.location_profiles import (
     CAVES_SHARD, IA_CORE_MOD_ID, IA_SHIPWRECKED_MOD_ID, MASTER_SHARD, THREE_WORLDS_MOD_ID, find_mod_key,
     get_location_definition, resolve_world_location_profile,
@@ -64,6 +64,7 @@ from dstools.shared.steam_discovery import read_steam_persona_name
 from dstools.qt.threads import run_async
 from dstools.qt.widgets import Grip, PillTabBar, TitleButton
 from dstools.qt.world_panel import WorldPanel
+from dstools.qt.world_presets_dialogs import ApplyWorldPresetDialog, SaveWorldPresetDialog
 
 FLASH_MS = 200
 
@@ -463,6 +464,15 @@ class CreationWizardDialog(QDialog):
         toolbar.addWidget(self._remove_world_btn)
         self._update_remove_world_btn()
         toolbar.addStretch()
+        # 游戏的自定义世界预设（与世界设置页同一套），作用于当前选中的世界
+        apply_preset_btn = QPushButton(t("world.creation_apply_world_preset"))
+        apply_preset_btn.setToolTip(t("world.creation_apply_world_preset_tip"))
+        apply_preset_btn.clicked.connect(self._apply_world_preset)
+        toolbar.addWidget(apply_preset_btn)
+        save_preset_btn = QPushButton(t("world.creation_save_world_preset"))
+        save_preset_btn.setToolTip(t("world.creation_save_world_preset_tip"))
+        save_preset_btn.clicked.connect(self._save_world_preset)
+        toolbar.addWidget(save_preset_btn)
         layout.addLayout(toolbar)
 
         self._world_title_label = QLabel("")
@@ -762,6 +772,58 @@ class CreationWizardDialog(QDialog):
     def _clear_flash(self) -> None:
         self._rules_panel.set_flash(None)
         self._gen_panel.set_flash(None)
+
+    def _preset_user_dir(self, title: str) -> Path | None:
+        """自定义预设在账号目录下；向导创建的是 Steam 服务器存档，跟存档栏选中的 Steam 账号走。"""
+        account = self.ctx.env.current_account(Platform.STEAM)
+        if account is None or not account.path.is_dir():
+            dialogs.show_warning(self, title, t("world.preset_no_account"))
+            return None
+        return account.path
+
+    def _apply_world_preset(self) -> None:
+        plan = self._active_preset()
+        title = t("world.creation_apply_world_preset")
+        user_dir = self._preset_user_dir(title) if plan else None
+        if user_dir is None:
+            return
+        dialog = ApplyWorldPresetDialog(self, user_dir, plan.location, get_location_definition(plan.location).name_zh)
+        if dialog.exec() != dialogs.Dialog.DialogCode.Accepted or dialog.selected is None:
+            return
+        # 计划里的取值直接写进 leveldataoverride.lua，数字、布尔保持预设里的原类型即可
+        values, skipped = user_presets.applicable_overrides(dialog.selected.overrides, plan.location,
+                                                            self._active_mod_settings)
+        changed = [key for key, value in values.items() if plan.overrides.get(key) != value]
+        plan.overrides.update(values)
+        if changed:
+            self._dirty = True
+        self._render_world()
+        message = t("world.preset_applied_creation", name=dialog.selected.name, count=len(changed))
+        if skipped:
+            message += t("world.preset_applied_skipped", count=len(skipped), keys="、".join(skipped))
+        dialogs.show_info(self, title, message)
+
+    def _save_world_preset(self) -> None:
+        plan = self._active_preset()
+        title = t("world.creation_save_world_preset")
+        user_dir = self._preset_user_dir(title) if plan else None
+        if user_dir is None:
+            return
+        dialog = SaveWorldPresetDialog(self, user_dir)
+        if dialog.exec() != dialogs.Dialog.DialogCode.Accepted:
+            return
+        level_data = creation.shard_level_data(plan)
+        try:
+            # 未登记的 key 不知道属于哪一类，不写入（has_ocean 等内部字段游戏保存预设时同样不存）
+            settings, worldgen, _unknown = user_presets.split_overrides(
+                level_data["overrides"], plan.location, self._active_mod_settings)
+            settings_base, worldgen_base = user_presets.resolve_base_ids(level_data, plan.location, user_dir)
+            user_presets.save_preset(user_dir, dialog.name, dialog.description, settings_base, worldgen_base,
+                                     settings, worldgen)
+        except (OSError, ValueError, user_presets.UserPresetError) as exc:
+            dialogs.show_error(self, title, str(exc))
+            return
+        dialogs.show_info(self, title, t("world.preset_saved", name=dialog.name))
 
     # ── Mod 子页签 ──────────────────────────────────────────────────────
     def _build_mod_tab(self) -> None:

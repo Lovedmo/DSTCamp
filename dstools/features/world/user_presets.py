@@ -170,6 +170,20 @@ def split_overrides(overrides: dict, location: str, mod_settings: dict | None = 
     return settings, worldgen, sorted(unknown)
 
 
+def applicable_overrides(overrides: dict, location: str, mod_settings: dict | None = None) -> tuple[dict, list[str]]:
+    """套用预设时能改的取值与跳过的 key：当前世界类型未登记的 key 与只读的 Mod 项不套用。"""
+    from dstools.features.world.value_sets import is_mod_readonly
+
+    values, skipped = {}, []
+    for key, value in overrides.items():
+        category, _, _ = get_setting_info(key, location, mod_settings)
+        if category == "other" or is_mod_readonly(key, mod_settings):
+            skipped.append(key)
+        else:
+            values[key] = value
+    return values, sorted(skipped)
+
+
 def _write_file(path: Path, data: dict) -> None:
     tmp = path.with_name(path.name + ".dstcamp.tmp")
     try:

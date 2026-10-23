@@ -2,12 +2,20 @@
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QLineEdit, QListWidget, QPushButton
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QFontMetrics
+from PySide6.QtWidgets import QLineEdit, QListWidget, QListWidgetItem, QPushButton
 
 from dstools.features.world import user_presets
 from dstools.i18n import t
 from dstools.qt import dialogs
 from dstools.qt.theme import theme
+
+# 与主题 QListWidget::item 的 padding（4px 6px）一致；_ITEM_EXTRA 为样式自带的边框/焦点框余量（本机实测正常行高
+# 比字高加内边距多 3px）
+_ITEM_PAD_Y = 4
+_ITEM_PAD_X = 6
+_ITEM_EXTRA = 3
 
 
 class SaveWorldPresetDialog(dialogs.Dialog):
@@ -79,8 +87,15 @@ class ApplyWorldPresetDialog(dialogs.Dialog):
         presets, errors = user_presets.list_presets(self._user_dir)
         self._presets = [p for p in presets if p.location == self._location]
         self._list.clear()
+        # 显式给行高：用户真机上偶尔按不含样式表上下内边距（4px×2）的高度排版、却按含内边距的位置画字，
+        # 字底被切掉、下一行压上来，本机复现不出；行高不交给样式表计算就不受时机影响
+        metrics = QFontMetrics(self._list.font())
+        row_height = metrics.height() + 2 * _ITEM_PAD_Y + _ITEM_EXTRA
         for preset in self._presets:
-            self._list.addItem(f"{preset.name}  —  {preset.description}" if preset.description else preset.name)
+            text = f"{preset.name}  —  {preset.description}" if preset.description else preset.name
+            item = QListWidgetItem(text)
+            item.setSizeHint(QSize(metrics.horizontalAdvance(text) + 2 * _ITEM_PAD_X + _ITEM_EXTRA, row_height))
+            self._list.addItem(item)
         if self._presets:
             self._list.setCurrentRow(0)
         has_items = bool(self._presets)

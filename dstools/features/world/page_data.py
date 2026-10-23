@@ -198,18 +198,16 @@ def apply_preset_values(data: WorldPageData, overrides: dict) -> tuple[list[str]
     当前世界类型未登记的 key、只读的 Mod 项，以及与当前值不同的非字符串值（界面只能按字符串编辑，
     写成字符串会让 Mod 的 == true 判断失效）都跳过。"""
     from dstools.features.world.reader import _display_value
-    from dstools.features.world.value_sets import is_mod_readonly
+    from dstools.features.world.user_presets import applicable_overrides
 
     preset = data.preset
     current = {o.key: o for o in preset.overrides}
-    changed, skipped = [], []
-    for key, value in overrides.items():
-        category, _, name = get_setting_info(key, data.location, data.mod_settings)
+    changed = []
+    values, skipped = applicable_overrides(overrides, data.location, data.mod_settings)
+    for key, value in values.items():
         override = current.get(key)
         text = _display_value(value)
-        if category == "other" or is_mod_readonly(key, data.mod_settings):
-            skipped.append(key)
-        elif override is not None and override.value == text:
+        if override is not None and override.value == text:
             continue
         elif not isinstance(value, str):
             skipped.append(key)
@@ -217,6 +215,7 @@ def apply_preset_values(data: WorldPageData, overrides: dict) -> tuple[list[str]
             override.value = text
             changed.append(key)
         else:
+            _, _, name = get_setting_info(key, data.location, data.mod_settings)
             override = WorldOverride(key=key, value=text, name=name or key)
             preset.overrides.append(override)
             current[key] = override
