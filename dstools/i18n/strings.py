@@ -574,6 +574,8 @@ STRINGS = {
         "token.kind_old": "旧令牌",
         "token.kind_new": "新令牌",
         "token.kind_unknown": "未知",
+        # 新令牌是科雷遭受服务器攻击后改发的四段式格式；启用时间未查到官方说明，限制以 2026-10 实测为准
+        "token.kind_hint": "旧令牌：较早申请的三段式令牌，可同时给多个存档使用。\n新令牌：科雷后来改发的四段式令牌，同一时间只能给一个存档使用；服务器异常退出后要等科雷释放（通常二三十分钟或更久）才能再用，期间会自动换用池中其他可用令牌。",
         "token.status_available": "可用",
         "token.status_invalid": "不可用：格式无效",
         "token.status_in_use": "使用中：{names}",
@@ -2285,6 +2287,7 @@ STRINGS = {
         "token.kind_old": "Legacy",
         "token.kind_new": "New",
         "token.kind_unknown": "Unknown",
+        "token.kind_hint": "Legacy: older three-part tokens that can be used by several saves at once.\nNew: the four-part format Klei issues now. Each can be used by only one save at a time; after a server exits abnormally it can't be reused until Klei releases it (usually 20-30 minutes or longer), and another available token from the pool is used in the meantime.",
         "token.status_available": "Available",
         "token.status_invalid": "Unavailable: invalid format",
         "token.status_in_use": "In use: {names}",

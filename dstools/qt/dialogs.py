@@ -878,6 +878,7 @@ class GlobalTokensDialog(Dialog):
         pool_card, pool = section_card(t("token.pool_section"))
         pool.setSpacing(8)
         pool.addWidget(self.text_label(t("token.global_hint"), muted=True, size_key="FONT_SIZE_SM"))
+        pool.addWidget(self.text_label(t("token.kind_hint"), muted=True, size_key="FONT_SIZE_SM"))
         self._table = QTableWidget(0, 3)
         self._style_table()
         self._table.setHorizontalHeaderLabels(
