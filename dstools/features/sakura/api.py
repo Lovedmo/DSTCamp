@@ -88,10 +88,12 @@ def list_tunnels(token: str) -> list[dict]:
 
 
 def create_tunnel(token: str, *, name: str, type: str, node: int,
-                   local_ip: str, local_port: int, note: str | None = None) -> dict:
+                   local_ip: str, local_port: int, note: str | None = None,
+                   remote: int | None = None) -> dict:
+    """remote 为远程端口，None 时由樱花随机分配；隧道建好后远程端口不能再改（/tunnel/edit 不接受 remote）。"""
     return _request(token, "POST", "/tunnels", {
         "name": name, "type": type, "node": node,
-        "local_ip": local_ip, "local_port": local_port, "note": note,
+        "local_ip": local_ip, "local_port": local_port, "note": note, "remote": remote,
     })
 
 

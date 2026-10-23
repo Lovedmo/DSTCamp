@@ -653,7 +653,15 @@ STRINGS = {
         "sakura.setup_done_title": "映射已就绪",
         "sakura.setup_done_msg_restart": "以下世界仍在运行，需要重启才能生效新端口：{shards}",
         "sakura.disable_confirm_title": "确认关闭映射",
-        "sakura.disable_confirm_msg": "这会删除樱花后台对应的隧道，地址将不可恢复，下次重新开启会分配新地址。确定继续吗？",
+        "sakura.disable_confirm_msg": "这会删除樱花后台对应的隧道，下次重新开启默认会随机分配新端口，直连代码也会变。\n\n"
+                                      "当前远程端口：{ports}\n想沿用这些端口，重新开启时把它们填回去即可（期间被别人占用就用不了）。\n\n"
+                                      "只是停服不需要关闭映射。确定继续吗？",
+        "sakura.remote_port_title": "设置远程端口",
+        "sakura.remote_port_intro": "可以给每个世界指定樱花节点上的远程端口（直连代码里的端口）。以后关闭映射再重新开启时填同一个端口，直连代码就不会变；留空则由樱花随机分配。",
+        "sakura.remote_port_placeholder": "留空随机分配",
+        "sakura.remote_port_note": "端口填 1~65535 之间的整数；能不能用由樱花判断（比如已被该节点上的其他隧道占用），用不了时下一步会显示樱花返回的原因。世界的本地端口会改成同一个值。",
+        "sakura.remote_port_invalid": "「{shard}」的端口不正确，请填 1~65535 之间的整数，或者留空。",
+        "sakura.remote_port_duplicate": "不同世界不能用同一个端口（{port}）。",
         "sakura.copy_connect_btn": "复制直连代码",
         "sakura.copy_connect_master_only_hint": "饥荒直连只能连主世界，副世界无法直接连接（下洞是游戏内自动传送，不需要另外直连）。",
         "sakura.connect_copied": "连接字符串已复制到剪贴板",
@@ -2345,7 +2353,15 @@ STRINGS = {
         "sakura.setup_done_title": "Mapping Ready",
         "sakura.setup_done_msg_restart": "These shards are still running -- restart them for the new port to take effect: {shards}",
         "sakura.disable_confirm_title": "Confirm Disable Mapping",
-        "sakura.disable_confirm_msg": "This deletes the corresponding tunnels on SakuraFrp's side -- the address cannot be recovered, a new one will be assigned next time. Continue?",
+        "sakura.disable_confirm_msg": "This deletes the corresponding tunnels on SakuraFrp's side. Next time a new random port is assigned by default, so the direct-connect code changes too.\n\n"
+                                      "Current remote ports: {ports}\nTo keep them, enter them again when you re-enable mapping (unless someone else takes them in the meantime).\n\n"
+                                      "Stopping the server does not require disabling mapping. Continue?",
+        "sakura.remote_port_title": "Set Remote Ports",
+        "sakura.remote_port_intro": "You can choose the remote port on the SakuraFrp node for each shard (the port in the direct-connect code). Enter the same port after disabling and re-enabling mapping and the direct-connect code stays the same; leave it blank for a random port.",
+        "sakura.remote_port_placeholder": "Blank = random",
+        "sakura.remote_port_note": "Use a whole number from 1 to 65535. SakuraFrp decides whether it's available (e.g. not used by another tunnel on that node); if not, the next step shows SakuraFrp's reason. The shard's local port is set to the same value.",
+        "sakura.remote_port_invalid": "The port for “{shard}” is invalid. Enter a whole number from 1 to 65535, or leave it blank.",
+        "sakura.remote_port_duplicate": "Different shards can't use the same port ({port}).",
         "sakura.copy_connect_btn": "Copy Direct-Connect Code",
         "sakura.copy_connect_master_only_hint": "DST direct-connect only works for the surface (Master) world -- Caves can't be connected to directly (traveling down is an automatic in-game shard hop, not a separate connection).",
         "sakura.connect_copied": "Connect string copied to clipboard",
