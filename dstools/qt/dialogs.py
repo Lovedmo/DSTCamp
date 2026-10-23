@@ -768,6 +768,8 @@ class LogDialog(Dialog):
         if self._on_cancel is not None:
             self._cancel_btn.setEnabled(False)
         self._close.setEnabled(True)
+        self._close.setDefault(True)
+        self._close.setFocus()
 
     def reject(self) -> None:
         if self._finished or self._closable:

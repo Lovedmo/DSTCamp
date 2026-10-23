@@ -1801,6 +1801,7 @@ class LocalServicePage(Page):
         log_dialog = dialogs.LogDialog(self.window(), t("local.luajit_confirm_install_title"))
         log_dialog.append(t("local.luajit_log_preparing"))
         log_dialog.show()
+        shared = luajit_injector.uses_game_bin64(bin64_dir.parent)
 
         def work(emit):
             return luajit_injector.apply_install(bin64_dir, mod_overrides_paths, on_log=emit)
@@ -1808,7 +1809,11 @@ class LocalServicePage(Page):
         def done(result) -> None:
             self._luajit_busy = False
             log_dialog.finish()
-            if not result.ok:
+            if result.ok:
+                # 安装通常瞬间完成，只靠"确认"按钮变亮看不出已结束
+                log_dialog.append(t("local.luajit_log_install_done_shared" if shared
+                                    else "local.luajit_log_install_done"), "result_success")
+            else:
                 dialogs.show_error(self.window(), t("local.luajit_confirm_install_title"), "\n".join(result.errors))
             self._update_luajit_row(self.get_cluster())
 
