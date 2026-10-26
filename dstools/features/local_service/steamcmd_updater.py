@@ -462,40 +462,63 @@ def prepare_steamcmd(
     return not steamcmd_needs_prepare(steamcmd)
 
 
-
-def _manifest_stuck_at_update_state_6(manifest: Path) -> bool:
-    """appmanifest 的 StateFlags 或 UpdateResult 为 6 时视为上次更新失败卡住（社区常见 0x6 循环）。"""
-    if not manifest.is_file():
-        return False
-    from dstools.features.local_service.steam_client_updater import _parse_scalar_manifest
-    values = _parse_scalar_manifest(manifest)
-    for key in ("stateflags", "updateresult"):
-        raw = values.get(key)
-        if raw is None:
-            continue
-        try:
-            if int(raw) == 6:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
+# SteamCMD 输出里的 0x6 失败（content_log / 控制台多为英文）；StateFlags=6 本身只表示“已安装+待更新”，不能当作失败证据
+_STATE_0X6_AFTER_UPDATE_RE = re.compile(r"state is 0x6 after update job", re.IGNORECASE)
+_CLEAR_STUCK_MANIFEST_MARKER = ".dstcamp_clear_stuck_manifest"
+_STUCK_UPDATE_EXIT_CODE = 8
 
 
-def clear_steamapps_if_manifest_stuck(
-    install_dir: Path, app_id: str = DEDICATED_SERVER_APP_ID,
+def _stuck_manifest_marker(install_dir: Path) -> Path:
+    return Path(install_dir) / _CLEAR_STUCK_MANIFEST_MARKER
+
+
+def mark_stuck_manifest_for_retry(install_dir: Path) -> None:
+    """记下“上次更新确认为 0x6 失败”，下次开始前只清 appmanifest，不整目录删 steamapps。"""
+    marker = _stuck_manifest_marker(install_dir)
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("1\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_stuck_manifest_if_marked(
+    install_dir: Path,
+    *,
+    app_id: str = DEDICATED_SERVER_APP_ID,
+    on_line: Callable[[str], None] | None = None,
 ) -> bool:
-    """仅当 force_install_dir 下 appmanifest 卡住（StateFlags/UpdateResult 为 6）时删除 steamapps。
+    """仅当上次 run_update 记下了 0x6 失败标记时，删除 appmanifest_{app_id}.acf（保留 downloading 等）。
 
-    正常清单（如 StateFlags=4）保留，避免破坏 SteamCMD 独立安装的版本缓存。
-    返回是否删除了目录。
+    返回是否成功删掉了清单文件。
     """
     install_dir = Path(install_dir)
-    steamapps = install_dir / "steamapps"
-    manifest = steamapps / f"appmanifest_{app_id}.acf"
-    if not _manifest_stuck_at_update_state_6(manifest):
+    marker = _stuck_manifest_marker(install_dir)
+    if not marker.is_file():
         return False
-    shutil.rmtree(steamapps, ignore_errors=True)
-    return not steamapps.exists()
+    manifest = install_dir / "steamapps" / f"appmanifest_{app_id}.acf"
+    cleared = False
+    if manifest.is_file():
+        try:
+            manifest.unlink()
+            cleared = True
+            if on_line is not None:
+                on_line(t("steamcmd.cleared_stuck_manifest", path=str(manifest)))
+        except OSError as exc:
+            if on_line is not None:
+                on_line(t("steamcmd.clear_stuck_manifest_failed", path=str(manifest), error=str(exc)))
+            return False
+    try:
+        marker.unlink(missing_ok=True)
+    except OSError as exc:
+        if on_line is not None:
+            on_line(t("steamcmd.clear_stuck_manifest_failed", path=str(marker), error=str(exc)))
+    return cleared
+
+
+def is_state_0x6_after_update_line(line: str) -> bool:
+    """SteamCMD 更新任务结束后仍为 0x6 时的典型输出。"""
+    return _STATE_0X6_AFTER_UPDATE_RE.search(line) is not None
 
 
 @_exclusive_task
@@ -513,8 +536,8 @@ def run_update(
 ) -> SteamAppSnapshot:
     """运行 SteamCMD 直到清单显示安装完整；全部失败抛 RuntimeError，账号登录失败抛 SteamcmdLoginError，
     取消抛 InterruptedError。任务被挂起时先回调 on_suspended（之后约 2 分钟没有输出），本次按失败处理。"""
-    # 开始前：上次失败留下 StateFlags/UpdateResult=6 时清掉 steamapps，否则本轮可能直接 0x6
-    clear_steamapps_if_manifest_stuck(install_dir)
+    # 开始前：仅当上次确认 0x6 失败时清掉卡住的 appmanifest，避免误删正常 StateFlags=6 或 downloading
+    clear_stuck_manifest_if_marked(install_dir, on_line=on_line)
     if steamcmd_needs_prepare(steamcmd):
         on_line(t("steamcmd.preparing"))
         _prepare(steamcmd, account, on_line, cancel_event)
@@ -522,6 +545,14 @@ def run_update(
     content_log = Path(steamcmd).parent / "logs" / "content_log.txt"
     returncode = None
     suspended = threading.Event()
+    saw_0x6 = False
+
+    def capture_line(line: str) -> None:
+        nonlocal saw_0x6
+        if is_state_0x6_after_update_line(line):
+            saw_0x6 = True
+        on_line(line)
+
     for attempt in range(1, max(1, attempts) + 1):
         # 被挂起时 on_suspended 已说明会自动重试，不再报"未完成（退出码 0）"这种自相矛盾的提示
         if attempt > 1 and on_retry is not None and not suspended.is_set():
@@ -540,7 +571,7 @@ def run_update(
             target=_follow_log, args=(content_log, is_suspended_log_line, mark_suspended, watch_stop), daemon=True)
         watcher.start()
         try:
-            returncode = _run_once(command, on_line, cancel_event)
+            returncode = _run_once(command, capture_line, cancel_event)
         finally:
             watch_stop.set()
             watcher.join(3)
@@ -553,10 +584,11 @@ def run_update(
         if account and returncode == LOGIN_FAILED_EXIT_CODE:
             _record_login(steamcmd, account, returncode)
             raise SteamcmdLoginError(f"SteamCMD 退出码 {returncode}")
-    manifest = Path(install_dir) / "steamapps" / f"appmanifest_{DEDICATED_SERVER_APP_ID}.acf"
-    if _manifest_stuck_at_update_state_6(manifest):
-        on_line(t("steamcmd.manifest_stuck_after_update",
-                  path=str(Path(install_dir) / "steamapps")))
+    # 只有输出里出现 0x6，或退出码 8（与社区对 0x6 失败的常见对应）时才记“下次清清单”
+    if saw_0x6 or returncode == _STUCK_UPDATE_EXIT_CODE:
+        mark_stuck_manifest_for_retry(install_dir)
+        manifest = Path(install_dir) / "steamapps" / f"appmanifest_{DEDICATED_SERVER_APP_ID}.acf"
+        on_line(t("steamcmd.manifest_stuck_after_update", path=str(manifest)))
     if suspended.is_set():
         raise RuntimeError("更新任务被 Steam 挂起")
     raise RuntimeError(f"SteamCMD 退出码 {returncode}")
